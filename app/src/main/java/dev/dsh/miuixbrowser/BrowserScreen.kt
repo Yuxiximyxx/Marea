@@ -189,6 +189,8 @@ fun BrowserScreen(
     var showFavEditor by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var barRect by remember { mutableStateOf(Rect(0, 0, 1, 1)) }
+    var shot by remember { mutableStateOf<ImageBitmap?>(null) }
     var showUaPicker by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
     var showExtensions by remember { mutableStateOf(false) }
@@ -310,6 +312,43 @@ fun BrowserScreen(
         animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
         label = "bottomBar",
     )
+
+    LaunchedEffect(settings.blurEnabled, tab.id, hide, sheet, showSettings, showFavEditor) {
+        val window = (context as? Activity)?.window
+        if (!settings.blurEnabled || window == null) {
+            shot = null
+            return@LaunchedEffect
+        }
+        val handler = Handler(Looper.getMainLooper())
+        while (true) {
+            val rect = barRect
+            if (hide < 0.5f && sheet == Sheet.None && !showSettings && !showFavEditor &&
+                rect.width() > 4 && rect.height() > 4
+            ) {
+                val target = runCatching {
+                    Bitmap.createBitmap(rect.width(), rect.height(), Bitmap.Config.ARGB_8888)
+                }.getOrNull()
+                if (target != null) {
+                    runCatching {
+                        PixelCopy.request(window, rect, target, { result ->
+                            if (result == PixelCopy.SUCCESS) {
+                                runCatching {
+                                    shot = Bitmap.createScaledBitmap(
+                                        target,
+                                        (target.width / 8).coerceAtLeast(8),
+                                        (target.height / 8).coerceAtLeast(8),
+                                        true,
+                                    ).asImageBitmap()
+                                }
+                            }
+                            target.recycle()
+                        }, handler)
+                    }
+                }
+            }
+            delay(600)
+        }
+    }
 
     BackHandler {
         when {
@@ -447,6 +486,15 @@ fun BrowserScreen(
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp)
                 .padding(bottom = 8.dp)
+                .onGloballyPositioned { coords ->
+                    val bounds = coords.boundsInWindow()
+                    barRect = Rect(
+                        bounds.left.toInt(),
+                        bounds.top.toInt(),
+                        bounds.right.toInt(),
+                        bounds.bottom.toInt(),
+                    )
+                }
                 .graphicsLayer {
                     translationY = hide * 210.dp.toPx()
                     alpha = 1f - 0.9f * hide
@@ -460,6 +508,7 @@ fun BrowserScreen(
             BottomBar(
                 backdrop = backdrop,
                 blurEnabled = settings.blurEnabled,
+                shot = shot,
                 address = address,
                 loading = tab.loading,
                 canGoBack = tab.canGoBack,
@@ -511,7 +560,7 @@ fun BrowserScreen(
 
         // ---- 弹层 ----
         when (sheet) {
-            Sheet.Tabs -> SheetScaffold(title = "", backdrop = backdrop, blurEnabled = settings.blurEnabled, onDismiss = { sheet = Sheet.None }) {
+            Sheet.Tabs -> SheetScaffold(title = "", onDismiss = { sheet = Sheet.None }) {
                 if (settings.tabsStyle == 1) {
                     // 卡片显示
                     Column(
@@ -607,7 +656,7 @@ fun BrowserScreen(
                 )
             }
 
-            Sheet.Menu -> SheetScaffold(title = "", backdrop = backdrop, blurEnabled = settings.blurEnabled, onDismiss = { sheet = Sheet.None }) {
+            Sheet.Menu -> SheetScaffold(title = "", onDismiss = { sheet = Sheet.None }) {
                 MenuGrid(
                     labelFor = { action ->
                         if (action == MenuAction.Desktop) {
@@ -666,7 +715,7 @@ fun BrowserScreen(
                 )
             }
 
-            Sheet.Link -> SheetScaffold(title = hostOf(linkUrl), backdrop = backdrop, blurEnabled = settings.blurEnabled, onDismiss = { sheet = Sheet.None }) {
+            Sheet.Link -> SheetScaffold(title = hostOf(linkUrl), onDismiss = { sheet = Sheet.None }) {
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
                     tab.loadUrl(linkUrl)
@@ -867,7 +916,7 @@ fun BrowserScreen(
 
 /* ------------------------------ 玻璃 ------------------------------ */
 
-/** 底栏玻璃：MIUIX 纹理模糊采样 + 半透明底色 + 高光描边。 */
+/** 底栏玻璃：降采样截图 + 半透明底色 + 高光描边。 */
 @Composable
 private fun Modifier.glassBar(
     corner: Dp,
@@ -876,32 +925,29 @@ private fun Modifier.glassBar(
 ): Modifier {
     val dark = isSystemInDarkTheme()
     val shape = RoundedCornerShape(corner)
-    val borderColor = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f)
-    val base = this.shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
-    return if (blurEnabled && backdrop != null) {
-        base.textureBlurBar(
-            backdrop = backdrop,
+    val base = this
+        .shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
+        .border(
+            width = 1.dp,
+            color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
             shape = shape,
-            tint = if (dark) Color(0xB81E1E22) else Color(0xC8FFFFFF),
-            radius = 30f,
-            noise = 0.03f,
-        ).border(width = 1.dp, color = borderColor, shape = shape)
-    } else {
-        base.background(
-            brush = if (dark) {
-                Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
-            } else {
-                Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
-            },
-            shape = shape,
-        ).border(width = 1.dp, color = borderColor, shape = shape)
-    }
+        )
+    // WebView 表面做 backdrop 采样会闪烁/崩溃，这里只用半透明底色
+    return base.background(
+        brush = if (dark) {
+            Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
+        },
+        shape = shape,
+    )
 }
 
 @Composable
 private fun BottomBar(
     backdrop: LayerBackdrop? = null,
     blurEnabled: Boolean = true,
+    shot: ImageBitmap?,
     address: String,
     loading: Boolean,
     canGoBack: Boolean,
@@ -928,6 +974,32 @@ private fun BottomBar(
             .glassBar(corner = 29.dp, backdrop = backdrop, blurEnabled = blurEnabled)
             .height(58.dp),
     ) {
+        // 高斯模糊：把抓到的画面用 RenderEffect 真模糊
+        if (shot != null) {
+            Image(
+                bitmap = shot,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .graphicsLayer {
+                        renderEffect = BlurEffect(26f, 26f, TileMode.Clamp)
+                    },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(shape)
+                .background(
+                    brush = if (dark) {
+                        Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
+                    } else {
+                        Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
+                    },
+                ),
+        )
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -1236,8 +1308,6 @@ private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
 @Composable
 private fun SheetScaffold(
     title: String,
-    backdrop: LayerBackdrop? = null,
-    blurEnabled: Boolean = true,
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -1299,19 +1369,7 @@ private fun SheetScaffold(
                 .padding(bottom = 10.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
-                .then(
-                    if (blurEnabled && backdrop != null) {
-                        Modifier.textureBlurBar(
-                            backdrop = backdrop,
-                            shape = RoundedCornerShape(28.dp),
-                            tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.88f),
-                            radius = 26f,
-                            noise = 0.03f,
-                        )
-                    } else {
-                        Modifier.background(MiuixTheme.colorScheme.surface)
-                    },
-                )
+                .background(MiuixTheme.colorScheme.surface)
                 .border(
                     width = 1.dp,
                     color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.06f),

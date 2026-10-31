@@ -414,7 +414,7 @@ private fun SearchSheet(
         title = "搜索引擎",
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             SEARCH_ENGINES.forEachIndexed { index, engine ->
                 Text(
                     text = engine.name,

@@ -54,6 +54,7 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -65,6 +66,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
     var creating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var updatingAll by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<UserScript?>(null) }
     var message by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -126,28 +129,28 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                                     onCheckedChange = { store.setEnabled(script.id, it) },
                                 )
                                 if (script.sourceUrl.isNotBlank()) {
-                                    IconTextAction(
-                                        icon = MiuixIcons.Refresh,
-                                        label = "更新",
-                                        modifier = Modifier.padding(end = 4.dp),
-                                    ) {
-                                        busy = true
-                                        scope.launch {
-                                            val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                fetchScript(script.sourceUrl)
+                                    IconButton(onClick = {
+                                        if (!busy) {
+                                            busy = true
+                                            scope.launch {
+                                                val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    fetchScript(script.sourceUrl)
+                                                }
+                                                if (fresh != null) {
+                                                    store.update(script.id, script.name, fresh, script.enabled, script.match)
+                                                    android.widget.Toast.makeText(context, "已更新 ${script.name}", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                                busy = false
                                             }
-                                            if (fresh != null) {
-                                                store.update(script.id, script.name, fresh, script.enabled, script.match)
-                                                android.widget.Toast.makeText(context, "已更新 ${script.name}", android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                            busy = false
                                         }
+                                    }) {
+                                        Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新")
                                     }
                                 }
-                                IconButton(onClick = { store.remove(script.id) }) {
-                                    Icon(imageVector = MiuixIcons.Close, contentDescription = "删除")
+                                IconButton(onClick = { deleting = script }) {
+                                    Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
                                 }
                             }
                         }
@@ -179,6 +182,40 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                         label = "导入",
                         modifier = Modifier.padding(end = 6.dp),
                     ) { importing = true }
+                    IconTextAction(
+                        icon = MiuixIcons.Refresh,
+                        label = if (updatingAll) "更新中" else "全部更新",
+                        modifier = Modifier.padding(end = 10.dp),
+                    ) {
+                        if (!updatingAll) {
+                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
+                            if (targets.isEmpty()) {
+                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                updatingAll = true
+                                busy = true
+                                scope.launch {
+                                    var ok = 0
+                                    targets.forEach { target ->
+                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            fetchScript(target.sourceUrl)
+                                        }
+                                        if (fresh != null) {
+                                            store.update(target.id, target.name, fresh, target.enabled, target.match)
+                                            ok++
+                                        }
+                                    }
+                                    busy = false
+                                    updatingAll = false
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "已更新 $ok/${targets.size} 个脚本",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
                 },
                 defaultWindowInsetsPadding = false,
                 modifier = Modifier.statusBarsPadding(),
@@ -207,6 +244,35 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
         }
     }
 
+
+    deleting?.let { target ->
+        OverlayDialog(
+            show = true,
+            title = "删除脚本",
+            summary = target.name,
+            onDismissRequest = { deleting = null },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = { deleting = null },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "删除",
+                    onClick = {
+                        store.remove(target.id)
+                        deleting = null
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColors(textColor = MiuixTheme.colorScheme.error),
+                )
+            }
+        }
+    }
 
     if (importing) {
         ImportDialog(
