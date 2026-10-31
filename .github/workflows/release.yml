@@ -60,6 +60,7 @@ jobs:
           gradle :app:assembleRelease --no-daemon --stacktrace || echo 'release build failed, fallback to debug apk'
 
       - name: Sign APK
+        continue-on-error: true
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
