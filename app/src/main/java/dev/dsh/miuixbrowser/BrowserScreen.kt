@@ -221,7 +221,7 @@ fun BrowserScreen(
     LaunchedEffect(tab.id, tab.url, editing, settings.addressDisplay, tab.title) {
         if (!editing) {
             address = when (settings.addressDisplay) {
-                0 -> tab.title.ifBlank { tab.url }
+                0 -> if (tab.url.isBlank()) "" else tab.title.ifBlank { tab.url }
                 1 -> if (tab.url.isBlank()) "" else hostOf(tab.url)
                 else -> tab.url
             }
@@ -507,7 +507,13 @@ fun BrowserScreen(
                 onForward = { tab.goForward() },
                 onHome = { tab.goHome() },
                 onCopyAddress = {
-                    if (address.isNotBlank()) clipboard.setText(AnnotatedString(address))
+                    if (tab.url.isNotBlank()) clipboard.setText(AnnotatedString(tab.url))
+                },
+                onAddressTap = {
+                    if (!editing) {
+                        editing = true
+                        address = tab.url
+                    }
                 },
                 onShare = {
                     if (tab.url.isNotBlank()) {
@@ -925,6 +931,7 @@ private fun BottomBar(
     onTabs: () -> Unit,
     onMore: () -> Unit,
     onCopyAddress: () -> Unit,
+    onAddressTap: () -> Unit = {},
 ) {
     val dark = isSystemInDarkTheme()
     val haptic = LocalHapticFeedback.current
@@ -995,7 +1002,7 @@ private fun BottomBar(
                     .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = {},
+                        onClick = { onAddressTap() },
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onCopyAddress()

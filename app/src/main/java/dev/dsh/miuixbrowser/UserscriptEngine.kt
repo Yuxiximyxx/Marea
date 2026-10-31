@@ -155,6 +155,20 @@ object UserscriptEngine {
     getResourceText: function(){ return null; }
   };
   var unsafeWindow = window;
+  // 兼容直接调用全局函数的脚本
+  window.unsafeWindow = window;
+  window.GM_info = GM.info;
+  window.GM_setValue = GM.setValue;
+  window.GM_getValue = GM.getValue;
+  window.GM_deleteValue = GM.deleteValue;
+  window.GM_listValues = GM.listValues;
+  window.GM_addStyle = GM.addStyle;
+  window.GM_xmlhttpRequest = GM.xmlHttpRequest;
+  window.GM_notification = GM.notification;
+  window.GM_openInTab = GM.openInTab;
+  window.GM_registerMenuCommand = GM.registerMenuCommand;
+  window.GM_log = GM.log;
+  window.GM_getResourceText = GM.getResourceText;
 
   try {
     (function(GM, unsafeWindow, window){
