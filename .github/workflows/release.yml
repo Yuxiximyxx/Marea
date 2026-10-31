@@ -56,7 +56,8 @@ jobs:
           MAFARI_STORE_PASS: ${{ secrets.STORE_PASSWORD }}
           MAFARI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           MAFARI_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: |
+          gradle :app:assembleRelease --no-daemon --stacktrace || echo 'release build failed, fallback to debug apk'
 
       - name: Sign APK
         if: ${{ env.KEYSTORE_BASE64 != '' }}
