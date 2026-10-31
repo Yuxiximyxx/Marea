@@ -141,7 +141,11 @@ private fun androidx.compose.ui.geometry.Offset.round(): IntOffset =
     IntOffset(x.toInt(), y.toInt())
 
 @Composable
-fun BrowserScreen(settings: AppSettings) {
+fun BrowserScreen(
+    settings: AppSettings,
+    initialUrl: String? = null,
+    onInitialUrlConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     val state = remember { BrowserState(context) }
     val favorites = remember { FavoritesStore(context) }
@@ -149,6 +153,14 @@ fun BrowserScreen(settings: AppSettings) {
     val menuOrder = remember { MenuOrderStore(context) }
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
     val scope = rememberCoroutineScope()
+
+    // 从其他应用点进来的链接：新开标签页
+    LaunchedEffect(initialUrl) {
+        if (!initialUrl.isNullOrBlank()) {
+            state.newTab(initialUrl)
+            onInitialUrlConsumed()
+        }
+    }
     val extensions = remember { ExtensionStore(context) }
     val history = remember { HistoryStore(context) }
     val tab = state.activeTab

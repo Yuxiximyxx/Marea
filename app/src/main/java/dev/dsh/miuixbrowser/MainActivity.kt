@@ -1,12 +1,16 @@
 package dev.dsh.miuixbrowser
 
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -17,9 +21,46 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 
 class MainActivity : ComponentActivity() {
 
+    /** 从其他应用点链接进来时要打开的地址 */
+    private val incomingUrl = mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeViewIntent(intent)
+    }
+
+    private fun consumeViewIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.data ?: return
+        val scheme = data.scheme?.lowercase() ?: return
+        if (scheme != "http" && scheme != "https") return
+        val settings = AppSettings(this)
+        if (settings.linkOpenMode == 1) {
+            forwardToOtherBrowser(data)
+        } else {
+            incomingUrl.value = data.toString()
+        }
+    }
+
+    /** 设置里选了「交给其他浏览器」时，弹出选择器并排除自己 */
+    private fun forwardToOtherBrowser(uri: Uri) {
+        runCatching {
+            val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+            val chooser = Intent.createChooser(view, "打开链接").apply {
+                putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    arrayOf(ComponentName(this@MainActivity, MainActivity::class.java)),
+                )
+            }
+            startActivity(chooser)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
+        consumeViewIntent(intent)
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
 
@@ -64,7 +105,11 @@ class MainActivity : ComponentActivity() {
             }
             val themeController = remember(mode) { ThemeController(mode) }
             MiuixTheme(controller = themeController) {
-                BrowserScreen(settings)
+                BrowserScreen(
+                    settings = settings,
+                    initialUrl = incomingUrl.value,
+                    onInitialUrlConsumed = { incomingUrl.value = null },
+                )
             }
         }
     }

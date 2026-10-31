@@ -12,6 +12,15 @@ class AppSettings(context: Context) {
     var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
         private set
 
+    /** 外部链接打开方式：0=应用内打开 1=交给其他浏览器（询问） */
+    var linkOpenMode by mutableStateOf(prefs.getInt(KEY_LINK_MODE, 0))
+        private set
+
+    fun updateLinkOpenMode(mode: Int) {
+        linkOpenMode = mode.coerceIn(0, 1)
+        prefs.edit().putInt(KEY_LINK_MODE, linkOpenMode).apply()
+    }
+
     /** 地址栏显示：0=网站标题 1=主域名 2=完整域名 */
     var addressDisplay by mutableStateOf(prefs.getInt(KEY_ADDR, 2))
         private set
@@ -93,6 +102,7 @@ class AppSettings(context: Context) {
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"
         const val KEY_ADDR = "address_display"
+        const val KEY_LINK_MODE = "link_open_mode"
         const val KEY_TABS = "tabs_style"
         const val KEY_SEARCH_CUSTOM = "search_custom"
         const val KEY_WALL = "wallpaper"

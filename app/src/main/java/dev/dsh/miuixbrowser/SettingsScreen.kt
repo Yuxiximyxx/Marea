@@ -70,6 +70,7 @@ fun SettingsScreen(
     var showTheme by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showAddress by remember { mutableStateOf(false) }
+    var showLinkMode by remember { mutableStateOf(false) }
     var showTabsStyle by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -192,6 +193,11 @@ fun SettingsScreen(
                         onClick = onPickUa,
                     )
                     SettingsRow(
+                        title = "外部链接打开方式",
+                        summary = if (settings.linkOpenMode == 1) "交给其他浏览器" else "在应用内打开",
+                        onClick = { showLinkMode = true },
+                    )
+                    SettingsRow(
                         title = "下载",
                         summary = "查看已下载的文件",
                         onClick = onOpenDownloads,
@@ -247,6 +253,15 @@ fun SettingsScreen(
                     }
                 }
             }
+    }
+
+    if (showLinkMode) {
+        ChoiceDialog(
+            title = "外部链接打开方式",
+            options = listOf("在应用内打开", "交给其他浏览器"),
+            current = settings.linkOpenMode,
+            onDismiss = { showLinkMode = false },
+        ) { settings.updateLinkOpenMode(it); showLinkMode = false }
     }
 
     if (showAddress) {

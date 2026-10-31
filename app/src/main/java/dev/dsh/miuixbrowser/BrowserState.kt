@@ -42,36 +42,6 @@ fun toUrl(input: String, searchTemplate: String = "https://www.baidu.com/s?wd=%s
 
 fun hostOf(url: String): String = runCatching { Uri.parse(url).host ?: url }.getOrDefault(url)
 
-/** 油猴 GM_* API 垫片（注入在所有用户脚本之前） */
-private const val GM_SHIM = """
-(function(){
-  if (window.__mafariGM) return;
-  window.unsafeWindow = window;
-  window.GM_setValue = function(k, v){ try { localStorage.setItem('gm_' + k, JSON.stringify(v)); } catch(e){} };
-  window.GM_getValue = function(k, d){ try { var v = localStorage.getItem('gm_' + k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } };
-  window.GM_deleteValue = function(k){ try { localStorage.removeItem('gm_' + k); } catch(e){} };
-  window.GM_listValues = function(){ return Object.keys(localStorage).filter(function(k){return k.indexOf('gm_')===0;}).map(function(k){return k.slice(3);}); };
-  window.GM_addStyle = function(css){ var s = document.createElement('style'); s.textContent = css; (document.head || document.documentElement).appendChild(s); return s; };
-  window.GM_xmlhttpRequest = function(details){
-    try {
-      fetch(details.url, { method: details.method || 'GET', headers: details.headers || {}, body: details.data })
-        .then(function(r){ return r.text().then(function(t){ return { r: r, t: t }; }); })
-        .then(function(x){
-          var resp = { status: x.r.status, statusText: x.r.statusText, responseText: x.t, finalUrl: x.r.url, readyState: 4 };
-          details.onload && details.onload(resp);
-          details.onreadystatechange && details.onreadystatechange(resp);
-        })
-        .catch(function(e){ details.onerror && details.onerror(e); });
-    } catch(e) { details.onerror && details.onerror(e); }
-  };
-  window.GM_notification = function(o){ try { var t = typeof o === 'string' ? o : (o.text || o.title || ''); if (window.Notification) new Notification(t); } catch(e){} };
-  window.GM_openInTab = function(u){ window.open(u, '_blank'); };
-  window.GM_registerMenuCommand = function(){};
-  window.GM_info = { scriptHandler: 'mafari', version: '2.5.0', script: { name: 'mafari userscript' } };
-  window.__mafariGM = true;
-})();
-"""
-
 /** 一个标签页：持有自己的 WebView 和页面状态。 */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserTab(private val appContext: Context) {
@@ -129,7 +99,19 @@ class BrowserTab(private val appContext: Context) {
 
     val webView: WebView = WebView(appContext)
 
+    /** 打开新标签页（GM_openInTab 用） */
+    var onOpenNewTab: ((String) -> Unit)? = null
+
+    private val scriptHandlers = mutableListOf<androidx.webkit.ScriptHandler>()
+    private var installedScriptsSignature = ""
+
     init {
+        runCatching {
+            webView.addJavascriptInterface(
+                GmBridge(appContext, { webView }, { target -> onOpenNewTab?.invoke(target) }),
+                "MafariGM",
+            )
+        }
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -165,6 +147,7 @@ class BrowserTab(private val appContext: Context) {
                 loading = true
                 errorText = null
                 syncNav()
+                installDocumentStartScripts()
             }
 
             override fun onPageFinished(view: WebView, pageUrl: String?) {
@@ -174,12 +157,7 @@ class BrowserTab(private val appContext: Context) {
                 syncNav()
                 onVisited?.invoke(url, title)
 
-                if (userScripts.any { it.enabled && it.matches(url) }) {
-                    runCatching { view.evaluateJavascript(GM_SHIM, null) }
-                }
-                userScripts.filter { it.enabled && it.matches(url) }.forEach { script ->
-                    runCatching { view.evaluateJavascript(script.code, null) }
-                }
+                injectDocumentEndScripts(view)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -269,21 +247,41 @@ class BrowserTab(private val appContext: Context) {
         }
     }
 
-    /** 注入用户脚本：start 阶段只注入 @run-at document-start 的，finish 阶段注入其余 */
-    private fun injectUserScripts(view: WebView, documentEnd: Boolean) {
-        val matched = userScripts.filter { it.enabled && it.matches(url) }
-        if (matched.isEmpty()) return
-        runCatching { view.evaluateJavascript(GM_SHIM, null) }
-        matched.forEach { script ->
-            val isStart = script.runAt == "document-start"
-            if (isStart == !documentEnd) {
-                val safe = script.code.replace("</script", "<\\/script")
-                runCatching {
-                    view.evaluateJavascript(
-                        "try{(function(){var GM_info={scriptHandler:'mafari',version:'2.6.0'};$safe})();}catch(e){console.error(e);}",
-                        null,
-                    )
-                }
+    /** 用 AndroidX WebKit 的 addDocumentStartJavaScript 注入 @run-at document-start 脚本 */
+    private fun installDocumentStartScripts() {
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            return
+        }
+        val startScripts = userScripts.filter { it.enabled && it.runAt == "document-start" }
+        val signature = startScripts.joinToString("|") { "${it.id}:${it.code.hashCode()}" }
+        if (signature == installedScriptsSignature) return
+        scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
+        scriptHandlers.clear()
+        startScripts.forEach { script ->
+            runCatching {
+                val source = UserscriptEngine.buildSource(script)
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, source, setOf("*"))
+                    ?.let { scriptHandlers.add(it) }
+            }
+        }
+        installedScriptsSignature = signature
+    }
+
+    /** 页面加载完成后注入 document-end / document-idle 脚本 */
+    private fun injectDocumentEndScripts(view: WebView) {
+        val pageUrl = url
+        userScripts.filter { script ->
+            if (!script.enabled) return@filter false
+            if (script.runAt == "document-start") return@filter false
+            val meta = UserscriptEngine.parse(script.code)
+            if (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) {
+                UserscriptEngine.matchesUrl(meta, pageUrl)
+            } else {
+                script.matches(pageUrl)
+            }
+        }.forEach { script ->
+            runCatching {
+                view.evaluateJavascript(UserscriptEngine.buildSource(script), null)
             }
         }
     }
