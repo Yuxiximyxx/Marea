@@ -19,6 +19,8 @@ data class UserScript(
     val runAt: String = "document-end",
     /** 油猴 @icon，脚本列表左侧显示 */
     val icon: String = "",
+    /** 非空表示这是去广告规则订阅，显示在「内置脚本」分组 */
+    val subscriptionUrl: String = "",
 ) {
     fun matches(url: String): Boolean {
         val patterns = match.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -64,6 +66,7 @@ class ExtensionStore(context: Context) {
                             sourceUrl = obj.optString("sourceUrl"),
                             runAt = obj.optString("runAt", "document-end"),
                             icon = obj.optString("icon"),
+                            subscriptionUrl = obj.optString("subscriptionUrl"),
                         ),
                     )
                 }
@@ -71,7 +74,13 @@ class ExtensionStore(context: Context) {
         }.getOrDefault(emptyList())
     }
 
-    fun add(name: String, code: String, match: String = "", sourceUrl: String = "") {
+    fun add(
+        name: String,
+        code: String,
+        match: String = "",
+        sourceUrl: String = "",
+        subscriptionUrl: String = "",
+    ) {
         val (parsedName, parsedMatch, parsedRunAt) = parseUserScript(code)
         items.add(
             UserScript(
@@ -81,6 +90,7 @@ class ExtensionStore(context: Context) {
                 sourceUrl = sourceUrl,
                 runAt = parsedRunAt,
                 icon = UserscriptEngine.parse(code).icon,
+                subscriptionUrl = subscriptionUrl,
             ),
         )
         persist()
@@ -125,7 +135,8 @@ class ExtensionStore(context: Context) {
                     .put("match", it.match)
                     .put("sourceUrl", it.sourceUrl)
                     .put("runAt", it.runAt)
-                    .put("icon", it.icon),
+                    .put("icon", it.icon)
+                    .put("subscriptionUrl", it.subscriptionUrl),
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()

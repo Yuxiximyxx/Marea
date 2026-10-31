@@ -5,6 +5,8 @@ data class BuiltinScript(
     val name: String,
     val description: String,
     val code: String,
+    /** 去广告规则订阅源；为空则只使用内置规则 */
+    val subscriptionUrl: String = "",
 )
 
 const val ADBLOCK_SCRIPT_NAME = "全网查询去广告规则集"
@@ -88,7 +90,8 @@ private val ADBLOCK_RULES_JS = """
 val BUILTIN_SCRIPTS = listOf(
     BuiltinScript(
         name = ADBLOCK_SCRIPT_NAME,
-        description = "内置通用去广告规则，隐藏常见广告位与广告 iframe，适合资讯 / 视频站点",
+        description = "订阅 AdGuard 中文过滤规则（EasyList China + AdGuard Chinese），拉取后转换为本地规则；网络不可用时回落到内置规则",
         code = ADBLOCK_RULES_JS,
+        subscriptionUrl = AdblockRules.BUILTIN_SUBSCRIPTION,
     ),
 )

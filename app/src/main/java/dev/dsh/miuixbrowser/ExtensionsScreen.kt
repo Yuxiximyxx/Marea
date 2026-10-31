@@ -91,19 +91,81 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding(),
         ) {
-            val builtinMissing = store.items.none { it.name == ADBLOCK_SCRIPT_NAME }
+            val subscriptions = store.items.filter { it.subscriptionUrl.isNotBlank() }
+            val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
+            val builtinMissing = subscriptions.none { it.subscriptionUrl == AdblockRules.BUILTIN_SUBSCRIPTION }
             LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
-                if (builtinMissing) {
+                if (builtinMissing || subscriptions.isNotEmpty()) {
                     item {
                         SmallTitle(text = "内置脚本")
                     }
-                    item {
-                        BuiltinScriptCard(BUILTIN_SCRIPTS.first()) { builtin ->
-                            store.add(builtin.name, builtin.code)
+                    if (builtinMissing) {
+                        item {
+                            BuiltinScriptCard(BUILTIN_SCRIPTS.first()) { builtin ->
+                                if (!busy) {
+                                    busy = true
+                                    scope.launch {
+                                        val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            fetchScript(builtin.subscriptionUrl)
+                                        }
+                                        val converted = text?.let {
+                                            if (AdblockRules.looksLikeFilterList(it)) {
+                                                AdblockRules.convert(it, builtin.subscriptionUrl)
+                                            } else {
+                                                null
+                                            }
+                                        }
+                                        if (converted != null) {
+                                            store.add(
+                                                converted.name,
+                                                converted.code,
+                                                sourceUrl = builtin.subscriptionUrl,
+                                                subscriptionUrl = builtin.subscriptionUrl,
+                                            )
+                                            android.widget.Toast.makeText(context, "已订阅 " + converted.name, android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            store.add(
+                                                builtin.name,
+                                                builtin.code,
+                                                sourceUrl = builtin.subscriptionUrl,
+                                                subscriptionUrl = builtin.subscriptionUrl,
+                                            )
+                                            android.widget.Toast.makeText(context, "订阅源不可用，已添加内置规则", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            }
                         }
                     }
+                    items(subscriptions.size) { index ->
+                        val script = subscriptions[index]
+                        SubscriptionCard(
+                            script = script,
+                            onToggle = { store.setEnabled(script.id, it) },
+                            onUpdate = {
+                                if (!busy) {
+                                    busy = true
+                                    scope.launch {
+                                        val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            fetchScript(script.subscriptionUrl)
+                                        }
+                                        val converted = text?.let { AdblockRules.convert(it, script.subscriptionUrl) }
+                                        if (converted != null) {
+                                            store.update(script.id, converted.name, converted.code, script.enabled, script.match)
+                                            android.widget.Toast.makeText(context, "已更新订阅", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            },
+                            onDelete = { deleting = script },
+                        )
+                    }
                 }
-                if (store.items.isEmpty()) {
+                if (normalScripts.isEmpty() && subscriptions.isEmpty()) {
                     item {
                         Text(
                             text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
@@ -112,12 +174,12 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                             modifier = Modifier.padding(24.dp),
                         )
                     }
-                } else {
+                } else if (normalScripts.isNotEmpty()) {
                     item {
                         SmallTitle(text = "已安装脚本")
                     }
-                        items(store.items.size) { index ->
-                            val script = store.items[index]
+                        items(normalScripts.size) { index ->
+                            val script = normalScripts[index]
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -220,8 +282,16 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                             fetchScript(target.sourceUrl)
                                         }
                                         if (fresh != null) {
-                                            store.update(target.id, target.name, fresh, target.enabled, target.match)
-                                            ok++
+                                            if (target.subscriptionUrl.isNotBlank()) {
+                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
+                                                if (converted != null) {
+                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
+                                                    ok++
+                                                }
+                                            } else {
+                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
+                                                ok++
+                                            }
                                         }
                                     }
                                     busy = false
@@ -302,8 +372,23 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 scope.launch {
                     val code = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchScript(url) }
                     if (code != null) {
-                        store.add("", code, sourceUrl = url)
-                        android.widget.Toast.makeText(context, "已导入脚本", android.widget.Toast.LENGTH_SHORT).show()
+                        val converted = if (AdblockRules.looksLikeFilterList(code)) {
+                            AdblockRules.convert(code, url)
+                        } else {
+                            null
+                        }
+                        if (converted != null) {
+                            store.add(
+                                converted.name,
+                                converted.code,
+                                sourceUrl = url,
+                                subscriptionUrl = url,
+                            )
+                            android.widget.Toast.makeText(context, "已识别为去广告订阅，加入内置脚本", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            store.add("", code, sourceUrl = url)
+                            android.widget.Toast.makeText(context, "已导入脚本", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     } else {
                         android.widget.Toast.makeText(context, "下载失败，检查链接", android.widget.Toast.LENGTH_SHORT).show()
                     }
@@ -477,7 +562,7 @@ private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> U
             }
             Spacer(Modifier.width(8.dp))
             TextButton(
-                text = "添加",
+                text = "订阅",
                 onClick = { onAdd(script) },
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 minHeight = 30.dp,
@@ -510,6 +595,59 @@ private fun ScriptIcon(url: String) {
                 tint = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionCard(
+    script: UserScript,
+    onToggle: (Boolean) -> Unit,
+    onUpdate: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 8.dp),
+        insideMargin = PaddingValues(14.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.File,
+                        contentDescription = null,
+                        tint = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = script.subscriptionUrl,
+                        fontSize = 11.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        maxLines = 1,
+                    )
+                }
+                Switch(checked = script.enabled, onCheckedChange = onToggle)
+                IconButton(onClick = onUpdate) {
+                    Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新订阅")
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
+                }
+            }
         }
     }
 }
