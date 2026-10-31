@@ -125,6 +125,11 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.drawBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlurEffect
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Refresh
@@ -157,6 +162,7 @@ fun BrowserScreen(
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val backdrop = rememberLayerBackdrop()
 
     // 从其他应用点进来的链接：新开标签页
     LaunchedEffect(initialUrl) {
@@ -400,7 +406,7 @@ fun BrowserScreen(
         }
 
         // ---- 网页内容：从状态栏下面开始，不再压到状态栏 ----
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -493,6 +499,8 @@ fun BrowserScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             BottomBar(
+                backdrop = backdrop,
+                blurEnabled = settings.blurEnabled,
                 shot = shot,
                 address = address,
                 loading = tab.loading,
@@ -904,26 +912,53 @@ fun BrowserScreen(
 
 /** 底栏玻璃：降采样截图 + 半透明底色 + 高光描边。 */
 @Composable
-private fun Modifier.glassBar(corner: Dp): Modifier {
+private fun Modifier.glassBar(
+    corner: Dp,
+    backdrop: LayerBackdrop? = null,
+    blurEnabled: Boolean = true,
+): Modifier {
     val dark = isSystemInDarkTheme()
     val shape = RoundedCornerShape(corner)
-    return this
-        .shadow(
-            elevation = if (dark) 8.dp else 10.dp,
-            shape = shape,
-            clip = false,
-        )
+    val base = this
+        .shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
         .border(
             width = 1.dp,
             color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
             shape = shape,
         )
+    return if (blurEnabled && backdrop != null) {
+        base
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { shape },
+                effects = {
+                    textureBlurEffect(
+                        blurRadiusX = 28.dp.toPx(),
+                        blurRadiusY = 28.dp.toPx(),
+                        noiseCoefficient = 0.06f,
+                    )
+                },
+            )
+            .background(
+                if (dark) Color(0x66202022) else Color(0x59FFFFFF),
+                shape,
+            )
+    } else {
+        base.background(
+            brush = if (dark) {
+                Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
+            } else {
+                Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
+            },
+            shape = shape,
+        )
+    }
 }
-
-/* ------------------------------ 底部两块 ------------------------------ */
 
 @Composable
 private fun BottomBar(
+    backdrop: LayerBackdrop? = null,
+    blurEnabled: Boolean = true,
     shot: ImageBitmap?,
     address: String,
     loading: Boolean,
@@ -948,7 +983,7 @@ private fun BottomBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .glassBar(corner = 29.dp)
+            .glassBar(corner = 29.dp, backdrop = backdrop, blurEnabled = blurEnabled)
             .height(58.dp),
     ) {
         // 高斯模糊：把抓到的画面用 RenderEffect 真模糊
