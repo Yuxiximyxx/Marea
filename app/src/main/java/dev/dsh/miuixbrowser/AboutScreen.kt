@@ -3,7 +3,15 @@ package dev.dsh.miuixbrowser
 import android.content.Intent
 import android.net.Uri
 import android.webkit.WebSettings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -38,24 +46,16 @@ fun AboutScreen(onBack: () -> Unit) {
     val kernel = webViewVersion() ?: "未知"
     val ua = remember { runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault("未知") }
 
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "关于",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    val backdrop = rememberLayerBackdrop()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(modifier = Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .layerBackdrop(backdrop)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
+                .padding(top = statusTop + 56.dp)
                 .padding(bottom = 24.dp),
         ) {
             SmallTitle(text = "版本")
@@ -121,6 +121,27 @@ fun AboutScreen(onBack: () -> Unit) {
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp + statusTop)
+                .progressiveTopBar(
+                    backdrop = backdrop,
+                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                ),
+        ) {
+            SmallTopAppBar(
+                title = "关于",
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                    }
+                },
+                defaultWindowInsetsPadding = false,
+                modifier = Modifier.statusBarsPadding(),
             )
         }
     }
