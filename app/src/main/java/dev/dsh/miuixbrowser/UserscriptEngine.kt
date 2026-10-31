@@ -14,6 +14,7 @@ data class UserscriptMeta(
     val excludes: List<String> = emptyList(),
     val grants: List<String> = emptyList(),
     val requires: List<String> = emptyList(),
+    val icon: String = "",
 )
 
 /**
@@ -46,6 +47,7 @@ object UserscriptEngine {
             excludes = values["exclude"].orEmpty(),
             grants = values["grant"].orEmpty(),
             requires = values["require"].orEmpty(),
+            icon = first("icon"),
         )
     }
 

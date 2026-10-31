@@ -17,6 +17,8 @@ data class UserScript(
     val sourceUrl: String = "",
     /** 油猴 @run-at，默认 document-end */
     val runAt: String = "document-end",
+    /** 油猴 @icon，脚本列表左侧显示 */
+    val icon: String = "",
 ) {
     fun matches(url: String): Boolean {
         val patterns = match.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -61,6 +63,7 @@ class ExtensionStore(context: Context) {
                             match = obj.optString("match"),
                             sourceUrl = obj.optString("sourceUrl"),
                             runAt = obj.optString("runAt", "document-end"),
+                            icon = obj.optString("icon"),
                         ),
                     )
                 }
@@ -77,6 +80,7 @@ class ExtensionStore(context: Context) {
                 match = match.ifBlank { parsedMatch },
                 sourceUrl = sourceUrl,
                 runAt = parsedRunAt,
+                icon = UserscriptEngine.parse(code).icon,
             ),
         )
         persist()
@@ -92,6 +96,7 @@ class ExtensionStore(context: Context) {
             enabled = enabled,
             match = match.ifBlank { parsedMatch },
             runAt = parsedRunAt,
+            icon = UserscriptEngine.parse(code).icon.ifBlank { items[index].icon },
         )
         persist()
     }
@@ -119,7 +124,8 @@ class ExtensionStore(context: Context) {
                     .put("enabled", it.enabled)
                     .put("match", it.match)
                     .put("sourceUrl", it.sourceUrl)
-                    .put("runAt", it.runAt),
+                    .put("runAt", it.runAt)
+                    .put("icon", it.icon),
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()

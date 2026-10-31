@@ -1,5 +1,6 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -33,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -55,6 +59,7 @@ import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.File
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -86,75 +91,88 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding(),
         ) {
-            if (store.items.isEmpty()) {
-                Text(
-                    text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
-                    fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier
-                        .padding(top = statusTop + 56.dp)
-                        .padding(24.dp),
-                )
-            } else {
-                LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
+            val builtinMissing = store.items.none { it.name == ADBLOCK_SCRIPT_NAME }
+            LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
+                if (builtinMissing) {
+                    item {
+                        SmallTitle(text = "内置脚本")
+                    }
+                    item {
+                        BuiltinScriptCard(BUILTIN_SCRIPTS.first()) { builtin ->
+                            store.add(builtin.name, builtin.code)
+                        }
+                    }
+                }
+                if (store.items.isEmpty()) {
+                    item {
+                        Text(
+                            text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(24.dp),
+                        )
+                    }
+                } else {
                     item {
                         SmallTitle(text = "已安装脚本")
                     }
-                    items(store.items.size) { index ->
-                        val script = store.items[index]
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 8.dp),
-                            insideMargin = PaddingValues(14.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { editing = script },
-                                ) {
-                                    Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        text = script.code.take(60).replace("\n", " "),
-                                        fontSize = 11.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        maxLines = 1,
-                                    )
-                                }
-                                Switch(
-                                    checked = script.enabled,
-                                    onCheckedChange = { store.setEnabled(script.id, it) },
-                                )
-                                if (script.sourceUrl.isNotBlank()) {
-                                    IconButton(onClick = {
-                                        if (!busy) {
-                                            busy = true
-                                            scope.launch {
-                                                val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                    fetchScript(script.sourceUrl)
-                                                }
-                                                if (fresh != null) {
-                                                    store.update(script.id, script.name, fresh, script.enabled, script.match)
-                                                    android.widget.Toast.makeText(context, "已更新 ${script.name}", android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                                busy = false
-                                            }
-                                        }
-                                    }) {
-                                        Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新")
+                        items(store.items.size) { index ->
+                            val script = store.items[index]
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp)
+                                    .padding(bottom = 8.dp),
+                                insideMargin = PaddingValues(14.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ScriptIcon(script.icon)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { editing = script },
+                                    ) {
+                                        Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = script.code.take(60).replace("\n", " "),
+                                            fontSize = 11.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                            maxLines = 1,
+                                        )
                                     }
-                                }
-                                IconButton(onClick = { deleting = script }) {
-                                    Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
+                                    Switch(
+                                        checked = script.enabled,
+                                        onCheckedChange = { store.setEnabled(script.id, it) },
+                                    )
+                                    if (script.sourceUrl.isNotBlank()) {
+                                        IconButton(onClick = {
+                                            if (!busy) {
+                                                busy = true
+                                                scope.launch {
+                                                    val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        fetchScript(script.sourceUrl)
+                                                    }
+                                                    if (fresh != null) {
+                                                        store.update(script.id, script.name, fresh, script.enabled, script.match)
+                                                        android.widget.Toast.makeText(context, "已更新 ${script.name}", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    busy = false
+                                                }
+                                            }
+                                        }) {
+                                            Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新")
+                                        }
+                                    }
+                                    IconButton(onClick = { deleting = script }) {
+                                        Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
+                                    }
                                 }
                             }
                         }
-                    }
                 }
             }
         }
@@ -421,3 +439,77 @@ private fun fetchScript(url: String): String? = runCatching {
         connection.disconnect()
     }
 }.getOrNull()
+
+@Composable
+private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 8.dp),
+        insideMargin = PaddingValues(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.File,
+                    contentDescription = null,
+                    tint = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = script.description,
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(
+                text = "添加",
+                onClick = { onAdd(script) },
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                minHeight = 30.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScriptIcon(url: String) {
+    val icon = rememberRemoteIcon(url)
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (icon != null) {
+            Image(
+                bitmap = icon,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = MiuixIcons.File,
+                contentDescription = null,
+                tint = MiuixTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}

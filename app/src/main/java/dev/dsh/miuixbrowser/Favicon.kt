@@ -74,3 +74,48 @@ fun rememberFavicon(url: String): ImageBitmap? {
     }
     return icon
 }
+
+/** 加载油猴 @icon 之类的远程图标 */
+object RemoteIconLoader {
+
+    private val cache = ConcurrentHashMap<String, ImageBitmap>()
+
+    suspend fun load(url: String): ImageBitmap? {
+        if (!url.startsWith("http", ignoreCase = true)) return null
+        cache[url]?.let { return it }
+        val bitmap = runCatching {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4000
+                readTimeout = 4000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) mafari")
+            }
+            try {
+                if (connection.responseCode !in 200..299) {
+                    null
+                } else {
+                    connection.inputStream.use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrNull()
+        if (bitmap != null) cache[url] = bitmap
+        return bitmap
+    }
+}
+
+@Composable
+fun rememberRemoteIcon(url: String): ImageBitmap? {
+    var icon by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url) {
+        icon = if (url.isBlank()) {
+            null
+        } else {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                RemoteIconLoader.load(url)
+            }
+        }
+    }
+    return icon
+}
