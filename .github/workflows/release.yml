@@ -41,12 +41,14 @@ jobs:
           ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" 
 
       - name: Prepare keystore
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
-        run: echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
+          fi
 
       - name: Build
         env:
-          MAFARI_KEYSTORE: ${{ env.KEYSTORE_BASE64 != '' && 'mafari-release.jks' || '' }}
+          MAFARI_KEYSTORE: mafari-release.jks
         run: gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
 
       - name: Sign APK
