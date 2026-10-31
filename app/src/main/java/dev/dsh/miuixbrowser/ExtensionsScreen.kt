@@ -162,7 +162,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                 .height(56.dp + statusTop)
                 .progressiveTopBar(
                     backdrop = backdrop,
-                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
                 ),
         ) {
             SmallTopAppBar(

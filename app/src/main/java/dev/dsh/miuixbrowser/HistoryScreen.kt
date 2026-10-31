@@ -115,7 +115,7 @@ fun HistoryScreen(store: HistoryStore, onBack: () -> Unit, onOpen: (String) -> U
                     .height(56.dp + statusTop)
                     .progressiveTopBar(
                         backdrop = backdrop,
-                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
                     ),
             ) {
                 SmallTopAppBar(

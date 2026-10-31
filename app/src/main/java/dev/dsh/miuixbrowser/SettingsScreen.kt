@@ -172,6 +172,12 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
+                    OverlayDropdownPreference(
+                        title = "外部链接打开方式",
+                        items = listOf("应用内打开", "自定义标签页", "其他浏览器"),
+                        selectedIndex = settings.linkOpenMode.coerceIn(0, 2),
+                        onSelectedIndexChange = { settings.updateLinkOpenMode(it) },
+                    )
                     SettingsRow(
                         title = "搜索引擎",
                         summary = SEARCH_ENGINES.getOrNull(settings.searchIndex)?.name ?: "自定义",
@@ -181,12 +187,6 @@ fun SettingsScreen(
                         title = "自定义 UA",
                         summary = uaSummary(settings.userAgent),
                         onClick = onPickUa,
-                    )
-                    OverlayDropdownPreference(
-                        title = "外部链接打开方式",
-                        items = listOf("应用内打开", "自定义标签页 (Custom Tabs)", "其他浏览器"),
-                        selectedIndex = settings.linkOpenMode.coerceIn(0, 2),
-                        onSelectedIndexChange = { settings.updateLinkOpenMode(it) },
                     )
                     SettingsRow(
                         title = "下载",
@@ -230,7 +230,7 @@ fun SettingsScreen(
                     .height(56.dp + statusTop)
                     .progressiveTopBar(
                         backdrop = backdrop,
-                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
                     ),
             ) {
                 SmallTopAppBar(
@@ -414,7 +414,7 @@ private fun SearchSheet(
         title = "搜索引擎",
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
             SEARCH_ENGINES.forEachIndexed { index, engine ->
                 Text(
                     text = engine.name,
