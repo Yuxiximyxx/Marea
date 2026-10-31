@@ -1,6 +1,10 @@
 package dev.dsh.miuixbrowser
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalContext
@@ -85,21 +89,36 @@ fun SettingsScreen(
         }
     }
 
+    val backdrop = rememberLayerBackdrop()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Scaffold(
         topBar = {
-            SmallTopAppBar(
-                title = "设置",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp + statusTop)
+                    .progressiveTopBar(
+                        backdrop = backdrop,
+                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                    ),
+            ) {
+                SmallTopAppBar(
+                    title = "设置",
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                    defaultWindowInsetsPadding = false,
+                    modifier = Modifier.statusBarsPadding(),
+                )
+            }
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .layerBackdrop(backdrop)
                 .padding(padding)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
