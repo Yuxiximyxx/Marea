@@ -46,12 +46,17 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
           fi
 
-      - name: Build
+      - name: Build debug
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Build release (需要签名密钥)
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           MAFARI_KEYSTORE: mafari-release.jks
-        run: gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Sign APK
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
         run: |
           set -e
           SDK=$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)
@@ -81,7 +86,7 @@ jobs:
           name: mafari-apk
           path: |
             app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/*/*signed.apk
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -90,5 +95,5 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/*/*signed.apk
           generate_release_notes: true
