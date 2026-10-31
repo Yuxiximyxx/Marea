@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 74
-        versionName = "3.9.1"
+        versionCode = 75
+        versionName = "3.9.2"
     }
 
     buildFeatures {
@@ -69,6 +69,7 @@ android {
 dependencies {
     val miuix = "0.9.4"
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-squircle-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuix")

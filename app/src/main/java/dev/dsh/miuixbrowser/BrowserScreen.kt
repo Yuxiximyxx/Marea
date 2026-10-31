@@ -129,6 +129,7 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.drawBackdrop
+import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.textureBlurEffect
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.More
@@ -163,6 +164,7 @@ fun BrowserScreen(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val backdrop = rememberLayerBackdrop()
+    val wallpaperBackdrop = rememberLayerBackdrop()
 
     // 从其他应用点进来的链接：新开标签页
     LaunchedEffect(initialUrl) {
@@ -395,13 +397,15 @@ fun BrowserScreen(
         if (tab.url.isEmpty() && wallpaperBitmap != null) {
             val wallpaperImage = wallpaperBitmap
             if (wallpaperImage != null) {
-                Image(
-                    bitmap = wallpaperImage,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+                Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop)) {
+                    Image(
+                        bitmap = wallpaperImage,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+                }
             }
         }
 
@@ -428,6 +432,8 @@ fun BrowserScreen(
                     }
                     StartPage(
                         wallpaper = wallpaperBitmap,
+                        wallpaperBackdrop = wallpaperBackdrop,
+                        blurEnabled = settings.blurEnabled,
                         favorites = favorites.items,
                         editing = favEditing,
                         onOpen = { tab.load(it) },
@@ -1431,6 +1437,8 @@ private fun SheetRow(
 @Composable
 private fun StartPage(
     wallpaper: ImageBitmap?,
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
     favorites: List<Favorite>,
     editing: Boolean,
     onOpen: (String) -> Unit,
@@ -1489,6 +1497,8 @@ private fun StartPage(
                         FavoriteTile(
                             favorite = favorite,
                             wallpaper = wallpaper,
+                            wallpaperBackdrop = wallpaperBackdrop,
+                            blurEnabled = blurEnabled,
                             editing = editing,
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -1536,46 +1546,41 @@ private fun StartPage(
 private fun FavoriteTile(
     favorite: Favorite,
     wallpaper: ImageBitmap?,
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
     editing: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(16.dp)
+    val useBlur = blurEnabled && wallpaper != null && wallpaperBackdrop != null
     Box(
         modifier = modifier
             .height(58.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(shape)
             .clickable(onClick = onClick)
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.85f), Color.White.copy(alpha = 0.25f)),
-                ),
-                shape = RoundedCornerShape(16.dp),
+            .then(
+                if (useBlur) {
+                    Modifier.textureBlurBar(
+                        backdrop = wallpaperBackdrop,
+                        shape = shape,
+                        tint = Color.White.copy(alpha = 0.28f),
+                        radius = 22f,
+                        highlight = Highlight.GlassStrokeMiddleLight,
+                    )
+                } else {
+                    Modifier
+                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                        .border(
+                            width = 1.dp,
+                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                            shape = shape,
+                        )
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (wallpaper != null) {
-            Image(
-                bitmap = wallpaper,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer { renderEffect = BlurEffect(22f, 22f, TileMode.Clamp) },
-            )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color.White.copy(alpha = 0.28f)),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(MiuixTheme.colorScheme.surfaceContainerHigh),
-            )
-        }
         Row(
             modifier = Modifier.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

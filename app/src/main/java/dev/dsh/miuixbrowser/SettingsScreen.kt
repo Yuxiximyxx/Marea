@@ -60,6 +60,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -72,11 +73,8 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
 ) {
     val context = LocalContext.current
-    var showTheme by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-    var showAddress by remember { mutableStateOf(false) }
     var showLinkMode by remember { mutableStateOf(false) }
-    var showTabsStyle by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -92,38 +90,20 @@ fun SettingsScreen(
     val backdrop = rememberLayerBackdrop()
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Scaffold(
-        topBar = {
-            Box(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp + statusTop)
-                    .progressiveTopBar(
-                        backdrop = backdrop,
-                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
-                    ),
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .background(MiuixTheme.colorScheme.surface)
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = statusTop + 56.dp)
+                    .padding(bottom = 24.dp),
             ) {
-                SmallTopAppBar(
-                    title = "设置",
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                    defaultWindowInsetsPadding = false,
-                    modifier = Modifier.statusBarsPadding(),
-                )
-            }
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-                .padding(padding)
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 24.dp),
-        ) {
             SmallTitle(text = "外观")
                 Card(
                     modifier = Modifier
@@ -131,14 +111,11 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    SettingsRow(
+                    OverlayDropdownPreference(
                         title = "显示模式",
-                        summary = when (settings.themeMode) {
-                            1 -> "日间"
-                            2 -> "夜间"
-                            else -> "跟随系统"
-                        },
-                        onClick = { showTheme = true },
+                        items = listOf("跟随系统", "日间", "夜间"),
+                        selectedIndex = settings.themeMode.coerceIn(0, 2),
+                        onSelectedIndexChange = { settings.updateThemeMode(it) },
                     )
                     SettingsRow(
                         title = "主页壁纸",
@@ -179,19 +156,17 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    SettingsRow(
+                    OverlayDropdownPreference(
                         title = "地址栏显示",
-                        summary = when (settings.addressDisplay) {
-                            0 -> "网站标题"
-                            1 -> "主域名"
-                            else -> "完整域名"
-                        },
-                        onClick = { showAddress = true },
+                        items = listOf("网站标题", "主域名", "完整域名"),
+                        selectedIndex = settings.addressDisplay.coerceIn(0, 2),
+                        onSelectedIndexChange = { settings.updateAddressDisplay(it) },
                     )
-                    SettingsRow(
+                    OverlayDropdownPreference(
                         title = "标签栏样式",
-                        summary = if (settings.tabsStyle == 1) "卡片显示" else "文字显示",
-                        onClick = { showTabsStyle = true },
+                        items = listOf("文字显示", "卡片显示"),
+                        selectedIndex = settings.tabsStyle.coerceIn(0, 1),
+                        onSelectedIndexChange = { settings.updateTabsStyle(it) },
                     )
                 }
 
@@ -256,6 +231,28 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp + statusTop)
+                    .progressiveTopBar(
+                        backdrop = backdrop,
+                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                    ),
+            ) {
+                SmallTopAppBar(
+                    title = "设置",
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                    defaultWindowInsetsPadding = false,
+                    modifier = Modifier.statusBarsPadding(),
+                )
+            }
+        }
     }
 
     if (showLinkMode) {
@@ -265,24 +262,6 @@ fun SettingsScreen(
             current = settings.linkOpenMode,
             onDismiss = { showLinkMode = false },
         ) { settings.updateLinkOpenMode(it); showLinkMode = false }
-    }
-
-    if (showAddress) {
-        ChoiceDialog(
-            title = "地址栏显示",
-            options = listOf("网站标题", "主域名", "完整域名"),
-            current = settings.addressDisplay,
-            onDismiss = { showAddress = false },
-        ) { settings.updateAddressDisplay(it); showAddress = false }
-    }
-
-    if (showTabsStyle) {
-        ChoiceDialog(
-            title = "标签栏样式",
-            options = listOf("文字显示", "卡片显示"),
-            current = settings.tabsStyle,
-            onDismiss = { showTabsStyle = false },
-        ) { settings.updateTabsStyle(it); showTabsStyle = false }
     }
 
     if (showSearch) {
@@ -297,17 +276,6 @@ fun SettingsScreen(
             onCustom = {
                 settings.updateCustomSearch(it)
                 showSearch = false
-            },
-        )
-    }
-
-    if (showTheme) {
-        ThemeDialog(
-            current = settings.themeMode,
-            onDismiss = { showTheme = false },
-            onPick = {
-                settings.updateThemeMode(it)
-                showTheme = false
             },
         )
     }
@@ -411,25 +379,6 @@ private fun uaSummary(ua: String): String = when {
     ua.isBlank() -> "跟随系统"
     ua == DESKTOP_UA -> "桌面 Chrome"
     else -> ua.take(48) + if (ua.length > 48) "…" else ""
-}
-
-@Composable
-private fun ThemeDialog(current: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    OverlayDialog(show = true, title = "显示模式", onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            listOf("跟随系统", "日间", "夜间").forEachIndexed { index, label ->
-                Text(
-                    text = label + if (index == current) "  ✓" else "",
-                    fontSize = 16.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(index) }
-                        .padding(vertical = 12.dp, horizontal = 6.dp),
-                )
-            }
-        }
-    }
 }
 
 @Composable

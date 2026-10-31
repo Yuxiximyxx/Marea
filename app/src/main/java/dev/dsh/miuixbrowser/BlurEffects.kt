@@ -13,6 +13,7 @@ import top.yukonga.miuix.kmp.blur.drawBackdrop
 import top.yukonga.miuix.kmp.blur.noiseDither
 import top.yukonga.miuix.kmp.blur.progressiveBlur
 import top.yukonga.miuix.kmp.blur.textureBlurEffect
+import top.yukonga.miuix.kmp.blur.highlight.Highlight
 
 /**
  * 顶栏渐进模糊：MIUIX progressiveBlur，方向自上而下。
@@ -28,6 +29,7 @@ fun Modifier.progressiveTopBar(
     endFraction: Float = 1f,
     curve: Float = 1.4f,
     noise: Float = 0.05f,
+    highlight: Highlight? = null,
 ): Modifier = this
     .drawBackdrop(
         backdrop = backdrop,
@@ -40,6 +42,7 @@ fun Modifier.progressiveTopBar(
             )
             noiseDither(noise)
         },
+        highlight = { highlight },
     )
     .background(if (tint == Color.Unspecified) Color.Transparent else tint, shape)
 
@@ -51,6 +54,7 @@ fun Modifier.textureBlurBar(
     tint: Color = Color.Unspecified,
     radius: Float = 22f,
     noise: Float = 0.06f,
+    highlight: Highlight? = null,
 ): Modifier = this
     .drawBackdrop(
         backdrop = backdrop,
@@ -62,5 +66,6 @@ fun Modifier.textureBlurBar(
                 noiseCoefficient = noise,
             )
         },
+        highlight = { highlight },
     )
     .background(if (tint == Color.Unspecified) Color.Transparent else tint, shape)
