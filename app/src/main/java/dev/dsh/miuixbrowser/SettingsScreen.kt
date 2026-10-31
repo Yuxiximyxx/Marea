@@ -135,7 +135,7 @@ fun SettingsScreen(
                             Text("模糊效果", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                "关闭后底栏使用灰度底色",
+                                "关闭后底栏、收藏卡片和页面顶栏不再模糊",
                                 fontSize = 12.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
@@ -231,6 +231,7 @@ fun SettingsScreen(
                     .progressiveTopBar(
                         backdrop = backdrop,
                         tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
+                        enabled = settings.blurEnabled,
                     ),
             ) {
                 SmallTopAppBar(

@@ -45,7 +45,7 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun DownloadsScreen(onBack: () -> Unit) {
+fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val context = LocalContext.current
     val tasks = Downloader.tasks
     val backdrop = rememberLayerBackdrop()
@@ -167,6 +167,7 @@ fun DownloadsScreen(onBack: () -> Unit) {
                     .progressiveTopBar(
                         backdrop = backdrop,
                         tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
+                        enabled = blurEnabled,
                     ),
             ) {
                 SmallTopAppBar(

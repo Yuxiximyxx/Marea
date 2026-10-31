@@ -30,21 +30,26 @@ fun Modifier.progressiveTopBar(
     curve: Float = 1.0f,
     noise: Float = 0.03f,
     highlight: Highlight? = null,
-): Modifier = this
-    .drawBackdrop(
-        backdrop = backdrop,
-        shape = { shape },
-        effects = {
-            progressiveBlur(
-                radius.dp.toPx(),
-                radius.dp.toPx(),
-                ProgressiveBlur(90f, startFraction, endFraction, curve),
-            )
-            noiseDither(noise)
-        },
-        highlight = { highlight },
-    )
-    .background(if (tint == Color.Unspecified) Color.Transparent else tint, shape)
+    enabled: Boolean = true,
+): Modifier {
+    // 关闭模糊时退回纯色顶栏，避免半透明底色透出滚动内容
+    if (!enabled) return background(if (tint == Color.Unspecified) Color.Transparent else tint.copy(alpha = 1f), shape)
+    return this
+        .drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                progressiveBlur(
+                    radius.dp.toPx(),
+                    radius.dp.toPx(),
+                    ProgressiveBlur(90f, startFraction, endFraction, curve),
+                )
+                noiseDither(noise)
+            },
+            highlight = { highlight },
+        )
+        .background(if (tint == Color.Unspecified) Color.Transparent else tint, shape)
+}
 
 /** 静态表面的纹理模糊（主页卡片等，不含 WebView） */
 @Composable

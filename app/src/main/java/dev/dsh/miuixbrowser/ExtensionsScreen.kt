@@ -61,7 +61,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
+fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boolean = true) {
     var editing by remember { mutableStateOf<UserScript?>(null) }
     var creating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
@@ -166,6 +166,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                 .progressiveTopBar(
                     backdrop = backdrop,
                     tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
+                    enabled = blurEnabled,
                 ),
         ) {
             SmallTopAppBar(

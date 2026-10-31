@@ -39,7 +39,7 @@ import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun HistoryScreen(store: HistoryStore, onBack: () -> Unit, onOpen: (String) -> Unit) {
+fun HistoryScreen(store: HistoryStore, onBack: () -> Unit, onOpen: (String) -> Unit, blurEnabled: Boolean = true) {
     val backdrop = rememberLayerBackdrop()
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Scaffold(
@@ -116,6 +116,7 @@ fun HistoryScreen(store: HistoryStore, onBack: () -> Unit, onOpen: (String) -> U
                     .progressiveTopBar(
                         backdrop = backdrop,
                         tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
+                        enabled = blurEnabled,
                     ),
             ) {
                 SmallTopAppBar(

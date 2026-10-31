@@ -763,13 +763,16 @@ fun BrowserScreen(
 
 
         if (showAbout) {
-            AboutScreen(onBack = {
-                showAbout = false
-                if (settingsReturn) {
-                    showSettings = true
-                    settingsReturn = false
-                }
-            })
+            AboutScreen(
+                onBack = {
+                    showAbout = false
+                    if (settingsReturn) {
+                        showSettings = true
+                        settingsReturn = false
+                    }
+                },
+                blurEnabled = settings.blurEnabled,
+            )
         }
 
         pendingDownload?.let { request ->
@@ -852,13 +855,14 @@ fun BrowserScreen(
         }
 
         if (showDownloads) {
-            DownloadsScreen(onBack = { showDownloads = false })
+            DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
         }
 
         if (showExtensions) {
             ExtensionsScreen(
                 store = extensions,
                 onBack = { showExtensions = false },
+                blurEnabled = settings.blurEnabled,
             )
         }
 
@@ -870,6 +874,7 @@ fun BrowserScreen(
                     showHistory = false
                     tab.loadUrl(url)
                 },
+                blurEnabled = settings.blurEnabled,
             )
         }
 
@@ -923,7 +928,7 @@ private fun Modifier.glassBar(
     backdrop: LayerBackdrop? = null,
     blurEnabled: Boolean = true,
 ): Modifier {
-    val dark = isSystemInDarkTheme()
+    val dark = isAppDarkTheme()
     val shape = RoundedCornerShape(corner)
     val base = this
         .shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
@@ -965,7 +970,7 @@ private fun BottomBar(
     onAddressTap: () -> Unit = {},
     editing: Boolean = false,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = isAppDarkTheme()
     val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(29.dp)
     Box(
