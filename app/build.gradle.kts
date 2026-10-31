@@ -31,17 +31,20 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file(System.getenv("MAFARI_KEYSTORE") ?: "mafari-release.jks")
-            storePassword = System.getenv("MAFARI_STORE_PASS") ?: "mafari123"
-            keyAlias = System.getenv("MAFARI_KEY_ALIAS") ?: "mafari"
-            keyPassword = System.getenv("MAFARI_KEY_PASS") ?: "mafari123"
+        val keystorePath = System.getenv("MAFARI_KEYSTORE")
+        if (keystorePath != null && rootProject.file(keystorePath).exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystorePath)
+                storePassword = System.getenv("MAFARI_STORE_PASS")
+                keyAlias = System.getenv("MAFARI_KEY_ALIAS")
+                keyPassword = System.getenv("MAFARI_KEY_PASS")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             optimization {
