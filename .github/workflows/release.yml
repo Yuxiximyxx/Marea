@@ -53,6 +53,9 @@ jobs:
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           MAFARI_KEYSTORE: mafari-release.jks
+          MAFARI_STORE_PASS: ${{ secrets.STORE_PASSWORD }}
+          MAFARI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          MAFARI_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Sign APK
