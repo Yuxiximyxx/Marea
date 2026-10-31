@@ -96,6 +96,8 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -122,6 +124,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Refresh
@@ -175,6 +178,7 @@ fun BrowserScreen(
     var favEditing by remember { mutableStateOf(false) }
     var showFavEditor by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var barRect by remember { mutableStateOf(Rect(0, 0, 1, 1)) }
     var shot by remember { mutableStateOf<ImageBitmap?>(null) }
     var showUaPicker by remember { mutableStateOf(false) }
@@ -493,6 +497,7 @@ fun BrowserScreen(
                 },
                 onBack = { tab.goBack() },
                 onForward = { tab.goForward() },
+                onHome = { tab.goHome() },
                 onCopyAddress = {
                     if (address.isNotBlank()) clipboard.setText(AnnotatedString(address))
                 },
@@ -711,25 +716,17 @@ fun BrowserScreen(
                     showSettings = false
                     showExtensions = true
                 },
+                onOpenAbout = {
+                    settingsReturn = true
+                    showSettings = false
+                    showAbout = true
+                },
             )
         }
 
-        if (showSettings) {
-            SettingsScreen(
-                settings = settings,
-                onBack = { showSettings = false },
-                onPickUa = { showUaPicker = true },
-                onOpenDownloads = {
-                    settingsReturn = true
-                    showSettings = false
-                    showDownloads = true
-                },
-                onOpenScripts = {
-                    settingsReturn = true
-                    showSettings = false
-                    showExtensions = true
-                },
-            )
+
+        if (showAbout) {
+            AboutScreen(onBack = { showAbout = false })
         }
 
         pendingDownload?.let { request ->
@@ -904,6 +901,7 @@ private fun BottomBar(
     loading: Boolean,
     canGoBack: Boolean,
     canGoForward: Boolean,
+    onHome: () -> Unit,
     tabCount: Int,
     onChange: (String) -> Unit,
     onGo: () -> Unit,
@@ -915,6 +913,7 @@ private fun BottomBar(
     onCopyAddress: () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
+    val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(29.dp)
     Box(
         modifier = Modifier
@@ -956,13 +955,22 @@ private fun BottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PressIcon(icon = MiuixIcons.Back, description = "后退", enabled = canGoBack, onClick = onBack)
-            PressIcon(
-                icon = MiuixIcons.Back,
-                description = "前进",
-                enabled = canGoForward,
-                flip = true,
-                onClick = onForward,
-            )
+            if (canGoForward) {
+                PressIcon(
+                    icon = MiuixIcons.Back,
+                    description = "前进",
+                    enabled = true,
+                    flip = true,
+                    onClick = onForward,
+                )
+            } else {
+                PressIcon(
+                    icon = MiuixIcons.Home,
+                    description = "主页",
+                    enabled = true,
+                    onClick = onHome,
+                )
+            }
 
             Row(
                 modifier = Modifier
@@ -975,6 +983,7 @@ private fun BottomBar(
                         indication = null,
                         onClick = {},
                         onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onCopyAddress()
                         },
                     )

@@ -98,80 +98,82 @@ object UserscriptEngine {
 (function(){
   "use strict";
   var META = $metaJson;
-  // ---------- URL 匹配 ----------
-  function escapeRe(s){ return s.replace(/[.*+?${'$'}(){}\[\]\\\/]/g, '\\${'$'}&'); }
-  function wildcard(p, url){
-    if (p === '*') return true;
-    var re = new RegExp('^' + p.split('*').map(escapeRe).join('.*') + '${'$'}');
-    return re.test(url);
+
+  // ---------- URL 匹配（* 任意字符） ----------
+  function globToRe(p){
+    var out = '^';
+    for (var i = 0; i < p.length; i++){
+      var c = p.charAt(i);
+      if (c === '*') { out += '.*'; }
+      else { out += c.replace(/[.*+?^${'$'}(){}|\[\]\\]/g, '\\${'$'}&'); }
+    }
+    return new RegExp(out + '${'$'}');
   }
   function matchUrl(url, matches, includes, excludes){
-    for (var i=0;i<excludes.length;i++){ if (wildcard(excludes[i], url)) return false; }
+    var i;
+    for (i = 0; i < excludes.length; i++){ if (globToRe(excludes[i]).test(url)) return false; }
     if (!matches.length && !includes.length) return false;
-    for (var j=0;j<matches.length;j++){
-      var re = new RegExp('^' + escapeRe(matches[j]).replace(/\\\\\*/g, '.*') + '${'$'}');
-      if (re.test(url)) return true;
-    }
-    for (var k=0;k<includes.length;k++){ if (wildcard(includes[k], url)) return true; }
+    for (i = 0; i < matches.length; i++){ if (globToRe(matches[i]).test(url)) return true; }
+    for (i = 0; i < includes.length; i++){ if (globToRe(includes[i]).test(url)) return true; }
     return false;
   }
-  var M = {
-    match: META.match ? META.match.split('\n').filter(Boolean) : [],
-    include: META.include ? META.include.split('\n').filter(Boolean) : [],
-    exclude: META.exclude ? META.exclude.split('\n').filter(Boolean) : []
-  };
-  if (!matchUrl(location.href, M.match, M.include, M.exclude)) return;
-  if (window.__mafariRan && window.__mafariRan[META.id]) return;
-  (window.__mafariRan = window.__mafariRan || {})[META.id] = 1;
+  function split(s){ return s ? s.split('\n').filter(Boolean) : []; }
+  if (!matchUrl(location.href, split(META.match), split(META.include), split(META.exclude))) return;
+
+  var RAN = window.__mafariRan || (window.__mafariRan = {});
+  if (RAN[META.id]) return;
+  RAN[META.id] = 1;
 
   // ---------- GM API ----------
   var bridge = window.MafariGM || null;
-  var xhrCallbacks = window.__mafariXhrCallbacks = window.__mafariXhrCallbacks || {};
+  var xhrCbs = window.__mafariXhrCallbacks || (window.__mafariXhrCallbacks = {});
   window.__mafariXhrDone = function(reqId, status, text, finalUrl){
-    var cb = xhrCallbacks[reqId];
+    var cb = xhrCbs[reqId];
     if (!cb) return;
-    delete xhrCallbacks[reqId];
-    var resp = { status: status, responseText: text, finalUrl: finalUrl || '', readyState: 4 };
-    try { cb.onload && cb.onload(resp); cb.onreadystatechange && cb.onreadystatechange(resp); } catch(e){}
+    delete xhrCbs[reqId];
+    var resp = { status: status, responseText: text, response: text, finalUrl: finalUrl || '', readyState: 4 };
+    try { if (cb.onload) cb.onload(resp); if (cb.onreadystatechange) cb.onreadystatechange(resp); } catch(e){}
   };
   var GM = {
-    info: { scriptHandler: 'Mafari', version: '3.4.0', script: { name: META.name, id: META.id } },
-    setValue: function(k, v){ try { bridge && bridge.setValue(META.id, k, JSON.stringify(v)); } catch(e){} },
+    info: { scriptHandler: 'Mafari', version: '3.5.0', script: { name: META.name, id: META.id } },
+    setValue: function(k, v){ try { if (bridge) bridge.setValue(META.id, k, JSON.stringify(v)); } catch(e){} },
     getValue: function(k, d){
-      try { var raw = bridge ? bridge.getValue(META.id, k) : null; return raw === null || raw === undefined ? d : JSON.parse(raw); }
-      catch(e){ return d; }
+      try {
+        var raw = bridge ? bridge.getValue(META.id, k) : null;
+        return (raw === null || raw === undefined) ? d : JSON.parse(raw);
+      } catch(e){ return d; }
     },
-    deleteValue: function(k){ try { bridge && bridge.deleteValue(META.id, k); } catch(e){} },
+    deleteValue: function(k){ try { if (bridge) bridge.deleteValue(META.id, k); } catch(e){} },
     listValues: function(){ try { return bridge ? JSON.parse(bridge.listValues(META.id)) : []; } catch(e){ return []; } },
     addStyle: function(css){
-      var s = document.createElement('style'); s.textContent = css;
-      (document.head || document.documentElement).appendChild(s); return s;
+      var st = document.createElement('style');
+      st.textContent = css;
+      (document.head || document.documentElement).appendChild(st);
+      return st;
     },
     xmlHttpRequest: function(details){
-      if (!bridge || !bridge.xhr) { throw new Error('GM_xmlhttpRequest unavailable'); }
+      if (!bridge || !bridge.xhr) throw new Error('GM_xmlhttpRequest unavailable');
       var reqId = META.id + ':' + Math.random().toString(36).slice(2);
-      xhrCallbacks[reqId] = details;
-      bridge.xhr(reqId, META.id, details.url, details.method || 'GET',
-                 JSON.stringify(details.headers || {}), details.data == null ? '' : String(details.data));
+      xhrCbs[reqId] = details;
+      bridge.xhr(reqId, META.id, details.url, (details.method || 'GET'),
+                 JSON.stringify(details.headers || {}),
+                 details.data == null ? '' : String(details.data));
     },
-    notification: function(text, title){
-      try { bridge && bridge.toast(String(title || '') + ' ' + String(text || '')); } catch(e){}
-    },
-    openInTab: function(url){ try { bridge && bridge.openTab(url); } catch(e){} },
+    notification: function(text, title){ try { if (bridge) bridge.toast(String(title || '') + ' ' + String(text || '')); } catch(e){} },
+    openInTab: function(url){ try { if (bridge) bridge.openTab(url); } catch(e){} },
     registerMenuCommand: function(){ return 0; },
     log: function(){ try { console.log.apply(console, arguments); } catch(e){} },
     getResourceText: function(){ return null; }
   };
   var unsafeWindow = window;
-  var sandboxWindow = window;
 
   try {
     (function(GM, unsafeWindow, window){
 $requires
 $body
-    })(GM, unsafeWindow, sandboxWindow);
+    })(GM, unsafeWindow, window);
   } catch (err) {
-    console.error('[Mafari userscript] ' + META.name + ': ' + (err && err.message));
+    try { console.error('[Mafari userscript] ' + META.name + ': ' + (err && err.message)); } catch(e){}
   }
 })();
 """.trimIndent()

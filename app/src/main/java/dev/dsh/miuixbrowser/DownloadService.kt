@@ -133,6 +133,7 @@ class DownloadService : Service() {
         taskId: Long = -1L,
         allowFloat: Boolean = false,
         paused: Boolean = false,
+        ongoing: Boolean = true,
     ): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pending = android.app.PendingIntent.getActivity(
@@ -146,7 +147,8 @@ class DownloadService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(pending)
-            .setOngoing(true)
+            .setOngoing(ongoing)
+            .setAutoCancel(!ongoing)
             .setOnlyAlertOnce(true)
             .setProgress(100, progress, indeterminate)
 
@@ -158,14 +160,20 @@ class DownloadService : Service() {
             }
             builder.addAction(
                 Notification.Action.Builder(
-                    null,
+                    android.graphics.drawable.Icon.createWithResource(
+                        this,
+                        if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                    ),
                     action.second,
                     broadcast(taskId, action.first, 1),
                 ).build(),
             )
             builder.addAction(
                 Notification.Action.Builder(
-                    null,
+                    android.graphics.drawable.Icon.createWithResource(
+                        this,
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                    ),
                     "取消",
                     broadcast(taskId, DownloadActionReceiver.ACTION_CANCEL, 2),
                 ).build(),
@@ -233,7 +241,21 @@ class DownloadService : Service() {
     fun finish(text: String) {
         runCatching {
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, build("下载完成", 100, false, text, text))
+                .notify(
+                    NOTIFICATION_ID,
+                    build("下载完成", 100, false, text, null, -1L, ongoing = false),
+                )
+        }
+        runCatching {
+            stopForeground(STOP_FOREGROUND_DETACH)
+            stopSelf()
+        }
+    }
+
+    fun fail(text: String) {
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, build("下载失败", 0, false, text, null, -1L, ongoing = false))
         }
         runCatching {
             stopForeground(STOP_FOREGROUND_DETACH)

@@ -112,6 +112,7 @@ object Downloader {
                     val message = e.message ?: e.javaClass.simpleName
                     if (attempt >= MAX_ATTEMPTS) {
                         update(id) { it.copy(state = DownloadState.FAILED, error = message) }
+                        DownloadService.instance?.fail("下载失败：$message")
                         return@launch
                     }
                     update(id) { it.copy(error = message) }

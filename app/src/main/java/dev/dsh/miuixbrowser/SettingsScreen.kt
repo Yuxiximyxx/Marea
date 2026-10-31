@@ -65,6 +65,7 @@ fun SettingsScreen(
     onPickUa: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     val context = LocalContext.current
     var showTheme by remember { mutableStateOf(false) }
@@ -226,31 +227,10 @@ fun SettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SettingsRow(
-                        title = "项目地址",
-                        summary = PROJECT_URL,
-                        onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(PROJECT_URL)),
-                                )
-                            }
-                        },
+                        title = "关于 Mafari",
+                        summary = "版本 " + BuildConfig.VERSION_NAME,
+                        onClick = onOpenAbout,
                     )
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Mafari", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "内核 WebView" + (webViewVersion()?.let { " $it" } ?: ""),
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            text = "MIUIX 0.9.4",
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
                 }
             }
     }
@@ -334,7 +314,7 @@ private fun SettingsRow(title: String, summary: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun webViewVersion(): String? {
+internal fun webViewVersion(): String? {
     val context = LocalContext.current
     return remember(context) {
         runCatching { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }.getOrNull()
