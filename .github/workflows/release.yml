@@ -61,39 +61,39 @@ jobs:
 
       - name: Sign APK
         continue-on-error: true
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          set -e
+          set +e
+          mkdir -p dist
           SDK=$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)
-          APK=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
+          SRC=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          echo "release apk: [$SRC]"
+          if [ -z "$SRC" ] || ! "$SDK/aapt2" dump badging "$SRC" >/dev/null 2>&1; then
+            echo "release 包缺失或结构无效，改用 debug 包"
+            SRC=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
           fi
-          if ! "$SDK/aapt2" dump badging "$APK" >/dev/null 2>&1; then
-            echo "release apk 结构无效，改用 debug 包"
-            cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          fi
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            "$SDK/zipalign" -f 4 "$APK" aligned.apk
+          echo "source apk: [$SRC]"
+          if [ -z "$SRC" ]; then echo "没有可签名的 APK"; exit 0; fi
+          cp "$SRC" dist/mafari-release-raw.apk
+          cp "$SRC" dist/app-release.apk
+          if [ -n "$STORE_PASSWORD" ] && [ -f mafari-release.jks ]; then
+            "$SDK/zipalign" -f 4 dist/mafari-release-raw.apk dist/mafari-aligned.apk
             "$SDK/apksigner" sign --ks mafari-release.jks \
               --ks-pass "pass:$STORE_PASSWORD" \
               --key-pass "pass:$KEY_PASSWORD" \
               --ks-key-alias "$KEY_ALIAS" \
-              --out app/build/outputs/apk/release/mafari-release-signed.apk aligned.apk
-            echo "SIGNED=app/build/outputs/apk/release/mafari-release-signed.apk" >> "$GITHUB_ENV"
-          else
-            echo "SIGNED=$APK" >> "$GITHUB_ENV"
+              --out dist/mafari-release-signed.apk dist/mafari-aligned.apk
           fi
+          rm -f dist/mafari-release-raw.apk dist/mafari-aligned.apk
+          ls -lh dist
 
       - name: Collect APKs
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/*.apk dist/ 2>/dev/null || true
-          cp app/build/outputs/apk/release/*.apk dist/ 2>/dev/null || true
           ls -lh dist
 
       - name: Upload artifacts
