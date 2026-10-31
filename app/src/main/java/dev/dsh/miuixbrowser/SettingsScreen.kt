@@ -141,10 +141,10 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("柔光玻璃", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
+                            Text("模糊效果", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                "底栏与卡片使用高斯模糊",
+                                "关闭后底栏使用灰度底色",
                                 fontSize = 12.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )

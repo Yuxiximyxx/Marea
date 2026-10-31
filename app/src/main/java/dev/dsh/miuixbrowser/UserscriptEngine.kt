@@ -169,6 +169,16 @@ object UserscriptEngine {
   window.GM_registerMenuCommand = GM.registerMenuCommand;
   window.GM_log = GM.log;
   window.GM_getResourceText = GM.getResourceText;
+  window.GM_getResourceURL = function(){ return ''; };
+  window.GM_download = function(o){ try { if (bridge) bridge.openTab(o && o.url ? o.url : String(o)); } catch(e){} };
+  window.GM_setClipboard = function(t){ try { navigator.clipboard.writeText(String(t)); } catch(e){} };
+  window.GM_unregisterMenuCommand = function(){};
+  window.GM_addValueChangeListener = function(){ return 0; };
+  window.GM_removeValueChangeListener = function(){};
+  window.GM_getTab = function(cb){ try { cb && cb({}); } catch(e){} };
+  window.GM_saveTab = function(){};
+  window.GM_getTabs = function(cb){ try { cb && cb([]); } catch(e){} };
+  window.GM_cookie = { list: function(){ return {}; }, set: function(){}, delete: function(){} };
 
   try {
     (function(GM, unsafeWindow, window){

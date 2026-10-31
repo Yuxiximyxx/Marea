@@ -156,6 +156,7 @@ fun BrowserScreen(
     val menuOrder = remember { MenuOrderStore(context) }
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // 从其他应用点进来的链接：新开标签页
     LaunchedEffect(initialUrl) {
@@ -198,7 +199,10 @@ fun BrowserScreen(
 
     LaunchedEffect(tab.id, settings.searchTemplate) {
         tab.searchTemplate = settings.searchTemplate
-        tab.onPullRefresh = { tab.webView.reload() }
+        tab.onPullRefresh = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            tab.webView.reload()
+        }
         tab.onUserScriptLink = { url -> pendingScript = url }
         tab.onDownload = { url, ua, disposition, mime ->
             pendingDownload = DownloadRequest(
@@ -243,7 +247,10 @@ fun BrowserScreen(
 
     LaunchedEffect(tab.id, settings.searchTemplate) {
         tab.searchTemplate = settings.searchTemplate
-        tab.onPullRefresh = { tab.webView.reload() }
+        tab.onPullRefresh = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            tab.webView.reload()
+        }
         tab.onUserScriptLink = { url -> pendingScript = url }
         tab.onDownload = { url, ua, disposition, mime ->
             pendingDownload = DownloadRequest(
@@ -515,6 +522,7 @@ fun BrowserScreen(
                         address = tab.url
                     }
                 },
+                editing = editing,
                 onShare = {
                     if (tab.url.isNotBlank()) {
                         runCatching {
@@ -932,6 +940,7 @@ private fun BottomBar(
     onMore: () -> Unit,
     onCopyAddress: () -> Unit,
     onAddressTap: () -> Unit = {},
+    editing: Boolean = false,
 ) {
     val dark = isSystemInDarkTheme()
     val haptic = LocalHapticFeedback.current
@@ -962,9 +971,9 @@ private fun BottomBar(
                 .clip(shape)
                 .background(
                     brush = if (dark) {
-                        Brush.verticalGradient(listOf(Color(0xB0232326), Color(0x9E141416)))
+                        Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
                     } else {
-                        Brush.verticalGradient(listOf(Color(0xB8FFFFFF), Color(0xA8F1F2F6)))
+                        Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
                     },
                 ),
         )
@@ -1019,6 +1028,8 @@ private fun BottomBar(
                     value = address,
                     onChange = onChange,
                     onGo = onGo,
+                    editing = editing,
+                    onStartEdit = onAddressTap,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -1161,6 +1172,8 @@ private fun AddressField(
     value: String,
     onChange: (String) -> Unit,
     onGo: () -> Unit,
+    editing: Boolean = true,
+    onStartEdit: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val color = MiuixTheme.colorScheme.onSurface
@@ -1182,6 +1195,18 @@ private fun AddressField(
             keyboardActions = KeyboardActions(onGo = { onGo() }),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (!editing) {
+            // 未编辑时盖一层透明点击区，点一下立刻切到完整网址
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onStartEdit,
+                    ),
+            )
+        }
     }
 }
 
