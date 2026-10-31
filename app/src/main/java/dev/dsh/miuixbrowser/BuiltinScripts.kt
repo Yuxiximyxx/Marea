@@ -7,6 +7,8 @@ data class BuiltinScript(
     val code: String,
     /** 去广告规则订阅源；为空则只使用内置规则 */
     val subscriptionUrl: String = "",
+    /** 直接是 .user.js 的订阅地址 */
+    val userScriptUrl: String = "",
 )
 
 const val ADBLOCK_SCRIPT_NAME = "全网查询去广告规则集"
@@ -93,5 +95,11 @@ val BUILTIN_SCRIPTS = listOf(
         description = "订阅 AdGuard 中文过滤规则（EasyList China + AdGuard Chinese），拉取后转换为本地规则；网络不可用时回落到内置规则",
         code = ADBLOCK_RULES_JS,
         subscriptionUrl = AdblockRules.BUILTIN_SUBSCRIPTION,
+    ),
+    BuiltinScript(
+        name = "Adblock4limbo",
+        description = "limbopro/Adblock4limbo 的通用去广告脚本，添加后随页面加载注入",
+        code = "",
+        userScriptUrl = "https://github.com/limbopro/Adblock4limbo/raw/refs/heads/main/Adguard/Adblock4limbo.user.js",
     ),
 )

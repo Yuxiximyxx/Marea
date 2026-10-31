@@ -93,47 +93,82 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
         ) {
             val subscriptions = store.items.filter { it.subscriptionUrl.isNotBlank() }
             val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
-            val builtinMissing = subscriptions.none { it.subscriptionUrl == AdblockRules.BUILTIN_SUBSCRIPTION }
+            val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
+                store.items.none { item ->
+                    (builtin.subscriptionUrl.isNotBlank() &&
+                        (item.subscriptionUrl == builtin.subscriptionUrl || item.sourceUrl == builtin.subscriptionUrl)) ||
+                        (builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl)
+                }
+            }
             LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
-                if (builtinMissing || subscriptions.isNotEmpty()) {
+                if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
                     item {
                         SmallTitle(text = "内置脚本")
                     }
-                    if (builtinMissing) {
-                        item {
-                            BuiltinScriptCard(BUILTIN_SCRIPTS.first()) { builtin ->
-                                if (!busy) {
-                                    busy = true
-                                    scope.launch {
-                                        val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            fetchScript(builtin.subscriptionUrl)
-                                        }
-                                        val converted = text?.let {
-                                            if (AdblockRules.looksLikeFilterList(it)) {
-                                                AdblockRules.convert(it, builtin.subscriptionUrl)
+                    items(missingBuiltins.size) { index ->
+                        val builtin = missingBuiltins[index]
+                        BuiltinScriptCard(builtin) {
+                            if (!busy) {
+                                busy = true
+                                scope.launch {
+                                    when {
+                                        builtin.subscriptionUrl.isNotBlank() -> {
+                                            val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                fetchScript(builtin.subscriptionUrl)
+                                            }
+                                            val converted = text?.let {
+                                                if (AdblockRules.looksLikeFilterList(it)) {
+                                                    AdblockRules.convert(it, builtin.subscriptionUrl)
+                                                } else {
+                                                    null
+                                                }
+                                            }
+                                            if (converted != null) {
+                                                store.add(
+                                                    converted.name,
+                                                    converted.code,
+                                                    sourceUrl = builtin.subscriptionUrl,
+                                                    subscriptionUrl = builtin.subscriptionUrl,
+                                                )
+                                                android.widget.Toast.makeText(context, "已订阅 " + converted.name, android.widget.Toast.LENGTH_SHORT).show()
                                             } else {
-                                                null
+                                                store.add(
+                                                    builtin.name,
+                                                    builtin.code,
+                                                    sourceUrl = builtin.subscriptionUrl,
+                                                    subscriptionUrl = builtin.subscriptionUrl,
+                                                )
+                                                android.widget.Toast.makeText(context, "订阅源不可用，已添加内置规则", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
-                                        if (converted != null) {
-                                            store.add(
-                                                converted.name,
-                                                converted.code,
-                                                sourceUrl = builtin.subscriptionUrl,
-                                                subscriptionUrl = builtin.subscriptionUrl,
-                                            )
-                                            android.widget.Toast.makeText(context, "已订阅 " + converted.name, android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            store.add(
-                                                builtin.name,
-                                                builtin.code,
-                                                sourceUrl = builtin.subscriptionUrl,
-                                                subscriptionUrl = builtin.subscriptionUrl,
-                                            )
-                                            android.widget.Toast.makeText(context, "订阅源不可用，已添加内置规则", android.widget.Toast.LENGTH_SHORT).show()
+                                        builtin.userScriptUrl.isNotBlank() -> {
+                                            val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                fetchScript(builtin.userScriptUrl)
+                                            }
+                                            if (code != null) {
+                                                val converted = if (AdblockRules.looksLikeFilterList(code)) {
+                                                    AdblockRules.convert(code, builtin.userScriptUrl)
+                                                } else {
+                                                    null
+                                                }
+                                                if (converted != null) {
+                                                    store.add(
+                                                        converted.name,
+                                                        converted.code,
+                                                        sourceUrl = builtin.userScriptUrl,
+                                                        subscriptionUrl = builtin.userScriptUrl,
+                                                    )
+                                                } else {
+                                                    store.add("", code, sourceUrl = builtin.userScriptUrl)
+                                                }
+                                                android.widget.Toast.makeText(context, "已添加 " + builtin.name, android.widget.Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                android.widget.Toast.makeText(context, "下载失败，检查网络", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
                                         }
-                                        busy = false
+                                        else -> store.add(builtin.name, builtin.code)
                                     }
+                                    busy = false
                                 }
                             }
                         }
@@ -562,7 +597,7 @@ private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> U
             }
             Spacer(Modifier.width(8.dp))
             TextButton(
-                text = "订阅",
+                text = if (script.subscriptionUrl.isNotBlank()) "订阅" else "添加",
                 onClick = { onAdd(script) },
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 minHeight = 30.dp,

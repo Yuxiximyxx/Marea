@@ -138,7 +138,7 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private enum class Sheet { None, Tabs, Menu, Link }
+private enum class Sheet { None, Tabs, Menu, Link, Image, Element }
 
 private data class DownloadRequest(
     val url: String,
@@ -182,6 +182,8 @@ fun BrowserScreen(
 
     var sheet by remember { mutableStateOf(Sheet.None) }
     var linkUrl by remember { mutableStateOf("") }
+    var imageUrl by remember { mutableStateOf("") }
+    var elementHit by remember { mutableStateOf<BrowserTab.ElementHit?>(null) }
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
@@ -227,6 +229,16 @@ fun BrowserScreen(
         tab.onLongPressLink = { link ->
             linkUrl = link
             sheet = Sheet.Link
+        }
+        tab.onLongPressImage = { url ->
+            imageUrl = url
+            sheet = Sheet.Image
+        }
+        tab.onLongPressElement = { x, y ->
+            tab.describeElementAt(x, y) { hit ->
+                elementHit = hit
+                sheet = if (hit == null) Sheet.None else Sheet.Element
+            }
         }
         editing = false
         barHidden = false
@@ -732,6 +744,56 @@ fun BrowserScreen(
                 SheetRow(title = "在外部浏览器打开") {
                     sheet = Sheet.None
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(linkUrl))) }
+                }
+            }
+
+            Sheet.Image -> SheetScaffold(title = "图片", onDismiss = { sheet = Sheet.None }) {
+                SheetRow(title = "保存图片", subtitle = hostOf(imageUrl)) {
+                    sheet = Sheet.None
+                    pendingDownload = DownloadRequest(
+                        url = imageUrl,
+                        userAgent = null,
+                        fileName = Downloader.fileNameFrom(imageUrl, null),
+                        mime = null,
+                    )
+                }
+                SheetRow(title = "复制图片地址") {
+                    sheet = Sheet.None
+                    clipboard.setText(AnnotatedString(imageUrl))
+                }
+                SheetRow(title = "在新标签页打开") {
+                    sheet = Sheet.None
+                    state.newTabInBackground(imageUrl)
+                    state.select(state.tabs.lastIndex)
+                }
+            }
+
+            Sheet.Element -> SheetScaffold(title = "页面元素", onDismiss = { sheet = Sheet.None }) {
+                val hit = elementHit
+                if (hit != null) {
+                    if (hit.imageUrl.isNotBlank()) {
+                        SheetRow(title = "保存图片", subtitle = hostOf(hit.imageUrl)) {
+                            sheet = Sheet.None
+                            pendingDownload = DownloadRequest(
+                                url = hit.imageUrl,
+                                userAgent = null,
+                                fileName = Downloader.fileNameFrom(hit.imageUrl, null),
+                                mime = null,
+                            )
+                        }
+                    }
+                    SheetRow(
+                        title = "标记为广告并移除",
+                        subtitle = "记住这条规则，下次访问该站点自动隐藏",
+                    ) {
+                        sheet = Sheet.None
+                        UserAdRules.add(context, hostOf(tab.url), hit.selector)
+                        tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
+                    }
+                    SheetRow(title = "仅移除该元素") {
+                        sheet = Sheet.None
+                        tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
+                    }
                 }
             }
 
@@ -1436,6 +1498,11 @@ private fun SheetRow(
         trailing?.invoke()
     }
 }
+
+/** 按选择器移除页面元素（长按菜单用） */
+private fun removeElementJs(selector: String): String =
+    "(function(){try{var el=document.querySelector(" + org.json.JSONObject.quote(selector) +
+        ");if(el){el.style.setProperty('display','none','important');el.remove();}}catch(e){}})();"
 
 /* ------------------------------ 主页 ------------------------------ */
 

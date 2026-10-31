@@ -75,6 +75,12 @@ class BrowserTab(private val appContext: Context) {
     /** 长按链接时由界面挂上回调。 */
     var onLongPressLink: ((String) -> Unit)? = null
 
+    /** 长按图片 */
+    var onLongPressImage: ((String) -> Unit)? = null
+
+    /** 长按普通元素：回传 CSS 像素坐标 */
+    var onLongPressElement: ((Float, Float) -> Unit)? = null
+
     /** 用户脚本扩展（页面加载完后注入） */
     var userScripts: List<UserScript> = emptyList()
 
@@ -158,6 +164,7 @@ class BrowserTab(private val appContext: Context) {
                 onVisited?.invoke(url, title)
 
                 injectDocumentEndScripts(view)
+                injectUserAdRules(view, pageUrl)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -210,10 +217,14 @@ class BrowserTab(private val appContext: Context) {
         val pullThresholdPx = webView.context.resources.displayMetrics.xdpi / 2.54f * 4f
         var touchDownY = 0f
         var pulled = 0f
+        var lastTouchX = 0f
+        var lastTouchY = 0f
         webView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     touchDownY = event.y
+                    lastTouchX = event.x
+                    lastTouchY = event.y
                     pulled = 0f
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
@@ -235,16 +246,77 @@ class BrowserTab(private val appContext: Context) {
 
         webView.setOnLongClickListener {
             val result = webView.hitTestResult
-            val isLink = result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
-                result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
-            val link = result.extra
-            if (isLink && !link.isNullOrEmpty()) {
-                onLongPressLink?.invoke(link)
-                true
-            } else {
-                false
+            val extra = result.extra
+            when {
+                (result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
+                    result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) && !extra.isNullOrEmpty() -> {
+                    onLongPressLink?.invoke(extra)
+                    true
+                }
+                result.type == WebView.HitTestResult.IMAGE_TYPE && !extra.isNullOrEmpty() -> {
+                    onLongPressImage?.invoke(extra)
+                    true
+                }
+                else -> {
+                    val density = webView.resources.displayMetrics.density
+                    onLongPressElement?.invoke(lastTouchX / density, lastTouchY / density)
+                    true
+                }
             }
         }
+    }
+
+    data class ElementHit(val tag: String, val imageUrl: String, val selector: String)
+
+    /** 查询长按位置的元素，返回标签、图片地址与可用于广告标记的 CSS 选择器。 */
+    fun describeElementAt(x: Float, y: Float, onResult: (ElementHit?) -> Unit) {
+        val js = """(function(){
+  var el = document.elementFromPoint($x, $y);
+  if (!el) return 'null';
+  var img = el.tagName === 'IMG' ? (el.currentSrc || el.src || '') : '';
+  if (!img && el.querySelector) { var i = el.querySelector('img'); if (i) img = i.currentSrc || i.src || ''; }
+  var sel = '';
+  try {
+    if (el.id) { sel = '#' + CSS.escape(el.id); }
+    else {
+      var parts = []; var cur = el;
+      while (cur && cur.nodeType === 1 && parts.length < 4) {
+        var p = cur.tagName.toLowerCase();
+        var cls = (typeof cur.className === 'string' ? cur.className : '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+        for (var k = 0; k < cls.length; k++) { p += '.' + CSS.escape(cls[k]); }
+        var parent = cur.parentElement;
+        if (parent) { p += ':nth-child(' + (Array.prototype.indexOf.call(parent.children, cur) + 1) + ')'; }
+        parts.unshift(p); cur = parent;
+      }
+      sel = parts.join(' > ');
+    }
+  } catch (e) { sel = ''; }
+  return JSON.stringify({tag: el.tagName, img: img, sel: sel});
+})()"""
+        webView.evaluateJavascript(js) { raw ->
+            val hit = runCatching {
+                val text = org.json.JSONTokener(raw).nextValue() as? String ?: return@runCatching null
+                val obj = org.json.JSONObject(text)
+                ElementHit(
+                    tag = obj.optString("tag"),
+                    imageUrl = obj.optString("img"),
+                    selector = obj.optString("sel"),
+                )
+            }.getOrNull()
+            onResult(hit)
+        }
+    }
+
+    /** 把用户「标记为广告」记住的选择器注入当前页 */
+    private fun injectUserAdRules(view: WebView, pageUrl: String?) {
+        val host = pageUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return
+        val selectors = UserAdRules.selectors(appContext, host)
+        if (selectors.isEmpty()) return
+        val css = selectors.joinToString(",") + "{display:none!important}"
+        val js = "(function(){try{var s=document.createElement('style');s.textContent=" +
+            org.json.JSONObject.quote(css) +
+            ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();"
+        view.evaluateJavascript(js, null)
     }
 
     /** 用 AndroidX WebKit 的 addDocumentStartJavaScript 注入 @run-at document-start 脚本 */

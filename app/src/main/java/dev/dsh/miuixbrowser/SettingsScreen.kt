@@ -1,11 +1,13 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalContext
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -34,9 +38,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -45,6 +52,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -393,19 +402,39 @@ private fun SearchSheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             SEARCH_ENGINES.forEachIndexed { index, engine ->
-                Text(
-                    text = engine.name,
-                    fontSize = 16.sp,
-                    color = if (index == current) {
-                        MiuixTheme.colorScheme.primary
-                    } else {
-                        MiuixTheme.colorScheme.onSurface
-                    },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onPick(index) }
-                        .padding(vertical = 12.dp),
-                )
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val icon = rememberSearchIcon(engine.iconUrl)
+                    if (icon != null) {
+                        Image(
+                            bitmap = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = engine.name,
+                        fontSize = 16.sp,
+                        color = if (index == current) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurface
+                        },
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             TextField(

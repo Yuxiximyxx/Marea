@@ -109,13 +109,13 @@ class AppSettings(context: Context) {
     }
 }
 
-data class SearchEngine(val name: String, val template: String)
+data class SearchEngine(val name: String, val template: String, val iconUrl: String = "")
 
 val SEARCH_ENGINES = listOf(
-    SearchEngine("百度", "https://www.baidu.com/s?wd=%s"),
-    SearchEngine("必应", "https://www.bing.com/search?q=%s"),
-    SearchEngine("Google", "https://www.google.com/search?q=%s"),
-    SearchEngine("DuckDuckGo", "https://duckduckgo.com/?q=%s"),
+    SearchEngine("百度", "https://www.baidu.com/s?wd=%s", "https://www.baidu.com/favicon.ico"),
+    SearchEngine("必应", "https://www.bing.com/search?q=%s", "https://www.bing.com/favicon.ico"),
+    SearchEngine("Google", "https://www.google.com/search?q=%s", "https://www.google.com/favicon.ico"),
+    SearchEngine("DuckDuckGo", "https://duckduckgo.com/?q=%s", "https://duckduckgo.com/favicon.ico"),
 )
 
 data class UaPreset(val name: String, val value: String)
