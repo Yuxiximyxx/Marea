@@ -57,7 +57,9 @@ jobs:
           MAFARI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           MAFARI_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          gradle :app:assembleRelease --no-daemon --stacktrace || echo 'release build failed, fallback to debug apk'
+          gradle :app:assembleRelease --no-daemon --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
+            || echo 'release build failed, fallback to debug apk'
 
       - name: Sign APK
         continue-on-error: true
