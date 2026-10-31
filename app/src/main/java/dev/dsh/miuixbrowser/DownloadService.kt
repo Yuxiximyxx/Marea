@@ -58,11 +58,11 @@ class DownloadService : Service() {
         Settings.System.getInt(contentResolver, "notification_focus_protocol", 0)
     }.getOrDefault(0)
 
-    private fun islandJson(name: String, percent: Int, text: String): String {
+    private fun islandJson(name: String, percent: Int, text: String, allowFloat: Boolean): String {
         val param = JSONObject()
             .put("protocol", 1)
             .put("business", "download")
-            .put("enableFloat", true)
+            .put("enableFloat", allowFloat)
             .put("updatable", true)
             .put("ticker", "下载中 $percent%")
             .put("aodTitle", "下载中 $percent%")
@@ -130,6 +130,9 @@ class DownloadService : Service() {
         indeterminate: Boolean,
         text: String,
         islandName: String? = null,
+        taskId: Long = -1L,
+        allowFloat: Boolean = false,
+        paused: Boolean = false,
     ): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pending = android.app.PendingIntent.getActivity(
@@ -146,13 +149,35 @@ class DownloadService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setProgress(100, progress, indeterminate)
+
+        if (taskId > 0L) {
+            val action = if (paused) {
+                DownloadActionReceiver.ACTION_RESUME to "继续"
+            } else {
+                DownloadActionReceiver.ACTION_PAUSE to "暂停"
+            }
+            builder.addAction(
+                Notification.Action.Builder(
+                    null,
+                    action.second,
+                    broadcast(taskId, action.first, 1),
+                ).build(),
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    null,
+                    "取消",
+                    broadcast(taskId, DownloadActionReceiver.ACTION_CANCEL, 2),
+                ).build(),
+            )
+        }
         val notification = builder.build()
-        // 只在「开始下载」这一次带岛参数，进度更新不再注入，避免岛反复弹出
-        if (islandName != null && !islandShown && islandProtocol() >= 3) {
+        // 岛参数每次带上（这样岛上能看到进度），但只有第一次允许浮出
+        if (islandName != null && islandProtocol() >= 3) {
             runCatching {
                 notification.extras.putString(
                     "miui.focus.param",
-                    islandJson(islandName, progress, text),
+                    islandJson(islandName, progress, text, allowFloat && !islandShown),
                 )
                 notification.extras.putString("miui.focus.business", "download")
                 islandShown = true
@@ -161,23 +186,49 @@ class DownloadService : Service() {
         return notification
     }
 
-    /** 开始下载：这里才带岛参数 */
-    fun showStart(name: String) {
+    /** 开始下载：允许岛浮出一次 */
+    fun showStart(name: String, taskId: Long) {
         islandShown = false
         runCatching {
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, build("正在下载", 0, true, name, name))
+                .notify(
+                    NOTIFICATION_ID,
+                    build("正在下载", 0, true, name, name, taskId, allowFloat = true),
+                )
             islandShown = true
         }
     }
 
-    /** 进度更新：普通通知，不再上岛 */
-    fun update(name: String, progress: Float, text: String) {
+    /** 进度更新：同步刷新岛内容（不浮出） */
+    fun update(name: String, progress: Float, text: String, taskId: Long) {
         runCatching {
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, build(name, (progress * 100).toInt(), false, text, null))
+                .notify(
+                    NOTIFICATION_ID,
+                    build(name, (progress * 100).toInt(), false, text, name, taskId),
+                )
         }
     }
+
+    fun updatePaused(name: String, progress: Float, taskId: Long) {
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                .notify(
+                    NOTIFICATION_ID,
+                    build("已暂停", (progress * 100).toInt(), false, name, name, taskId, paused = true),
+                )
+        }
+    }
+
+    private fun broadcast(taskId: Long, action: String, requestCode: Int): android.app.PendingIntent =
+        android.app.PendingIntent.getBroadcast(
+            this,
+            requestCode,
+            android.content.Intent(this, DownloadActionReceiver::class.java)
+                .setAction(action)
+                .putExtra(DownloadActionReceiver.EXTRA_ID, taskId),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
     fun finish(text: String) {
         runCatching {

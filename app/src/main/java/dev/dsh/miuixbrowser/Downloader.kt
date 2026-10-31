@@ -59,13 +59,18 @@ object Downloader {
         val task = DownloadTask(name = fileName, url = url, userAgent = userAgent, mime = mimeType)
         tasks.add(0, task)
         DownloadService.start(context)
-        DownloadService.instance?.showStart(fileName)
+        DownloadService.instance?.showStart(fileName, task.id)
         launch(context, task.id)
     }
 
     fun pause(id: Long) {
         jobs.remove(id)?.cancel()
         update(id) { it.copy(state = DownloadState.PAUSED) }
+        val task = tasks.firstOrNull { it.id == id }
+        if (task != null) {
+            val progress = progressOf(task)
+            DownloadService.instance?.updatePaused(task.name, progress, id)
+        }
     }
 
     fun resume(context: Context, id: Long) {
@@ -172,6 +177,7 @@ object Downloader {
                                 task.name,
                                 progress,
                                 "${(progress * 100).toInt()}% · ${sizeText(written)}",
+                                id,
                             )
                         }
                     }
@@ -276,6 +282,7 @@ object Downloader {
                                             task.name,
                                             (written.toFloat() / total).coerceIn(0f, 1f),
                                             "${(written * 100 / total)}% · ${sizeText(written)}",
+                                            id,
                                         )
                                     }
                                 }
