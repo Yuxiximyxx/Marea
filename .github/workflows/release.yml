@@ -31,11 +31,14 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Accept Android SDK licenses
+      - name: Install Android SDK packages
         run: |
-          if [ -n "$ANDROID_HOME" ] && [ -d "$ANDROID_HOME/cmdline-tools" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          fi
+          set -x
+          SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          echo "sdkmanager=$SDKMANAGER ANDROID_HOME=$ANDROID_HOME"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          yes | "$SDKMANAGER" "platform-tools" "platforms;android-37.0" "build-tools;36.0.0" 2>&1 | tail -5 || true
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" 
 
       - name: Build
         run: gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
