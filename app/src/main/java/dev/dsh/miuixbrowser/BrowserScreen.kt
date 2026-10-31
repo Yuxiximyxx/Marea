@@ -926,34 +926,15 @@ private fun Modifier.glassBar(
             color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
             shape = shape,
         )
-    // WebView 表面做 drawBackdrop 采样会导致闪烁/崩溃，先禁用，改用半透明底色
-    return if (false) {
-        base
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { shape },
-                effects = {
-                    textureBlurEffect(
-                        blurRadiusX = 28.dp.toPx(),
-                        blurRadiusY = 28.dp.toPx(),
-                        noiseCoefficient = 0.06f,
-                    )
-                },
-            )
-            .background(
-                if (dark) Color(0x66202022) else Color(0x59FFFFFF),
-                shape,
-            )
-    } else {
-        base.background(
-            brush = if (dark) {
-                Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
-            } else {
-                Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
-            },
-            shape = shape,
-        )
-    }
+    // WebView 表面做 backdrop 采样会闪烁/崩溃，这里只用半透明底色
+    return base.background(
+        brush = if (dark) {
+            Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
+        },
+        shape = shape,
+    )
 }
 
 @Composable
