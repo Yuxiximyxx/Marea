@@ -195,7 +195,11 @@ fun SettingsScreen(
                     )
                     SettingsRow(
                         title = "外部链接打开方式",
-                        summary = if (settings.linkOpenMode == 1) "交给其他浏览器" else "在应用内打开",
+                        summary = when (settings.linkOpenMode) {
+                            1 -> "自定义标签页 (Custom Tabs)"
+                            2 -> "其他浏览器"
+                            else -> "应用内打开"
+                        },
                         onClick = { showLinkMode = true },
                     )
                     SettingsRow(
@@ -238,7 +242,7 @@ fun SettingsScreen(
     if (showLinkMode) {
         ChoiceDialog(
             title = "外部链接打开方式",
-            options = listOf("在应用内打开", "交给其他浏览器"),
+            options = listOf("应用内打开", "自定义标签页 (Custom Tabs)", "其他浏览器"),
             current = settings.linkOpenMode,
             onDismiss = { showLinkMode = false },
         ) { settings.updateLinkOpenMode(it); showLinkMode = false }

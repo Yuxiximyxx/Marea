@@ -336,6 +336,14 @@ fun BrowserScreen(
 
     BackHandler {
         when {
+            // 子页面：先回设置页（关于 / 脚本 / 下载一致）
+            showAbout -> {
+                showAbout = false
+                if (settingsReturn) {
+                    showSettings = true
+                    settingsReturn = false
+                }
+            }
             showExtensions && settingsReturn -> {
                 showExtensions = false
                 showSettings = true

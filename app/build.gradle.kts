@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 66
-        versionName = "3.5.2"
+        versionCode = 67
+        versionName = "3.6.0"
     }
 
     buildFeatures {
@@ -76,4 +76,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.webkit:webkit:1.14.0")
+    implementation("androidx.browser:browser:1.8.0")
 }

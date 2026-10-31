@@ -36,11 +36,21 @@ class MainActivity : ComponentActivity() {
         val scheme = data.scheme?.lowercase() ?: return
         if (scheme != "http" && scheme != "https") return
         val settings = AppSettings(this)
-        if (settings.linkOpenMode == 1) {
-            forwardToOtherBrowser(data)
-        } else {
-            incomingUrl.value = data.toString()
+        when (settings.linkOpenMode) {
+            1 -> openWithCustomTab(data)
+            2 -> forwardToOtherBrowser(data)
+            else -> incomingUrl.value = data.toString()
         }
+    }
+
+    /** Chrome 自定义标签页 */
+    private fun openWithCustomTab(uri: Uri) {
+        runCatching {
+            val intent = androidx.browser.customtabs.CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .build()
+            intent.launchUrl(this, uri)
+        }.onFailure { incomingUrl.value = uri.toString() }
     }
 
     /** 设置里选了「交给其他浏览器」时，弹出选择器并排除自己 */

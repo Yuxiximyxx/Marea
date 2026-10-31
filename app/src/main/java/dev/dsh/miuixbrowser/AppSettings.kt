@@ -17,7 +17,7 @@ class AppSettings(context: Context) {
         private set
 
     fun updateLinkOpenMode(mode: Int) {
-        linkOpenMode = mode.coerceIn(0, 1)
+        linkOpenMode = mode.coerceIn(0, 2)
         prefs.edit().putInt(KEY_LINK_MODE, linkOpenMode).apply()
     }
 

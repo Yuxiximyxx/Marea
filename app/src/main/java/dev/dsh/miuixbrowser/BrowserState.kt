@@ -265,6 +265,7 @@ class BrowserTab(private val appContext: Context) {
             }
         }
         installedScriptsSignature = signature
+        Diag.log("userscript: document-start handlers=${scriptHandlers.size}")
     }
 
     /** 页面加载完成后注入 document-end / document-idle 脚本 */
@@ -285,6 +286,8 @@ class BrowserTab(private val appContext: Context) {
                 view.evaluateJavascript(UserscriptEngine.buildSource(script), null)
             }
         }
+        val matchedCount = userScripts.count { it.enabled && it.runAt != "document-start" }
+        Diag.log("userscript: page=$pageUrl end-scripts=$matchedCount")
     }
 
     private fun syncNav() {
