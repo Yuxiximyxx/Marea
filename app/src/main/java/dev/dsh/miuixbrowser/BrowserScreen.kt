@@ -926,7 +926,8 @@ private fun Modifier.glassBar(
             color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
             shape = shape,
         )
-    return if (blurEnabled && backdrop != null) {
+    // WebView 表面做 drawBackdrop 采样会导致闪烁/崩溃，先禁用，改用半透明底色
+    return if (false) {
         base
             .drawBackdrop(
                 backdrop = backdrop,
