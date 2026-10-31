@@ -1,0 +1,92 @@
+package dev.dsh.miuixbrowser
+
+import android.graphics.Color
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        installCrashLogger()
+        dev.dsh.miuixbrowser.Diag.init(this)
+        dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
+
+        // 全屏沉浸：内容画到状态栏和手势小白条下面，小白条保留可见。
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        @Suppress("DEPRECATION")
+        window.statusBarColor = Color.TRANSPARENT
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
+
+        setContent {
+            val context = LocalContext.current
+            val settings = remember { AppSettings(context) }
+            val systemDark = isSystemInDarkTheme()
+            val dark = when (settings.themeMode) {
+                1 -> false
+                2 -> true
+                else -> systemDark
+            }
+            val view = LocalView.current
+            SideEffect {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !dark
+                controller.isAppearanceLightNavigationBars = !dark
+            }
+            val mode = when (settings.themeMode) {
+                1 -> ColorSchemeMode.Light
+                2 -> ColorSchemeMode.Dark
+                else -> ColorSchemeMode.System
+            }
+            val themeController = remember(mode) { ThemeController(mode) }
+            MiuixTheme(controller = themeController) {
+                BrowserScreen(settings)
+            }
+        }
+    }
+
+    /** 把未捕获异常写到应用外部目录，方便没有 adb 时排查。 */
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                val dir = externalMediaDirs.firstOrNull() ?: getExternalFilesDir(null) ?: filesDir
+                dir.mkdirs()
+                val file = java.io.File(dir, "crash.txt")
+                file.writeText(
+                    buildString {
+                        appendLine("time=" + java.util.Date())
+                        appendLine("thread=" + thread.name)
+                        appendLine(error.toString())
+                        error.stackTraceToString().lines().take(80).forEach { appendLine(it) }
+                    },
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
+    }
+}
