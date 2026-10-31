@@ -62,7 +62,9 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import androidx.compose.ui.graphics.Color
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -124,24 +126,12 @@ fun SettingsScreen(
                         summary = if (settings.wallpaper.isBlank()) "未设置" else "已设置",
                         onClick = { showWallpaper = true },
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("模糊效果", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                "关闭后底栏、收藏卡片和页面顶栏不再模糊",
-                                fontSize = 12.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                        Switch(checked = settings.blurEnabled, onCheckedChange = { settings.updateBlur(it) })
-                    }
+                    SwitchPreference(
+                        title = "模糊效果",
+                        summary = "关闭后底栏、收藏卡片和页面顶栏不再模糊",
+                        checked = settings.blurEnabled,
+                        onCheckedChange = { settings.updateBlur(it) },
+                    )
                 }
 
                 SmallTitle(text = "布局")
@@ -302,25 +292,11 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsRow(title: String, summary: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(3.dp))
-            Text(summary, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, maxLines = 1)
-        }
-        Icon(
-            imageVector = MiuixIcons.ChevronForward,
-            contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-    }
+    ArrowPreference(
+        title = title,
+        summary = summary,
+        onClick = onClick,
+    )
 }
 
 @Composable

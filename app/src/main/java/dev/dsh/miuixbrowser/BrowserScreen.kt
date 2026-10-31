@@ -1694,7 +1694,7 @@ private fun UaDialog(
         title = "自定义 UA",
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             UA_PRESETS.forEach { preset ->
                 Text(
                     text = preset.name,
