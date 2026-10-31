@@ -726,7 +726,13 @@ fun BrowserScreen(
 
 
         if (showAbout) {
-            AboutScreen(onBack = { showAbout = false })
+            AboutScreen(onBack = {
+                showAbout = false
+                if (settingsReturn) {
+                    showSettings = true
+                    settingsReturn = false
+                }
+            })
         }
 
         pendingDownload?.let { request ->

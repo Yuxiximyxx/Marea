@@ -71,8 +71,8 @@ jobs:
           SDK=$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)
           SRC=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
           echo "release apk: [$SRC]"
-          if [ -z "$SRC" ] || ! "$SDK/aapt2" dump badging "$SRC" >/dev/null 2>&1; then
-            echo "release 包缺失或结构无效，改用 debug 包"
+          if [ -z "$SRC" ]; then
+            echo "release 包缺失，改用 debug 包"
             SRC=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
           fi
           echo "source apk: [$SRC]"

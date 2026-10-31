@@ -112,7 +112,7 @@ object UserscriptEngine {
   function matchUrl(url, matches, includes, excludes){
     var i;
     for (i = 0; i < excludes.length; i++){ if (globToRe(excludes[i]).test(url)) return false; }
-    if (!matches.length && !includes.length) return false;
+    if (!matches.length && !includes.length) return true; // 没有声明匹配规则：全站执行
     for (i = 0; i < matches.length; i++){ if (globToRe(matches[i]).test(url)) return true; }
     for (i = 0; i < includes.length; i++){ if (globToRe(includes[i]).test(url)) return true; }
     return false;

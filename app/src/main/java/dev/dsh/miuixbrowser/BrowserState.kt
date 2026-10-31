@@ -277,7 +277,8 @@ class BrowserTab(private val appContext: Context) {
             if (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) {
                 UserscriptEngine.matchesUrl(meta, pageUrl)
             } else {
-                script.matches(pageUrl)
+                // 没有元数据匹配规则时：脚本自带 match 为空则全站执行
+                if (script.match.isBlank()) true else script.matches(pageUrl)
             }
         }.forEach { script ->
             runCatching {
@@ -287,7 +288,8 @@ class BrowserTab(private val appContext: Context) {
     }
 
     private fun syncNav() {
-        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome
+        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome ||
+            (url.isEmpty() && savedUrl.isNotBlank())
         canGoForward = runCatching { webView.canGoForward() }.getOrDefault(false)
     }
 
@@ -352,7 +354,10 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /** 回主页 */
+    private var savedUrl: String = ""
+
     fun goHome() {
+        savedUrl = url
         fromHome = false
         url = ""
         errorText = null
@@ -361,6 +366,13 @@ class BrowserTab(private val appContext: Context) {
     }
 
     fun goBack() {
+        // 从主页返回：恢复刚才那页（WebView 没销毁，直接还原状态即可）
+        if (url.isEmpty() && savedUrl.isNotBlank()) {
+            url = savedUrl
+            savedUrl = ""
+            syncNav()
+            return
+        }
         if (webView.canGoBack()) {
             webView.goBack()
         } else if (fromHome) {
