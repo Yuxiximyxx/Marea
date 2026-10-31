@@ -119,6 +119,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -872,17 +873,16 @@ fun BrowserScreen(
             )
         }
 
-        if (showUaPicker) {
-            UaDialog(
-                initial = settings.userAgent,
-                onDismiss = { showUaPicker = false },
-                onConfirm = {
-                    settings.updateUserAgent(it)
-                    state.applyUserAgent(it)
-                    showUaPicker = false
-                },
-            )
-        }
+        UaDialog(
+            show = showUaPicker,
+            initial = settings.userAgent,
+            onDismiss = { showUaPicker = false },
+            onConfirm = {
+                settings.updateUserAgent(it)
+                state.applyUserAgent(it)
+                showUaPicker = false
+            },
+        )
 
         if (showFind) {
             FindDialog(
@@ -1678,15 +1678,15 @@ private fun FavoriteEditor(
 /** UA 选择：预设 + 自定义 */
 @Composable
 private fun UaDialog(
+    show: Boolean,
     initial: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var custom by remember(initial) { mutableStateOf(initial) }
-    OverlayDialog(
-        show = true,
+    var custom by remember(show) { mutableStateOf(initial) }
+    OverlayBottomSheet(
+        show = show,
         title = "自定义 UA",
-        summary = "留空则跟随系统 WebView",
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

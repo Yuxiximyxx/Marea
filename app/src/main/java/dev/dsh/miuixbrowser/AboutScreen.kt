@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,7 @@ fun AboutScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .layerBackdrop(backdrop)
+                .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(top = statusTop + 56.dp)
@@ -135,6 +137,7 @@ fun AboutScreen(onBack: () -> Unit) {
         ) {
             SmallTopAppBar(
                 title = "关于",
+                color = Color.Transparent,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")

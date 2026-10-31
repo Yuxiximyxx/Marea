@@ -60,6 +60,8 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
+import androidx.compose.ui.graphics.Color
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -74,7 +76,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var showSearch by remember { mutableStateOf(false) }
-    var showLinkMode by remember { mutableStateOf(false) }
+    var showWallpaper by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -119,16 +121,9 @@ fun SettingsScreen(
                     )
                     SettingsRow(
                         title = "主页壁纸",
-                        summary = if (settings.wallpaper.isBlank()) "未设置" else "已设置（点按更换）",
-                        onClick = { picker.launch(arrayOf("image/*")) },
+                        summary = if (settings.wallpaper.isBlank()) "未设置" else "已设置",
+                        onClick = { showWallpaper = true },
                     )
-                    if (settings.wallpaper.isNotBlank()) {
-                        TextButton(
-                            text = "清除壁纸",
-                            onClick = { settings.updateWallpaper("") },
-                            modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
-                        )
-                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -187,14 +182,11 @@ fun SettingsScreen(
                         summary = uaSummary(settings.userAgent),
                         onClick = onPickUa,
                     )
-                    SettingsRow(
+                    OverlayDropdownPreference(
                         title = "外部链接打开方式",
-                        summary = when (settings.linkOpenMode) {
-                            1 -> "自定义标签页 (Custom Tabs)"
-                            2 -> "其他浏览器"
-                            else -> "应用内打开"
-                        },
-                        onClick = { showLinkMode = true },
+                        items = listOf("应用内打开", "自定义标签页 (Custom Tabs)", "其他浏览器"),
+                        selectedIndex = settings.linkOpenMode.coerceIn(0, 2),
+                        onSelectedIndexChange = { settings.updateLinkOpenMode(it) },
                     )
                     SettingsRow(
                         title = "下载",
@@ -243,6 +235,7 @@ fun SettingsScreen(
             ) {
                 SmallTopAppBar(
                     title = "设置",
+                    color = Color.Transparent,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
@@ -255,29 +248,54 @@ fun SettingsScreen(
         }
     }
 
-    if (showLinkMode) {
-        ChoiceDialog(
-            title = "外部链接打开方式",
-            options = listOf("应用内打开", "自定义标签页 (Custom Tabs)", "其他浏览器"),
-            current = settings.linkOpenMode,
-            onDismiss = { showLinkMode = false },
-        ) { settings.updateLinkOpenMode(it); showLinkMode = false }
-    }
+    SearchSheet(
+        show = showSearch,
+        current = settings.searchIndex,
+        custom = settings.customSearch,
+        onDismiss = { showSearch = false },
+        onPick = {
+            settings.updateSearch(it)
+            showSearch = false
+        },
+        onCustom = {
+            settings.updateCustomSearch(it)
+            showSearch = false
+        },
+    )
 
-    if (showSearch) {
-        SearchDialog(
-            current = settings.searchIndex,
-            custom = settings.customSearch,
-            onDismiss = { showSearch = false },
-            onPick = {
-                settings.updateSearch(it)
-                showSearch = false
-            },
-            onCustom = {
-                settings.updateCustomSearch(it)
-                showSearch = false
-            },
-        )
+    if (showWallpaper) {
+        OverlayDialog(
+            show = true,
+            title = "主页壁纸",
+            onDismissRequest = { showWallpaper = false },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "选择壁纸",
+                    fontSize = 16.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showWallpaper = false
+                            picker.launch(arrayOf("image/*"))
+                        }
+                        .padding(horizontal = 6.dp, vertical = 12.dp),
+                )
+                Text(
+                    text = "清除壁纸",
+                    fontSize = 16.sp,
+                    color = MiuixTheme.colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showWallpaper = false
+                            settings.updateWallpaper("")
+                        }
+                        .padding(horizontal = 6.dp, vertical = 12.dp),
+                )
+            }
+        }
     }
 }
 
@@ -382,28 +400,37 @@ private fun uaSummary(ua: String): String = when {
 }
 
 @Composable
-private fun SearchDialog(
+private fun SearchSheet(
+    show: Boolean,
     current: Int,
     custom: String,
     onDismiss: () -> Unit,
     onPick: (Int) -> Unit,
     onCustom: (String) -> Unit,
 ) {
-    var text by remember { mutableStateOf(custom) }
-    OverlayDialog(show = true, title = "搜索引擎", onDismissRequest = onDismiss) {
+    var text by remember(show) { mutableStateOf(custom) }
+    OverlayBottomSheet(
+        show = show,
+        title = "搜索引擎",
+        onDismissRequest = onDismiss,
+    ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             SEARCH_ENGINES.forEachIndexed { index, engine ->
                 Text(
-                    text = engine.name + if (index == current) "  ✓" else "",
-                    fontSize = 15.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
+                    text = engine.name,
+                    fontSize = 16.sp,
+                    color = if (index == current) {
+                        MiuixTheme.colorScheme.primary
+                    } else {
+                        MiuixTheme.colorScheme.onSurface
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onPick(index) }
-                        .padding(vertical = 10.dp, horizontal = 6.dp),
+                        .padding(vertical = 12.dp),
                 )
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             TextField(
                 value = text,
                 onValueChange = { text = it },
@@ -411,38 +438,13 @@ private fun SearchDialog(
                 label = "自定义（用 %s 代表关键词）",
                 singleLine = true,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             TextButton(
                 text = "保存自定义",
                 onClick = { onCustom(text) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
             )
-        }
-    }
-}
-
-@Composable
-private fun ChoiceDialog(
-    title: String,
-    options: List<String>,
-    current: Int,
-    onDismiss: () -> Unit,
-    onPick: (Int) -> Unit,
-) {
-    OverlayDialog(show = true, title = title, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            options.forEachIndexed { index, label ->
-                Text(
-                    text = label + if (index == current) "  ✓" else "",
-                    fontSize = 15.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(index) }
-                        .padding(vertical = 11.dp, horizontal = 6.dp),
-                )
-            }
         }
     }
 }

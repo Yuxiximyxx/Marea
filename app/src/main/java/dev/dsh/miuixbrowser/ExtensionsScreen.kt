@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +54,8 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -63,30 +69,18 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val backdrop = rememberLayerBackdrop()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "脚本",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconTextAction(
-                        icon = MiuixIcons.Download,
-                        label = "导入",
-                        modifier = Modifier.padding(end = 6.dp),
-                    ) { importing = true }
-                },
-            )
-        },
-    ) { padding ->
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+    ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .layerBackdrop(backdrop)
+                .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding(),
         ) {
             if (store.items.isEmpty()) {
@@ -94,11 +88,15 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                     text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier
+                        .padding(top = statusTop + 56.dp)
+                        .padding(24.dp),
                 )
             } else {
-                SmallTitle(text = "已安装脚本")
-                LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
+                    item {
+                        SmallTitle(text = "已安装脚本")
+                    }
                     items(store.items.size) { index ->
                         val script = store.items[index]
                         Card(
@@ -157,6 +155,36 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit) {
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp + statusTop)
+                .progressiveTopBar(
+                    backdrop = backdrop,
+                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                ),
+        ) {
+            SmallTopAppBar(
+                title = "脚本",
+                color = Color.Transparent,
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconTextAction(
+                        icon = MiuixIcons.Download,
+                        label = "导入",
+                        modifier = Modifier.padding(end = 6.dp),
+                    ) { importing = true }
+                },
+                defaultWindowInsetsPadding = false,
+                modifier = Modifier.statusBarsPadding(),
+            )
+        }
+
         // 右下圆形添加按钮
         Box(
             modifier = Modifier
