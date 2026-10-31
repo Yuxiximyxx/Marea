@@ -286,8 +286,11 @@ class BrowserTab(private val appContext: Context) {
                 view.evaluateJavascript(UserscriptEngine.buildSource(script), null)
             }
         }
-        val matchedCount = userScripts.count { it.enabled && it.runAt != "document-start" }
-        Diag.log("userscript: page=$pageUrl end-scripts=$matchedCount")
+        val matched = userScripts.filter { script ->
+            script.enabled && script.runAt != "document-start" &&
+                UserscriptEngine.matchesUrl(UserscriptEngine.parse(script.code), pageUrl)
+        }
+        Diag.log("userscript: page=$pageUrl matched=${matched.size}/${userScripts.size}")
     }
 
     private fun syncNav() {

@@ -49,33 +49,22 @@ object UserscriptEngine {
         )
     }
 
-    /** 把 @match 通配符转成正则 */
-    private fun matchPatternToRegex(pattern: String): Regex {
-        val escaped = Regex.escape(pattern)
-            .replace("\\*", ".*")
-            .replace("\\\\", "\\")
-        return Regex("^$escaped$")
+    /** 通配符转正则：只有 * 是通配，其余字符全部转义 */
+    private fun globToRegex(pattern: String): Regex {
+        val sb = StringBuilder("^")
+        pattern.forEach { c ->
+            if (c == '*') sb.append(".*") else sb.append(Regex.escape(c.toString()))
+        }
+        sb.append("$")
+        return Regex(sb.toString())
     }
 
     fun matchesUrl(meta: UserscriptMeta, url: String): Boolean {
         if (url.isBlank()) return false
-        if (meta.excludes.any { wildcardMatch(it, url) }) return false
-        if (meta.matches.isEmpty() && meta.includes.isEmpty()) return false
-        if (meta.matches.any { matchPatternToRegex(it).matches(url) }) return true
-        return meta.includes.any { wildcardMatch(it, url) }
-    }
-
-    private fun wildcardMatch(pattern: String, url: String): Boolean {
-        if (pattern == "*") return true
-        val regex = buildString {
-            append("^")
-            pattern.split("*").forEachIndexed { index, part ->
-                if (index > 0) append(".*")
-                append(Regex.escape(part))
-            }
-            append("$")
-        }
-        return runCatching { Regex(regex).matches(url) }.getOrDefault(false)
+        if (meta.excludes.any { globToRegex(it).matches(url) }) return false
+        if (meta.matches.isEmpty() && meta.includes.isEmpty()) return true
+        if (meta.matches.any { globToRegex(it).matches(url) }) return true
+        return meta.includes.any { globToRegex(it).matches(url) }
     }
 
     /** 生成注入用的完整源码：运行时再判断 URL，命中才执行 */
