@@ -134,6 +134,8 @@ git push -u origin main
 | `KEY_ALIAS` | `mafari` |
 | `KEY_PASSWORD` | key 口令（同上） |
 
+> 没配签名 Secrets 时，工作流只发布 debug 包（仍然可直接安装），不会失败。
+
 ### 3. 打 tag 自动发布
 
 ```bash
