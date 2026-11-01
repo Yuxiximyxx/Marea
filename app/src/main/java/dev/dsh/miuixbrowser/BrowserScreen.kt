@@ -578,7 +578,7 @@ fun BrowserScreen(
                         )
                     }
                     .graphicsLayer {
-                        translationY = hide * 210.dp.toPx()
+                        translationY = hide * (size.height + 96.dp.toPx())
                         alpha = 1f - 0.9f * hide
                         val s = 1f - 0.08f * hide
                         scaleX = s
@@ -641,37 +641,8 @@ fun BrowserScreen(
             }
         }
 
-        // 隐藏底栏后不再显示小横条；底边保留透明触控区，点击或上滑可恢复。
-        if (barHidden && sheet == Sheet.None && !editing) {
-            var restoreDrag by remember(tab.id) { mutableFloatStateOf(0f) }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .zIndex(10f)
-                    .fillMaxWidth()
-                    // 覆盖到底部手势区域，避免只在导航栏上方留下过窄的恢复热区。
-                    .height(80.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { barHidden = false },
-                    )
-                    .pointerInput(tab.id) {
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { change, dragAmount ->
-                                restoreDrag += dragAmount
-                                if (restoreDrag < -8f) {
-                                    barHidden = false
-                                    restoreDrag = 0f
-                                    change.consume()
-                                }
-                            },
-                            onDragEnd = { restoreDrag = 0f },
-                            onDragCancel = { restoreDrag = 0f },
-                        )
-                    },
-            )
-        }
+        // 隐藏时不设置底部透明恢复热区，避免拦截网页底部的正常点击。
+        // 仅由上方 WebView 的下拉滚动（scrollY 减小）恢复底栏。
 
         // ---- 弹层 ----
         when (sheet) {
@@ -1153,9 +1124,9 @@ private fun Modifier.glassBar(
             Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
         }
         blurEnabled -> if (dark) {
-            Brush.verticalGradient(listOf(Color(0xC82B2B31), Color(0xB51A1A20)))
+            Brush.verticalGradient(listOf(Color(0xE82B2B31), Color(0xDC1A1A20)))
         } else {
-            Brush.verticalGradient(listOf(Color(0xC8FFFFFF), Color(0xBDE7EAF0)))
+            Brush.verticalGradient(listOf(Color(0xE8FFFFFF), Color(0xDCE7EAF0)))
         }
         else -> Brush.verticalGradient(
             listOf(
