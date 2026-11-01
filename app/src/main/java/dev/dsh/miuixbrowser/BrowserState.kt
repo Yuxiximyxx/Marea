@@ -337,6 +337,18 @@ class BrowserTab(private val appContext: Context) {
         view.evaluateJavascript(js, null)
     }
 
+    /** 把用户「标记为广告」记住的选择器注入当前页 */
+    private fun injectUserAdRules(view: WebView, pageUrl: String?) {
+        val host = pageUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return
+        val selectors = UserAdRules.selectors(appContext, host)
+        if (selectors.isEmpty()) return
+        val css = selectors.joinToString(",") + "{display:none!important}"
+        val js = "(function(){try{var s=document.createElement('style');s.textContent=" +
+            org.json.JSONObject.quote(css) +
+            ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();"
+        view.evaluateJavascript(js, null)
+    }
+
     /** 用 AndroidX WebKit 的 addDocumentStartJavaScript 注入 @run-at document-start 脚本 */
     private fun installDocumentStartScripts() {
         if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
