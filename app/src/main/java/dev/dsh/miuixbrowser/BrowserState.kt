@@ -309,7 +309,7 @@ class BrowserTab(private val appContext: Context) {
     if (pos !== 'fixed' && pos !== 'absolute') return false;
     var cls = (typeof el.className === 'string') ? el.className : '';
     var key = (cls + ' ' + (el.id || '')).toLowerCase();
-    if (/ad|advert|banner|popup|float|modal|overlay|mask|sponsor/.test(key)) return true;
+    if (/(^|[\s_-])(ad|ads|advert|banner|popup|float|modal|overlay|mask|sponsor)([\s_-]|$)/.test(key)) return true;
     var r = el.getBoundingClientRect();
     return r.width > innerWidth * 0.5 && r.height > innerHeight * 0.25;
   }
@@ -330,15 +330,15 @@ class BrowserTab(private val appContext: Context) {
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false;
     clearTimeout(timer);
     timer = setTimeout(function(){ if (!moved) fire(el); }, 520);
-  }, true);
+  }, { capture: true, passive: true });
   document.addEventListener('touchmove', function(e){
     if (!e.touches.length) return;
     if (Math.abs(e.touches[0].clientX - sx) > 12 || Math.abs(e.touches[0].clientY - sy) > 12) {
       moved = true; clearTimeout(timer);
     }
-  }, true);
-  document.addEventListener('touchend', function(){ clearTimeout(timer); }, true);
-  document.addEventListener('touchcancel', function(){ clearTimeout(timer); }, true);
+  }, { capture: true, passive: true });
+  document.addEventListener('touchend', function(){ clearTimeout(timer); }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', function(){ clearTimeout(timer); }, { capture: true, passive: true });
 })();"""
         view.evaluateJavascript(js, null)
     }

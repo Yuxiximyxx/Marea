@@ -318,13 +318,9 @@ fun BrowserScreen(
     val statusBarHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
         WindowInsets.statusBars.getTop(this).toDp()
     }
-    val animatedTopPadding by animateDpAsState(
-        targetValue = if (barHidden) 0.dp else statusBarHeight,
-        animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
-        label = "statusInset",
-    )
-    // 弹簧会过冲到负值，padding 不允许负数
-    val contentTopPadding = animatedTopPadding.coerceAtLeast(0.dp)
+    // 固定状态栏留白：滚动时不再改变 WebView 高度，
+    // 否则页面用 % / vh 计算高度的弹层会被反复 resize 影响
+    val contentTopPadding = statusBarHeight
 
     val hide by animateFloatAsState(
         targetValue = if (barHidden && sheet == Sheet.None) 1f else 0f,
