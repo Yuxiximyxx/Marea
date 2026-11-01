@@ -544,34 +544,65 @@ fun BrowserScreen(
             }
         }
 
-        // ---- 底部：地址栏 + 工具栏，滚动时整体下沉收起 ----
-        Column(
+        // ---- 底部：地址栏 + 工具栏 ----
+        // 根据地址文本长度动态调整宽度，并使用弹簧动画平滑过渡。
+        BoxWithConstraints(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp)
-                .padding(bottom = 8.dp)
-                .onGloballyPositioned { coords ->
-                    val bounds = coords.boundsInWindow()
-                    barRect = Rect(
-                        bounds.left.toInt(),
-                        bounds.top.toInt(),
-                        bounds.right.toInt(),
-                        bounds.bottom.toInt(),
-                    )
-                }
-                .graphicsLayer {
-                    translationY = hide * 210.dp.toPx()
-                    alpha = 1f - 0.9f * hide
-                    val s = 1f - 0.08f * hide
-                    scaleX = s
-                    scaleY = s
-                    transformOrigin = TransformOrigin(0.5f, 0.5f)
-                },
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(bottom = 8.dp),
         ) {
+            val targetBarWidth = minOf(
+                maxWidth,
+                (260.dp + address.length.coerceAtMost(80).dp * 1.8f).coerceIn(260.dp, 440.dp),
+            )
+            val animatedBarWidth by animateDpAsState(
+                targetValue = targetBarWidth,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
+                label = "dynamicBottomBarWidth",
+            )
+            var dragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(animatedBarWidth)
+                    .onGloballyPositioned { coords ->
+                        val bounds = coords.boundsInWindow()
+                        barRect = Rect(
+                            bounds.left.toInt(),
+                            bounds.top.toInt(),
+                            bounds.right.toInt(),
+                            bounds.bottom.toInt(),
+                        )
+                    }
+                    // 在底栏上向下滑动即可主动收起。
+                    .pointerInput(tab.id, barHidden) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, dragAmount ->
+                                dragDistance += dragAmount
+                                if (dragDistance > 26f && !barHidden) {
+                                    barHidden = true
+                                    change.consume()
+                                }
+                            },
+                            onDragEnd = { dragDistance = 0f },
+                            onDragCancel = { dragDistance = 0f },
+                        )
+                    }
+                    .graphicsLayer {
+                        translationY = hide * 210.dp.toPx()
+                        alpha = 1f - 0.9f * hide
+                        val s = 1f - 0.08f * hide
+                        scaleX = s
+                        scaleY = s
+                        transformOrigin = TransformOrigin(0.5f, 0.5f)
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             BottomBar(
                 blurEnabled = settings.blurEnabled,
                 shot = shot,
@@ -622,6 +653,38 @@ fun BrowserScreen(
                 onTabs = { sheet = Sheet.Tabs },
                 onMore = { sheet = Sheet.Menu },
             )
+            }
+        }
+
+        // 隐藏状态下保留底部手势柄，点击或向上滑动即可恢复底栏。
+        if (barHidden && sheet == Sheet.None && !editing) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 5.dp)
+                    .size(width = 76.dp, height = 25.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.72f))
+                    .clickable { barHidden = false }
+                    .pointerInput(tab.id) {
+                        detectVerticalDragGestures { change, dragAmount ->
+                            if (dragAmount < -5f) {
+                                barHidden = false
+                                change.consume()
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(3.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
+                )
+            }
         }
 
         // ---- 弹层 ----
