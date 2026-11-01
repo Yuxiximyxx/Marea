@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.widthIn
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -177,6 +176,8 @@ fun BrowserScreen(
     val extensions = remember { ExtensionStore(context) }
     val history = remember { HistoryStore(context) }
     val tab = state.activeTab
+    // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
+    val homeBlurAvailable = tab.url.isEmpty() && !tab.loading
     val clipboard = LocalClipboardManager.current
     val focus = LocalFocusManager.current
 
@@ -373,7 +374,13 @@ fun BrowserScreen(
     ) { _ ->
     Box(modifier = Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         // 采集网页 / 首页内容，供外部的 MIUIX 玻璃底栏取样。底栏本身不能放进采集层。
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(browserBackdrop)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // MIUIX backdrop 仅在主页采集 Compose 内容；网页状态不采集 WebView，
+                // 避免 AndroidView / SurfaceView 与 RuntimeShader 组合时出现闪烁或崩溃。
+                .then(if (homeBlurAvailable) Modifier.layerBackdrop(browserBackdrop) else Modifier),
+        ) {
 
         // ---- 首页壁纸：铺满全屏，盖住状态栏 ----
         if (tab.url.isEmpty() && wallpaperBitmap != null) {
@@ -514,12 +521,14 @@ fun BrowserScreen(
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 8.dp)
                 .padding(bottom = 8.dp),
         ) {
+            // 主页提示语也要有足够空间；长网址则继续扩展到屏幕可用宽度。
+            val minBarWidth = minOf(360.dp, maxWidth)
             val targetBarWidth = minOf(
                 maxWidth,
-                (260.dp + address.length.coerceAtMost(80).dp * 1.8f).coerceIn(260.dp, 440.dp),
+                (360.dp + address.length.coerceAtMost(120).dp * 1.55f).coerceAtLeast(minBarWidth),
             )
             val animatedBarWidth by animateDpAsState(
                 targetValue = targetBarWidth,
@@ -558,6 +567,7 @@ fun BrowserScreen(
             ) {
             BottomBar(
                 blurEnabled = settings.blurEnabled,
+                textureBlurEnabled = homeBlurAvailable,
                 backdrop = browserBackdrop,
                 address = address,
                 loading = tab.loading,
@@ -609,40 +619,45 @@ fun BrowserScreen(
             }
         }
 
-        // 隐藏状态下保留底部手势柄，点击或向上滑动即可恢复底栏。
+        // 隐藏底栏后不再显示小横条；底边保留透明触控区，点击或上滑可恢复。
         if (barHidden && sheet == Sheet.None && !editing) {
+            var restoreDrag by remember(tab.id) { mutableFloatStateOf(0f) }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(bottom = 5.dp)
-                    .size(width = 76.dp, height = 25.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.72f))
-                    .clickable { barHidden = false }
+                    .height(48.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { barHidden = false },
+                    )
                     .pointerInput(tab.id) {
-                        detectVerticalDragGestures { change, dragAmount ->
-                            if (dragAmount < -5f) {
-                                barHidden = false
-                                change.consume()
-                            }
-                        }
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, dragAmount ->
+                                restoreDrag += dragAmount
+                                if (restoreDrag < -8f) {
+                                    barHidden = false
+                                    restoreDrag = 0f
+                                    change.consume()
+                                }
+                            },
+                            onDragEnd = { restoreDrag = 0f },
+                            onDragCancel = { restoreDrag = 0f },
+                        )
                     },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(28.dp)
-                        .height(3.dp)
-                        .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
-                )
-            }
+            )
         }
 
         // ---- 弹层 ----
         when (sheet) {
-            Sheet.Tabs -> SheetScaffold(title = "", onDismiss = { sheet = Sheet.None }) {
+            Sheet.Tabs -> SheetScaffold(
+                title = "",
+                onDismiss = { sheet = Sheet.None },
+                backdrop = browserBackdrop,
+                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+            ) {
                 if (settings.tabsStyle == 1) {
                     // 卡片显示
                     Column(
@@ -738,7 +753,12 @@ fun BrowserScreen(
                 )
             }
 
-            Sheet.Menu -> SheetScaffold(title = "", onDismiss = { sheet = Sheet.None }) {
+            Sheet.Menu -> SheetScaffold(
+                title = "",
+                onDismiss = { sheet = Sheet.None },
+                backdrop = browserBackdrop,
+                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+            ) {
                 MenuGrid(
                     labelFor = { action ->
                         if (action == MenuAction.Desktop) {
@@ -797,7 +817,12 @@ fun BrowserScreen(
                 )
             }
 
-            Sheet.Link -> SheetScaffold(title = hostOf(linkUrl), onDismiss = { sheet = Sheet.None }) {
+            Sheet.Link -> SheetScaffold(
+                title = hostOf(linkUrl),
+                onDismiss = { sheet = Sheet.None },
+                backdrop = browserBackdrop,
+                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+            ) {
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
                     tab.loadUrl(linkUrl)
@@ -817,7 +842,12 @@ fun BrowserScreen(
                 }
             }
 
-            Sheet.Image -> SheetScaffold(title = "图片", onDismiss = { sheet = Sheet.None }) {
+            Sheet.Image -> SheetScaffold(
+                title = "图片",
+                onDismiss = { sheet = Sheet.None },
+                backdrop = browserBackdrop,
+                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+            ) {
                 val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
                 SheetRow(
                     title = "保存图片",
@@ -854,7 +884,12 @@ fun BrowserScreen(
                 }
             }
 
-            Sheet.Element -> SheetScaffold(title = "页面元素", onDismiss = { sheet = Sheet.None }) {
+            Sheet.Element -> SheetScaffold(
+                title = "页面元素",
+                onDismiss = { sheet = Sheet.None },
+                backdrop = browserBackdrop,
+                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+            ) {
                 val hit = elementHit
                 if (hit != null) {
                     if (hit.imageUrl.isNotBlank()) {
@@ -1075,10 +1110,12 @@ private fun Modifier.glassBar(
     backdrop: LayerBackdrop,
     corner: Dp,
     blurEnabled: Boolean = true,
+    textureBlurEnabled: Boolean = true,
 ): Modifier {
     val dark = isAppDarkTheme()
     val shape = RoundedCornerShape(corner)
-    val canUseTextureBlur = blurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val canUseTextureBlur = blurEnabled && textureBlurEnabled &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     val tint = if (dark) {
         Brush.verticalGradient(listOf(Color(0xA82A2A2E), Color(0x981A1A1C)))
     } else {
@@ -1112,6 +1149,7 @@ private fun Modifier.glassBar(
 @Composable
 private fun BottomBar(
     blurEnabled: Boolean = true,
+    textureBlurEnabled: Boolean = true,
     backdrop: LayerBackdrop,
     address: String,
     loading: Boolean,
@@ -1141,7 +1179,12 @@ private fun BottomBar(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .glassBar(backdrop = backdrop, corner = 29.dp, blurEnabled = blurEnabled),
+                .glassBar(
+                    backdrop = backdrop,
+                    corner = 29.dp,
+                    blurEnabled = blurEnabled,
+                    textureBlurEnabled = textureBlurEnabled,
+                ),
         )
         Row(
             modifier = Modifier
@@ -1452,8 +1495,19 @@ private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
 private fun SheetScaffold(
     title: String,
     onDismiss: () -> Unit,
+    backdrop: LayerBackdrop? = null,
+    textureBlurEnabled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val sheetShape = RoundedCornerShape(28.dp)
+    val darkSheet = isAppDarkTheme()
+    val sheetTint = if (darkSheet) {
+        Brush.verticalGradient(listOf(Color(0xD92A2A2E), Color(0xD91A1A1C)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xDFFFFFFF), Color(0xD9E8E9EC)))
+    }
+    val canBlurSheet = textureBlurEnabled && backdrop != null &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     // 弹出后 220ms 内吞掉触摸，避免「打开它的那一次点击」把弹层立刻关掉
     var armed by remember { mutableStateOf(false) }
     var entered by remember { mutableStateOf(false) }
@@ -1511,12 +1565,26 @@ private fun SheetScaffold(
                 .padding(horizontal = 12.dp)
                 .padding(bottom = 10.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(MiuixTheme.colorScheme.surface)
+                .shadow(elevation = 12.dp, shape = sheetShape, clip = false)
+                .then(
+                    if (canBlurSheet) {
+                        Modifier.textureBlur(
+                            backdrop = backdrop!!,
+                            shape = sheetShape,
+                            blurRadius = 24f,
+                            noiseCoefficient = 0.0045f,
+                            enabled = true,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                .clip(sheetShape)
+                .background(sheetTint, sheetShape)
                 .border(
                     width = 1.dp,
-                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-                    shape = RoundedCornerShape(28.dp),
+                    color = if (darkSheet) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.72f),
+                    shape = sheetShape,
                 )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
