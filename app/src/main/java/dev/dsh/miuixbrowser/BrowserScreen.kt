@@ -1,11 +1,7 @@
 package dev.dsh.miuixbrowser
 
 import android.app.Activity
-import android.graphics.Bitmap
-import android.graphics.Rect
-import android.os.Handler
-import android.os.Looper
-import android.view.PixelCopy
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -78,12 +74,9 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -130,9 +123,8 @@ import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.drawBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
-import top.yukonga.miuix.kmp.blur.textureBlurEffect
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Refresh
@@ -168,6 +160,12 @@ fun BrowserScreen(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val wallpaperBackdrop = rememberLayerBackdrop()
+    val browserSurfaceColor = MiuixTheme.colorScheme.surface
+    val browserBackdrop = rememberLayerBackdrop {
+        // 给采集层补一层不透明底色，避免网页透明区域出现模糊采样伪影。
+        drawRect(browserSurfaceColor)
+        drawContent()
+    }
 
     // 从其他应用点进来的链接：新开标签页
     LaunchedEffect(initialUrl) {
@@ -193,8 +191,6 @@ fun BrowserScreen(
     var showFavEditor by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
-    var barRect by remember { mutableStateOf(Rect(0, 0, 1, 1)) }
-    var shot by remember { mutableStateOf<ImageBitmap?>(null) }
     var showUaPicker by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
     var showExtensions by remember { mutableStateOf(false) }
@@ -333,43 +329,6 @@ fun BrowserScreen(
         label = "bottomBar",
     )
 
-    LaunchedEffect(settings.blurEnabled, tab.id, hide, sheet, showSettings, showFavEditor) {
-        val window = (context as? Activity)?.window
-        if (!settings.blurEnabled || window == null) {
-            shot = null
-            return@LaunchedEffect
-        }
-        val handler = Handler(Looper.getMainLooper())
-        while (true) {
-            val rect = barRect
-            if (hide < 0.5f && sheet == Sheet.None && !showSettings && !showFavEditor &&
-                rect.width() > 4 && rect.height() > 4
-            ) {
-                val target = runCatching {
-                    Bitmap.createBitmap(rect.width(), rect.height(), Bitmap.Config.ARGB_8888)
-                }.getOrNull()
-                if (target != null) {
-                    runCatching {
-                        PixelCopy.request(window, rect, target, { result ->
-                            if (result == PixelCopy.SUCCESS) {
-                                runCatching {
-                                    shot = Bitmap.createScaledBitmap(
-                                        target,
-                                        (target.width / 8).coerceAtLeast(8),
-                                        (target.height / 8).coerceAtLeast(8),
-                                        true,
-                                    ).asImageBitmap()
-                                }
-                            }
-                            target.recycle()
-                        }, handler)
-                    }
-                }
-            }
-            delay(600)
-        }
-    }
-
     BackHandler {
         when {
             // 子页面：先回设置页（关于 / 脚本 / 下载一致）
@@ -413,6 +372,8 @@ fun BrowserScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { _ ->
     Box(modifier = Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+        // 采集网页 / 首页内容，供外部的 MIUIX 玻璃底栏取样。底栏本身不能放进采集层。
+        Box(modifier = Modifier.fillMaxSize().layerBackdrop(browserBackdrop)) {
 
         // ---- 首页壁纸：铺满全屏，盖住状态栏 ----
         if (tab.url.isEmpty() && wallpaperBitmap != null) {
@@ -543,6 +504,7 @@ fun BrowserScreen(
                 )
             }
         }
+        } // backdrop capture layer ends before the floating toolbar
 
         // ---- 底部：地址栏 + 工具栏 ----
         // 根据地址文本长度动态调整宽度，并使用弹簧动画平滑过渡。
@@ -570,15 +532,6 @@ fun BrowserScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .width(animatedBarWidth)
-                    .onGloballyPositioned { coords ->
-                        val bounds = coords.boundsInWindow()
-                        barRect = Rect(
-                            bounds.left.toInt(),
-                            bounds.top.toInt(),
-                            bounds.right.toInt(),
-                            bounds.bottom.toInt(),
-                        )
-                    }
                     // 在底栏上向下滑动即可主动收起。
                     .pointerInput(tab.id, barHidden) {
                         detectVerticalDragGestures(
@@ -605,7 +558,7 @@ fun BrowserScreen(
             ) {
             BottomBar(
                 blurEnabled = settings.blurEnabled,
-                shot = shot,
+                backdrop = browserBackdrop,
                 address = address,
                 loading = tab.loading,
                 canGoBack = tab.canGoBack,
@@ -1116,36 +1069,50 @@ fun BrowserScreen(
 
 /* ------------------------------ 玻璃 ------------------------------ */
 
-/** 底栏玻璃：降采样截图 + 半透明底色 + 高光描边。 */
+/** MIUIX 玻璃底板。该 Modifier 只应用在空 Box 上，交互内容作为兄弟层绘制。 */
 @Composable
 private fun Modifier.glassBar(
+    backdrop: LayerBackdrop,
     corner: Dp,
     blurEnabled: Boolean = true,
 ): Modifier {
     val dark = isAppDarkTheme()
     val shape = RoundedCornerShape(corner)
-    val base = this
+    val canUseTextureBlur = blurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val tint = if (dark) {
+        Brush.verticalGradient(listOf(Color(0xA82A2A2E), Color(0x981A1A1C)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
+    }
+
+    return this
         .shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
+        .then(
+            if (canUseTextureBlur) {
+                Modifier.textureBlur(
+                    backdrop = backdrop,
+                    shape = shape,
+                    blurRadius = 26f,
+                    noiseCoefficient = 0.0045f,
+                    enabled = true,
+                )
+            } else {
+                Modifier
+            },
+        )
+        .clip(shape)
+        .background(tint, shape)
         .border(
             width = 1.dp,
             color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
             shape = shape,
         )
-    // WebView 表面做 backdrop 采样会闪烁/崩溃，这里只用半透明底色
-    return base.background(
-        brush = if (dark) {
-            Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
-        } else {
-            Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
-        },
-        shape = shape,
-    )
 }
 
 @Composable
 private fun BottomBar(
     blurEnabled: Boolean = true,
-    shot: ImageBitmap?,
+    backdrop: LayerBackdrop,
     address: String,
     loading: Boolean,
     canGoBack: Boolean,
@@ -1163,40 +1130,18 @@ private fun BottomBar(
     onAddressTap: () -> Unit = {},
     editing: Boolean = false,
 ) {
-    val dark = isAppDarkTheme()
     val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(29.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .glassBar(corner = 29.dp, blurEnabled = blurEnabled)
             .height(58.dp),
     ) {
-        // 高斯模糊：把抓到的画面用 RenderEffect 真模糊
-        if (shot != null) {
-            Image(
-                bitmap = shot,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .graphicsLayer {
-                        renderEffect = BlurEffect(26f, 26f, TileMode.Clamp)
-                    },
-            )
-        }
+        // 空玻璃底板与按钮内容分层，避免 backdrop 采集层递归包含自身。
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .clip(shape)
-                .background(
-                    brush = if (dark) {
-                        Brush.verticalGradient(listOf(Color(0xD02A2A2E), Color(0xC01A1A1C)))
-                    } else {
-                        Brush.verticalGradient(listOf(Color(0xE6FFFFFF), Color(0xDCE8E9EC)))
-                    },
-                ),
+                .glassBar(backdrop = backdrop, corner = 29.dp, blurEnabled = blurEnabled),
         )
         Row(
             modifier = Modifier
