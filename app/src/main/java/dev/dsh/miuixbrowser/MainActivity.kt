@@ -24,10 +24,25 @@ class MainActivity : ComponentActivity() {
     /** 从其他应用点链接进来时要打开的地址 */
     private val incomingUrl = mutableStateOf<String?>(null)
 
+    /** 点下载通知进来时要求打开下载页 */
+    private val openDownloads = mutableStateOf(false)
+
+    companion object {
+        const val EXTRA_OPEN_DOWNLOADS = "open_downloads"
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        consumeOpenDownloads(intent)
         consumeViewIntent(intent)
+    }
+
+    private fun consumeOpenDownloads(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false) == true) {
+            openDownloads.value = true
+            intent.removeExtra(EXTRA_OPEN_DOWNLOADS)
+        }
     }
 
     private fun consumeViewIntent(intent: Intent?) {
@@ -70,6 +85,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
+        consumeOpenDownloads(intent)
         consumeViewIntent(intent)
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
@@ -119,6 +135,8 @@ class MainActivity : ComponentActivity() {
                     settings = settings,
                     initialUrl = incomingUrl.value,
                     onInitialUrlConsumed = { incomingUrl.value = null },
+                    openDownloads = openDownloads.value,
+                    onOpenDownloadsConsumed = { openDownloads.value = false },
                 )
             }
         }

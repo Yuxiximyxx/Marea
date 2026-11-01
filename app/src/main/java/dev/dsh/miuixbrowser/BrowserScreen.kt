@@ -155,6 +155,8 @@ fun BrowserScreen(
     settings: AppSettings,
     initialUrl: String? = null,
     onInitialUrlConsumed: () -> Unit = {},
+    openDownloads: Boolean = false,
+    onOpenDownloadsConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val state = remember { BrowserState(context) }
@@ -202,6 +204,14 @@ fun BrowserScreen(
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
+
+    LaunchedEffect(openDownloads) {
+        if (openDownloads) {
+            showDownloads = true
+            sheet = Sheet.None
+            onOpenDownloadsConsumed()
+        }
+    }
 
     LaunchedEffect(tab.id, extensions.items.size, tab.id) {
         tab.userScripts = extensions.items.toList()
@@ -1556,19 +1566,22 @@ private fun StartPage(
         ) {
             Text(
                 text = "收藏",
-                fontSize = 13.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
             )
-            TextButton(
-                text = if (editing) "完成" else "编辑",
-                onClick = onToggleEdit,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                minHeight = 28.dp,
-                minWidth = 52.dp,
-                cornerRadius = 14.dp,
-                insideMargin = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                textStyle = TextStyle(fontSize = 12.sp),
-            )
+            if (editing) {
+                TextButton(
+                    text = "完成",
+                    onClick = onToggleEdit,
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    minHeight = 28.dp,
+                    minWidth = 52.dp,
+                    cornerRadius = 14.dp,
+                    insideMargin = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    textStyle = TextStyle(fontSize = 12.sp),
+                )
+            }
         }
 
         Spacer(Modifier.height(10.dp))
@@ -1589,6 +1602,9 @@ private fun StartPage(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 if (editing) onEdit(index) else onOpen(favorite.url)
+                            },
+                            onLongPress = {
+                                if (!editing) onToggleEdit()
                             },
                             onRemove = { onRemove(index) },
                         )
@@ -1637,15 +1653,25 @@ private fun FavoriteTile(
     editing: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val useBlur = blurEnabled && wallpaper != null && wallpaperBackdrop != null
+    val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(58.dp)
             .clip(shape)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
             .then(
                 if (useBlur) {
                     Modifier.textureBlurBar(
@@ -1689,7 +1715,8 @@ private fun FavoriteTile(
             }
             Text(
                 text = favorite.name,
-                fontSize = 14.sp,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

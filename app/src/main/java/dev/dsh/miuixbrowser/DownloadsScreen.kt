@@ -297,7 +297,7 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             OverlayDialog(
                 show = true,
                 title = "删除文件",
-                summary = task.name,
+                summary = task.name + "\n\n会同时删除本地文件",
                 onDismissRequest = { pendingDelete = null },
             ) {
                 Row(

@@ -135,7 +135,10 @@ class DownloadService : Service() {
         paused: Boolean = false,
         ongoing: Boolean = true,
     ): Notification {
-        val intent = Intent(this, MainActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(MainActivity.EXTRA_OPEN_DOWNLOADS, true)
+        }
         val pending = android.app.PendingIntent.getActivity(
             this,
             0,
