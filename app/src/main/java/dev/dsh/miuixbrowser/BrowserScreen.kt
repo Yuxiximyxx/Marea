@@ -185,7 +185,6 @@ fun BrowserScreen(
     var linkUrl by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
     var elementHit by remember { mutableStateOf<BrowserTab.ElementHit?>(null) }
-    var viewportNudge by remember { mutableStateOf(false) }
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
@@ -207,17 +206,6 @@ fun BrowserScreen(
 
     LaunchedEffect(tab.id, settings.pageEnhancements) {
         tab.pageEnhancements = settings.pageEnhancements
-    }
-
-    LaunchedEffect(tab.id) {
-        tab.onViewportUnitsBroken = { viewportNudge = true }
-    }
-
-    LaunchedEffect(viewportNudge) {
-        if (viewportNudge) {
-            kotlinx.coroutines.delay(160)
-            viewportNudge = false
-        }
     }
 
     LaunchedEffect(openDownloads) {
@@ -445,8 +433,8 @@ fun BrowserScreen(
             }
         }
 
-        // ---- 网页内容：从状态栏下面开始，不再压到状态栏 ----
-        Box(modifier = Modifier.fillMaxSize()) {
+        // ---- 网页内容：顶部按工具栏状态动态留白，底部避开系统导航栏 ----
+        Box(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -456,9 +444,7 @@ fun BrowserScreen(
                     AndroidView(
                         factory = { tab.webView },
                         // vh 算成 0 时，用 1dp 的高度变化触发 WebView 重新计算视口单位
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = if (viewportNudge) 1.dp else 0.dp),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
                 if (tab.url.isEmpty()) {

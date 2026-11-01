@@ -149,7 +149,7 @@ class BrowserTab(private val appContext: Context) {
             javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             cacheMode = WebSettings.LOAD_DEFAULT
-            // 保留 "; wv"：让站点识别为 WebView，避免走只对 Chrome 生效的 dvh/vh 分支
+            userAgentString = userAgentString.replace("; wv", "")
         }
         // 打开 WebView 的 WebAuthn（Passkey）支持
         runCatching {
@@ -183,7 +183,6 @@ class BrowserTab(private val appContext: Context) {
                 injectDocumentEndScripts(view)
                 injectUserAdRules(view, pageUrl)
                 installElementInspector(view)
-                ensureViewportUnits(view, pageUrl)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -346,22 +345,6 @@ class BrowserTab(private val appContext: Context) {
   document.addEventListener('touchcancel', function(){ clearTimeout(timer); }, { capture: true, passive: true });
 })();"""
         view.evaluateJavascript(js, null)
-    }
-
-    /** 页面首次以 0 尺寸加载时 WebView 的 100vh 会算成 0；检测到后通知界面做一次尺寸微调 */
-    var onViewportUnitsBroken: (() -> Unit)? = null
-
-    private fun ensureViewportUnits(view: WebView, pageUrl: String?) {
-        if (pageUrl.isNullOrBlank()) return
-        val probe = "(function(){var d=document.createElement('div');" +
-            "d.style.cssText='position:absolute;top:0;left:0;width:1px;height:100vh;visibility:hidden';" +
-            "document.documentElement.appendChild(d);var h=d.getBoundingClientRect().height;d.remove();return h;})()"
-        view.evaluateJavascript(probe) { raw ->
-            val height = raw?.trim()?.toDoubleOrNull()
-            if (height != null && height < 1.0 && view.width > 0 && view.height > 0) {
-                view.post { onViewportUnitsBroken?.invoke() }
-            }
-        }
     }
 
     /** 把用户「标记为广告」记住的选择器注入当前页 */
