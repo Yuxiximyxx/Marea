@@ -335,6 +335,44 @@ object Downloader {
         if (index >= 0) tasks[index] = transform(tasks[index])
     }
 
+    /** 保存 data:image/...;base64 的内嵌图片到系统下载目录 */
+    fun saveDataUri(context: Context, dataUri: String, fileName: String): Boolean = runCatching {
+        val comma = dataUri.indexOf(',')
+        if (comma < 0) return@runCatching false
+        val meta = dataUri.substringAfter("data:").substringBefore(',')
+        if (!meta.contains("base64", ignoreCase = true)) return@runCatching false
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        val mime = meta.substringBefore(';').ifBlank { "image/png" }
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: return@runCatching false
+        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+        context.contentResolver.update(
+            uri,
+            ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) },
+            null,
+            null,
+        )
+        tasks.add(
+            0,
+            DownloadTask(
+                name = fileName,
+                url = "",
+                mime = mime,
+                uri = uri,
+                bytes = bytes.size.toLong(),
+                total = bytes.size.toLong(),
+                state = DownloadState.DONE,
+            ),
+        )
+        true
+    }.getOrDefault(false)
+
     fun sizeText(bytes: Long): String = when {
         bytes <= 0 -> ""
         bytes < 1024 -> "$bytes B"

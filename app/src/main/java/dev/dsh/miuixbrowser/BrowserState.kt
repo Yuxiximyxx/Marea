@@ -40,7 +40,12 @@ fun toUrl(input: String, searchTemplate: String = "https://www.baidu.com/s?wd=%s
     }
 }
 
-fun hostOf(url: String): String = runCatching { Uri.parse(url).host ?: url }.getOrDefault(url)
+fun hostOf(url: String): String {
+    val trimmed = url.trim()
+    if (trimmed.startsWith("data:", ignoreCase = true)) return "内嵌图片"
+    val host = runCatching { Uri.parse(trimmed).host }.getOrNull()
+    return if (!host.isNullOrBlank()) host else trimmed.take(48)
+}
 
 /** 一个标签页：持有自己的 WebView 和页面状态。 */
 @SuppressLint("SetJavaScriptEnabled")
@@ -260,12 +265,13 @@ class BrowserTab(private val appContext: Context) {
             val result = webView.hitTestResult
             val extra = result.extra
             when {
-                (result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
-                    result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) && !extra.isNullOrEmpty() -> {
+                result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE && !extra.isNullOrEmpty() -> {
                     onLongPressLink?.invoke(extra)
                     true
                 }
-                result.type == WebView.HitTestResult.IMAGE_TYPE && !extra.isNullOrEmpty() -> {
+                (result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE ||
+                    result.type == WebView.HitTestResult.IMAGE_TYPE) && !extra.isNullOrEmpty() -> {
+                    // 图片链接的 extra 是图片地址（可能是 data: base64），走图片菜单
                     onLongPressImage?.invoke(extra)
                     true
                 }

@@ -746,23 +746,39 @@ fun BrowserScreen(
             }
 
             Sheet.Image -> SheetScaffold(title = "图片", onDismiss = { sheet = Sheet.None }) {
-                SheetRow(title = "保存图片", subtitle = hostOf(imageUrl)) {
+                val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
+                SheetRow(
+                    title = "保存图片",
+                    subtitle = if (inlineImage) "内嵌图片" else hostOf(imageUrl),
+                ) {
                     sheet = Sheet.None
-                    pendingDownload = DownloadRequest(
-                        url = imageUrl,
-                        userAgent = null,
-                        fileName = Downloader.fileNameFrom(imageUrl, null),
-                        mime = null,
-                    )
+                    if (inlineImage) {
+                        val name = "image_" + System.currentTimeMillis() + ".png"
+                        val ok = Downloader.saveDataUri(context, imageUrl, name)
+                        android.widget.Toast.makeText(
+                            context,
+                            if (ok) "已保存到 Download/mafari" else "保存失败",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        pendingDownload = DownloadRequest(
+                            url = imageUrl,
+                            userAgent = null,
+                            fileName = Downloader.fileNameFrom(imageUrl, null),
+                            mime = null,
+                        )
+                    }
                 }
-                SheetRow(title = "复制图片地址") {
-                    sheet = Sheet.None
-                    clipboard.setText(AnnotatedString(imageUrl))
-                }
-                SheetRow(title = "在新标签页打开") {
-                    sheet = Sheet.None
-                    state.newTabInBackground(imageUrl)
-                    state.select(state.tabs.lastIndex)
+                if (!inlineImage) {
+                    SheetRow(title = "复制图片地址") {
+                        sheet = Sheet.None
+                        clipboard.setText(AnnotatedString(imageUrl))
+                    }
+                    SheetRow(title = "在新标签页打开") {
+                        sheet = Sheet.None
+                        state.newTabInBackground(imageUrl)
+                        state.select(state.tabs.lastIndex)
+                    }
                 }
             }
 
