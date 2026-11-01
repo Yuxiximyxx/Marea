@@ -183,6 +183,7 @@ class BrowserTab(private val appContext: Context) {
                 injectDocumentEndScripts(view)
                 injectUserAdRules(view, pageUrl)
                 installElementInspector(view)
+                ensureViewportUnits(view, pageUrl)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -345,6 +346,25 @@ class BrowserTab(private val appContext: Context) {
   document.addEventListener('touchcancel', function(){ clearTimeout(timer); }, { capture: true, passive: true });
 })();"""
         view.evaluateJavascript(js, null)
+    }
+
+    /** 页面首次以 0 尺寸加载时，WebView 的 100vh 会算成 0；检测到就重载一次修正 */
+    private var viewportRetryDone = false
+
+    private fun ensureViewportUnits(view: WebView, pageUrl: String?) {
+        if (viewportRetryDone || pageUrl.isNullOrBlank()) return
+        val probe = "(function(){var d=document.createElement('div');" +
+            "d.style.cssText='position:absolute;top:0;left:0;width:1px;height:100vh;visibility:hidden';" +
+            "document.documentElement.appendChild(d);var h=d.getBoundingClientRect().height;d.remove();return h;})()"
+        view.evaluateJavascript(probe) { raw ->
+            val height = raw?.trim()?.toDoubleOrNull()
+            if (height != null && height < 1.0 && view.width > 0 && view.height > 0) {
+                viewportRetryDone = true
+                view.postDelayed({
+                    runCatching { view.reload() }
+                }, 120)
+            }
+        }
     }
 
     /** 把用户「标记为广告」记住的选择器注入当前页 */
