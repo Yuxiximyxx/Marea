@@ -27,7 +27,7 @@ fun Modifier.progressiveTopBar(
     radius: Float = 30f,
     startFraction: Float = 0f,
     endFraction: Float = 1f,
-    curve: Float = 1.0f,
+    curve: Float = 0.68f,
     noise: Float = 0f,
     highlight: Highlight? = null,
     enabled: Boolean = true,

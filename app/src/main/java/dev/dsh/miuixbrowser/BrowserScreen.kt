@@ -2,6 +2,9 @@ package dev.dsh.miuixbrowser
 
 import android.app.Activity
 import android.os.Build
+import android.graphics.BlurMaskFilter
+import android.graphics.Paint as AndroidPaint
+import android.graphics.RectF
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -65,6 +68,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -1268,24 +1273,35 @@ private fun BottomBar(
 }
 
 /**
- * 居中柔光投影：使用径向渐变代替系统 elevation 阴影，避免光源方向造成的错位，
- * 也避免系统阴影在玻璃底栏裁剪边缘形成多边形硬边。
+ * 沿按钮轮廓扩散的柔光阴影。
+ * 只模糊圆形描边，不绘制径向实心圆，因此不会出现整块大圆形光斑。
  */
 private fun Modifier.centeredSoftShadow(): Modifier = drawBehind {
-    val shadowRadius = 30.dp.toPx()
-    val center = Offset(size.width / 2f, size.height / 2f)
-    val brush = Brush.radialGradient(
-        colorStops = arrayOf(
-            0.0f to Color.Transparent,
-            0.58f to Color.Transparent,
-            0.76f to Color.Black.copy(alpha = 0.14f),
-            0.90f to Color.Black.copy(alpha = 0.07f),
-            1.0f to Color.Transparent,
-        ),
-        center = center,
-        radius = shadowRadius,
-    )
-    drawCircle(brush = brush, radius = shadowRadius, center = center)
+    val density = this
+    val inset = 2.0.dp.toPx()
+    val stroke = 1.15.dp.toPx()
+    val blur = 5.5.dp.toPx()
+    val left = inset + stroke / 2f
+    val top = inset + stroke / 2f
+    val right = size.width - inset - stroke / 2f
+    val bottom = size.height - inset - stroke / 2f
+    val radius = ((right - left).coerceAtMost(bottom - top)) / 2f
+
+    drawIntoCanvas { canvas ->
+        val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+            strokeWidth = stroke
+            color = android.graphics.Color.argb(82, 0, 0, 0)
+            maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
+        }
+        canvas.nativeCanvas.drawRoundRect(
+            RectF(left, top, right, bottom),
+            radius,
+            radius,
+            paint,
+        )
+        paint.maskFilter = null
+    }
 }
 
 @Composable
