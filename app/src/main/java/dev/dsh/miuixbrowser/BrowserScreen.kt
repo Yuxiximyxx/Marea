@@ -559,34 +559,37 @@ fun BrowserScreen(
             )
             var dragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .width(animatedBarWidth)
-                    // 在底栏上向下滑动即可主动收起。
-                    .pointerInput(tab.id, barHidden) {
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { change, dragAmount ->
-                                dragDistance += dragAmount
-                                if (dragDistance > 26f && !barHidden) {
-                                    barHidden = true
-                                    change.consume()
-                                }
-                            },
-                            onDragEnd = { dragDistance = 0f },
-                            onDragCancel = { dragDistance = 0f },
-                        )
-                    }
-                    .graphicsLayer {
-                        translationY = hide * (size.height + 96.dp.toPx())
-                        alpha = 1f - 0.9f * hide
-                        val s = 1f - 0.08f * hide
-                        scaleX = s
-                        scaleY = s
-                        transformOrigin = TransformOrigin(0.5f, 0.5f)
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            // 退出动画播放期间仍保留底栏；动画结束后直接从组合树移除，
+            // 不留下透明/平移后的 Compose 节点拦截 WebView 的触摸事件。
+            if (!barHidden || hide < 0.995f) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .width(animatedBarWidth)
+                        // 在底栏上向下滑动即可主动收起。
+                        .pointerInput(tab.id, barHidden) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, dragAmount ->
+                                    dragDistance += dragAmount
+                                    if (dragDistance > 26f && !barHidden) {
+                                        barHidden = true
+                                        change.consume()
+                                    }
+                                },
+                                onDragEnd = { dragDistance = 0f },
+                                onDragCancel = { dragDistance = 0f },
+                            )
+                        }
+                        .graphicsLayer {
+                            translationY = hide * 210.dp.toPx()
+                            alpha = 1f - hide
+                            val s = 1f - 0.08f * hide
+                            scaleX = s
+                            scaleY = s
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
             BottomBar(
                 blurEnabled = settings.blurEnabled,
                 textureBlurEnabled = homeBlurAvailable,
@@ -638,11 +641,12 @@ fun BrowserScreen(
                 onTabs = { sheet = Sheet.Tabs },
                 onMore = { sheet = Sheet.Menu },
             )
+                }
             }
         }
 
-        // 隐藏时不设置底部透明恢复热区，避免拦截网页底部的正常点击。
-        // 仅由上方 WebView 的下拉滚动（scrollY 减小）恢复底栏。
+        // 隐藏状态不放置透明热区：底部网页区域完全交给 WebView 处理点击、长按和滚动。
+        // 通过 WebView 的 scrollY 方向判断下拉恢复，不通过点击底部区域恢复。
 
         // ---- 弹层 ----
         when (sheet) {
@@ -1124,9 +1128,9 @@ private fun Modifier.glassBar(
             Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
         }
         blurEnabled -> if (dark) {
-            Brush.verticalGradient(listOf(Color(0xE82B2B31), Color(0xDC1A1A20)))
+            Brush.verticalGradient(listOf(Color(0xC82B2B31), Color(0xB51A1A20)))
         } else {
-            Brush.verticalGradient(listOf(Color(0xE8FFFFFF), Color(0xDCE7EAF0)))
+            Brush.verticalGradient(listOf(Color(0xC8FFFFFF), Color(0xBDE7EAF0)))
         }
         else -> Brush.verticalGradient(
             listOf(
@@ -1276,6 +1280,7 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(44.dp)
+            .shadow(elevation = 7.dp, shape = CircleShape, clip = false)
             .clip(CircleShape)
             .combinedClickable(
                 interactionSource = interaction,
@@ -1343,6 +1348,7 @@ private fun PressIcon(
     Box(
         modifier = Modifier
             .size(44.dp)
+            .shadow(elevation = 7.dp, shape = CircleShape, clip = false)
             .clip(CircleShape)
             .clickable(
                 interactionSource = interaction,
