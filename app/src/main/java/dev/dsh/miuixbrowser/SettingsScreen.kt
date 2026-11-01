@@ -136,24 +136,6 @@ fun SettingsScreen(
                         onClick = { showWallpaper = true },
                     )
                     SwitchPreference(
-                        title = "页面增强",
-                        summary = "关闭后不注入油猴脚本、去广告规则和长按标记，用于排查",
-                        checked = settings.pageEnhancements,
-                        onCheckedChange = { settings.updatePageEnhancements(it) },
-                    )
-                    SwitchPreference(
-                        title = "显示网页视口信息",
-                        summary = "打开网页后弹窗显示 innerHeight / vh 实际值，排查用",
-                        checked = settings.debugViewport,
-                        onCheckedChange = { settings.updateDebugViewport(it) },
-                    )
-                    SwitchPreference(
-                        title = "网页软件渲染",
-                        summary = "排查弹层错位用；开启后网页滚动会变慢",
-                        checked = settings.softwareRender,
-                        onCheckedChange = { settings.updateSoftwareRender(it) },
-                    )
-                    SwitchPreference(
                         title = "模糊效果",
                         summary = "关闭后底栏、收藏卡片和页面顶栏不再模糊",
                         checked = settings.blurEnabled,
@@ -223,6 +205,12 @@ fun SettingsScreen(
                         title = "脚本管理",
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
+                    )
+                    SwitchPreference(
+                        title = "页面增强",
+                        summary = "关闭后不注入油猴脚本、去广告规则和长按标记",
+                        checked = settings.pageEnhancements,
+                        onCheckedChange = { settings.updatePageEnhancements(it) },
                     )
                 }
 

@@ -185,7 +185,7 @@ fun BrowserScreen(
     var linkUrl by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
     var elementHit by remember { mutableStateOf<BrowserTab.ElementHit?>(null) }
-    var viewportInfo by remember { mutableStateOf<String?>(null) }
+    var viewportNudge by remember { mutableStateOf(false) }
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
@@ -209,45 +209,15 @@ fun BrowserScreen(
         tab.pageEnhancements = settings.pageEnhancements
     }
 
-    LaunchedEffect(tab.id, tab.url, settings.debugViewport) {
-        if (settings.debugViewport && tab.url.isNotBlank()) {
-            kotlinx.coroutines.delay(1200)
-            val js = """(function(){
-  var d = document.createElement('div');
-  d.style.cssText = 'position:absolute;left:-9999px;top:0;width:10px;height:100vh';
-  document.documentElement.appendChild(d);
-  var vh = Math.round(d.getBoundingClientRect().height);
-  d.style.height = '100dvh'; var dvh = Math.round(d.getBoundingClientRect().height);
-  d.style.height = '100svh'; var svh = Math.round(d.getBoundingClientRect().height);
-  d.remove();
-  var v = window.visualViewport;
-  return JSON.stringify({
-    inner: [innerWidth, innerHeight],
-    visual: v ? [Math.round(v.width), Math.round(v.height)] : null,
-    scale: v ? v.scale : 0,
-    doc: [document.documentElement.clientWidth, document.documentElement.clientHeight],
-    body: document.body ? document.body.clientHeight : 0,
-    vh: vh, dvh: dvh, svh: svh
-  });
-})()"""
-            tab.webView.evaluateJavascript(js) { raw ->
-                val text = runCatching {
-                    (org.json.JSONTokener(raw).nextValue() as? String) ?: raw
-                }.getOrDefault(raw)
-                viewportInfo = text
-            }
-        }
+    LaunchedEffect(tab.id) {
+        tab.onViewportUnitsBroken = { viewportNudge = true }
     }
 
-    LaunchedEffect(settings.softwareRender, tab.id) {
-        tab.webView.setLayerType(
-            if (settings.softwareRender) {
-                android.view.View.LAYER_TYPE_SOFTWARE
-            } else {
-                android.view.View.LAYER_TYPE_HARDWARE
-            },
-            null,
-        )
+    LaunchedEffect(viewportNudge) {
+        if (viewportNudge) {
+            kotlinx.coroutines.delay(160)
+            viewportNudge = false
+        }
     }
 
     LaunchedEffect(openDownloads) {
@@ -485,7 +455,10 @@ fun BrowserScreen(
                 key(tab.id) {
                     AndroidView(
                         factory = { tab.webView },
-                        modifier = Modifier.fillMaxSize(),
+                        // vh 算成 0 时，用 1dp 的高度变化触发 WebView 重新计算视口单位
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = if (viewportNudge) 1.dp else 0.dp),
                     )
                 }
                 if (tab.url.isEmpty()) {
@@ -981,21 +954,6 @@ fun BrowserScreen(
                         )
                     }
                 }
-            }
-        }
-
-        viewportInfo?.let { info ->
-            OverlayDialog(
-                show = true,
-                title = "网页视口",
-                summary = info,
-                onDismissRequest = { viewportInfo = null },
-            ) {
-                TextButton(
-                    text = "关闭",
-                    onClick = { viewportInfo = null },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
 
