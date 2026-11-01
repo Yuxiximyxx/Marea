@@ -78,8 +78,8 @@ class BrowserTab(private val appContext: Context) {
     /** 长按图片 */
     var onLongPressImage: ((String) -> Unit)? = null
 
-    /** 长按普通元素：回传 CSS 像素坐标 */
-    var onLongPressElement: ((Float, Float) -> Unit)? = null
+    /** 长按普通元素：由页面内 JS 判定为广告浮层后回调 */
+    var onElementLongPress: ((ElementHit) -> Unit)? = null
 
     /** 用户脚本扩展（页面加载完后注入） */
     var userScripts: List<UserScript> = emptyList()
@@ -104,6 +104,15 @@ class BrowserTab(private val appContext: Context) {
     var onVisited: ((url: String, title: String) -> Unit)? = null
 
     val webView: WebView = WebView(appContext)
+
+    private val elementBridge = object {
+        @android.webkit.JavascriptInterface
+        fun onElement(selector: String, tag: String, imageUrl: String) {
+            webView.post {
+                onElementLongPress?.invoke(ElementHit(tag, imageUrl, selector))
+            }
+        }
+    }
 
     /** 打开新标签页（GM_openInTab 用） */
     var onOpenNewTab: ((String) -> Unit)? = null
@@ -165,6 +174,7 @@ class BrowserTab(private val appContext: Context) {
 
                 injectDocumentEndScripts(view)
                 injectUserAdRules(view, pageUrl)
+                installElementInspector(view)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -197,6 +207,8 @@ class BrowserTab(private val appContext: Context) {
                 }
             }
         }
+
+        webView.addJavascriptInterface(elementBridge, "MafariElement")
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
@@ -257,28 +269,22 @@ class BrowserTab(private val appContext: Context) {
                     onLongPressImage?.invoke(extra)
                     true
                 }
-                else -> {
-                    val density = webView.resources.displayMetrics.density
-                    onLongPressElement?.invoke(lastTouchX / density, lastTouchY / density)
-                    true
-                }
+                // 文字/空白区域交还给系统长按选词与页面内 JS 判定
+                else -> false
             }
         }
     }
 
     data class ElementHit(val tag: String, val imageUrl: String, val selector: String)
 
-    /** 查询长按位置的元素，返回标签、图片地址与可用于广告标记的 CSS 选择器。 */
-    fun describeElementAt(x: Float, y: Float, onResult: (ElementHit?) -> Unit) {
+    /** 只在广告浮层（fixed/absolute 且像广告或面积大）上响应长按，文字区域交给系统选词 */
+    private fun installElementInspector(view: WebView) {
         val js = """(function(){
-  var el = document.elementFromPoint($x, $y);
-  if (!el) return 'null';
-  var img = el.tagName === 'IMG' ? (el.currentSrc || el.src || '') : '';
-  if (!img && el.querySelector) { var i = el.querySelector('img'); if (i) img = i.currentSrc || i.src || ''; }
-  var sel = '';
-  try {
-    if (el.id) { sel = '#' + CSS.escape(el.id); }
-    else {
+  if (window.__mafariInspector) return;
+  window.__mafariInspector = true;
+  function selectorOf(el){
+    try {
+      if (el.id) return '#' + CSS.escape(el.id);
       var parts = []; var cur = el;
       while (cur && cur.nodeType === 1 && parts.length < 4) {
         var p = cur.tagName.toLowerCase();
@@ -288,34 +294,46 @@ class BrowserTab(private val appContext: Context) {
         if (parent) { p += ':nth-child(' + (Array.prototype.indexOf.call(parent.children, cur) + 1) + ')'; }
         parts.unshift(p); cur = parent;
       }
-      sel = parts.join(' > ');
+      return parts.join(' > ');
+    } catch (e) { return ''; }
+  }
+  function isAdLike(el){
+    var st = getComputedStyle(el);
+    var pos = st.position;
+    if (pos !== 'fixed' && pos !== 'absolute') return false;
+    var cls = (typeof el.className === 'string') ? el.className : '';
+    var key = (cls + ' ' + (el.id || '')).toLowerCase();
+    if (/ad|advert|banner|popup|float|modal|overlay|mask|sponsor/.test(key)) return true;
+    var r = el.getBoundingClientRect();
+    return r.width > innerWidth * 0.5 && r.height > innerHeight * 0.25;
+  }
+  function fire(el){
+    var tag = el.tagName;
+    if (tag === 'IMG' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (!isAdLike(el)) return;
+    var img = el.querySelector ? el.querySelector('img') : null;
+    var src = img ? (img.currentSrc || img.src || '') : '';
+    try { MafariElement.onElement(selectorOf(el), tag, src); } catch (e) {}
+    try { var sel = getSelection(); if (sel) sel.removeAllRanges(); } catch (e) {}
+  }
+  var timer = null, sx = 0, sy = 0, moved = false;
+  document.addEventListener('touchstart', function(e){
+    if (e.touches.length !== 1) return;
+    var el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false;
+    clearTimeout(timer);
+    timer = setTimeout(function(){ if (!moved) fire(el); }, 520);
+  }, true);
+  document.addEventListener('touchmove', function(e){
+    if (!e.touches.length) return;
+    if (Math.abs(e.touches[0].clientX - sx) > 12 || Math.abs(e.touches[0].clientY - sy) > 12) {
+      moved = true; clearTimeout(timer);
     }
-  } catch (e) { sel = ''; }
-  return JSON.stringify({tag: el.tagName, img: img, sel: sel});
-})()"""
-        webView.evaluateJavascript(js) { raw ->
-            val hit = runCatching {
-                val text = org.json.JSONTokener(raw).nextValue() as? String ?: return@runCatching null
-                val obj = org.json.JSONObject(text)
-                ElementHit(
-                    tag = obj.optString("tag"),
-                    imageUrl = obj.optString("img"),
-                    selector = obj.optString("sel"),
-                )
-            }.getOrNull()
-            onResult(hit)
-        }
-    }
-
-    /** 把用户「标记为广告」记住的选择器注入当前页 */
-    private fun injectUserAdRules(view: WebView, pageUrl: String?) {
-        val host = pageUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return
-        val selectors = UserAdRules.selectors(appContext, host)
-        if (selectors.isEmpty()) return
-        val css = selectors.joinToString(",") + "{display:none!important}"
-        val js = "(function(){try{var s=document.createElement('style');s.textContent=" +
-            org.json.JSONObject.quote(css) +
-            ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();"
+  }, true);
+  document.addEventListener('touchend', function(){ clearTimeout(timer); }, true);
+  document.addEventListener('touchcancel', function(){ clearTimeout(timer); }, true);
+})();"""
         view.evaluateJavascript(js, null)
     }
 

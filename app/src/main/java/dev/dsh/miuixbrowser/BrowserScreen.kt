@@ -234,11 +234,9 @@ fun BrowserScreen(
             imageUrl = url
             sheet = Sheet.Image
         }
-        tab.onLongPressElement = { x, y ->
-            tab.describeElementAt(x, y) { hit ->
-                elementHit = hit
-                sheet = if (hit == null) Sheet.None else Sheet.Element
-            }
+        tab.onElementLongPress = { hit ->
+            elementHit = hit
+            sheet = Sheet.Element
         }
         editing = false
         barHidden = false
