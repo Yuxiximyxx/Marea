@@ -1207,7 +1207,7 @@ private fun BottomBar(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(shape)
+                // 不裁剪内容层：按钮的柔光投影需要向按钮边缘外自然扩散。
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1267,6 +1267,27 @@ private fun BottomBar(
     }
 }
 
+/**
+ * 居中柔光投影：使用径向渐变代替系统 elevation 阴影，避免光源方向造成的错位，
+ * 也避免系统阴影在玻璃底栏裁剪边缘形成多边形硬边。
+ */
+private fun Modifier.centeredSoftShadow(): Modifier = drawBehind {
+    val shadowRadius = 30.dp.toPx()
+    val center = Offset(size.width / 2f, size.height / 2f)
+    val brush = Brush.radialGradient(
+        colorStops = arrayOf(
+            0.0f to Color.Transparent,
+            0.58f to Color.Transparent,
+            0.76f to Color.Black.copy(alpha = 0.14f),
+            0.90f to Color.Black.copy(alpha = 0.07f),
+            1.0f to Color.Transparent,
+        ),
+        center = center,
+        radius = shadowRadius,
+    )
+    drawCircle(brush = brush, radius = shadowRadius, center = center)
+}
+
 @Composable
 private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
@@ -1280,7 +1301,7 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(44.dp)
-            .shadow(elevation = 7.dp, shape = CircleShape, clip = false)
+            .centeredSoftShadow()
             .clip(CircleShape)
             .combinedClickable(
                 interactionSource = interaction,
@@ -1348,7 +1369,7 @@ private fun PressIcon(
     Box(
         modifier = Modifier
             .size(44.dp)
-            .shadow(elevation = 7.dp, shape = CircleShape, clip = false)
+            .centeredSoftShadow()
             .clip(CircleShape)
             .clickable(
                 interactionSource = interaction,

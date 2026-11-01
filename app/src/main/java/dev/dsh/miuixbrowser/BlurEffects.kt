@@ -24,11 +24,11 @@ fun Modifier.progressiveTopBar(
     backdrop: Backdrop,
     shape: Shape = RectangleShape,
     tint: Color = Color.Unspecified,
-    radius: Float = 20f,
+    radius: Float = 30f,
     startFraction: Float = 0f,
     endFraction: Float = 1f,
     curve: Float = 1.0f,
-    noise: Float = 0.03f,
+    noise: Float = 0f,
     highlight: Highlight? = null,
     enabled: Boolean = true,
 ): Modifier {
