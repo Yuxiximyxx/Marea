@@ -136,6 +136,12 @@ fun SettingsScreen(
                         onClick = { showWallpaper = true },
                     )
                     SwitchPreference(
+                        title = "网页软件渲染",
+                        summary = "排查弹层错位用；开启后网页滚动会变慢",
+                        checked = settings.softwareRender,
+                        onCheckedChange = { settings.updateSoftwareRender(it) },
+                    )
+                    SwitchPreference(
                         title = "模糊效果",
                         summary = "关闭后底栏、收藏卡片和页面顶栏不再模糊",
                         checked = settings.blurEnabled,

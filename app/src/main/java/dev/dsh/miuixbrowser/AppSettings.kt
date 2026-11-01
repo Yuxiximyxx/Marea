@@ -91,6 +91,15 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_BLUR, enabled).apply()
     }
 
+    /** 网页改用软件渲染（排查弹层错位用） */
+    var softwareRender by mutableStateOf(prefs.getBoolean(KEY_SOFTWARE, false))
+        private set
+
+    fun updateSoftwareRender(enabled: Boolean) {
+        softwareRender = enabled
+        prefs.edit().putBoolean(KEY_SOFTWARE, enabled).apply()
+    }
+
     fun updateUserAgent(value: String) {
         userAgent = value.trim()
         prefs.edit().putString(KEY_UA, userAgent).apply()
@@ -106,6 +115,7 @@ class AppSettings(context: Context) {
         const val KEY_TABS = "tabs_style"
         const val KEY_SEARCH_CUSTOM = "search_custom"
         const val KEY_WALL = "wallpaper"
+        const val KEY_SOFTWARE = "software_render"
     }
 }
 

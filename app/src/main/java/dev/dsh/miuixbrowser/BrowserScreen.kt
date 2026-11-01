@@ -204,6 +204,17 @@ fun BrowserScreen(
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
 
+    LaunchedEffect(settings.softwareRender, tab.id) {
+        tab.webView.setLayerType(
+            if (settings.softwareRender) {
+                android.view.View.LAYER_TYPE_SOFTWARE
+            } else {
+                android.view.View.LAYER_TYPE_HARDWARE
+            },
+            null,
+        )
+    }
+
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
             showDownloads = true
@@ -318,10 +329,13 @@ fun BrowserScreen(
     val statusBarHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
         WindowInsets.statusBars.getTop(this).toDp()
     }
-    // WebView 直接铺满整个窗口（含状态栏），不再通过父布局 padding 缩小它的高度。
-    // 之前 WebView 比窗口矮一截，Chromium 的 visual viewport 和窗口尺寸不一致，
-    // 页面里 position:fixed 的菜单会被按错误比例绘制成横条。
-    val contentTopPadding = 0.dp
+    val animatedTopPadding by animateDpAsState(
+        targetValue = if (barHidden) 0.dp else statusBarHeight,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
+        label = "statusInset",
+    )
+    // 弹簧会过冲到负值，padding 不允许负数
+    val contentTopPadding = animatedTopPadding.coerceAtLeast(0.dp)
 
     val hide by animateFloatAsState(
         targetValue = if (barHidden && sheet == Sheet.None) 1f else 0f,
