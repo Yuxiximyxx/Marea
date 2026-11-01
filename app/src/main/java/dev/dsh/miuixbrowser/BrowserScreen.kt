@@ -185,6 +185,7 @@ fun BrowserScreen(
     var linkUrl by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
     var elementHit by remember { mutableStateOf<BrowserTab.ElementHit?>(null) }
+    var viewportInfo by remember { mutableStateOf<String?>(null) }
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
@@ -204,13 +205,36 @@ fun BrowserScreen(
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
 
+    LaunchedEffect(tab.id, settings.pageEnhancements) {
+        tab.pageEnhancements = settings.pageEnhancements
+    }
+
     LaunchedEffect(tab.id, tab.url, settings.debugViewport) {
         if (settings.debugViewport && tab.url.isNotBlank()) {
             kotlinx.coroutines.delay(1200)
-            tab.webView.evaluateJavascript(
-                "(function(){var v=window.visualViewport;return JSON.stringify({inner:[innerWidth,innerHeight],visual:v?[v.width,v.height]:null,doc:[document.documentElement.clientWidth,document.documentElement.clientHeight],dpr:devicePixelRatio});})()",
-            ) { raw ->
-                android.widget.Toast.makeText(context, "视口 " + raw, android.widget.Toast.LENGTH_LONG).show()
+            val js = """(function(){
+  var d = document.createElement('div');
+  d.style.cssText = 'position:absolute;left:-9999px;top:0;width:10px;height:100vh';
+  document.documentElement.appendChild(d);
+  var vh = Math.round(d.getBoundingClientRect().height);
+  d.style.height = '100dvh'; var dvh = Math.round(d.getBoundingClientRect().height);
+  d.style.height = '100svh'; var svh = Math.round(d.getBoundingClientRect().height);
+  d.remove();
+  var v = window.visualViewport;
+  return JSON.stringify({
+    inner: [innerWidth, innerHeight],
+    visual: v ? [Math.round(v.width), Math.round(v.height)] : null,
+    scale: v ? v.scale : 0,
+    doc: [document.documentElement.clientWidth, document.documentElement.clientHeight],
+    body: document.body ? document.body.clientHeight : 0,
+    vh: vh, dvh: dvh, svh: svh
+  });
+})()"""
+            tab.webView.evaluateJavascript(js) { raw ->
+                val text = runCatching {
+                    (org.json.JSONTokener(raw).nextValue() as? String) ?: raw
+                }.getOrDefault(raw)
+                viewportInfo = text
             }
         }
     }
@@ -957,6 +981,21 @@ fun BrowserScreen(
                         )
                     }
                 }
+            }
+        }
+
+        viewportInfo?.let { info ->
+            OverlayDialog(
+                show = true,
+                title = "网页视口",
+                summary = info,
+                onDismissRequest = { viewportInfo = null },
+            ) {
+                TextButton(
+                    text = "关闭",
+                    onClick = { viewportInfo = null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 

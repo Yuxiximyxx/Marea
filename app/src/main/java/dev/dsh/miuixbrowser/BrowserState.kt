@@ -89,6 +89,9 @@ class BrowserTab(private val appContext: Context) {
     /** 用户脚本扩展（页面加载完后注入） */
     var userScripts: List<UserScript> = emptyList()
 
+    /** 页面增强总开关：关闭后不再注入任何脚本 / 规则 / 长按逻辑，用于排查 */
+    var pageEnhancements: Boolean = true
+
     /** 搜索模板，由设置注入 */
     var searchTemplate: String = "https://www.baidu.com/s?wd=%s"
 
@@ -285,6 +288,7 @@ class BrowserTab(private val appContext: Context) {
 
     /** 只在广告浮层（fixed/absolute 且像广告或面积大）上响应长按，文字区域交给系统选词 */
     private fun installElementInspector(view: WebView) {
+        if (!pageEnhancements) return
         val js = """(function(){
   if (window.__mafariInspector) return;
   window.__mafariInspector = true;
@@ -345,6 +349,7 @@ class BrowserTab(private val appContext: Context) {
 
     /** 把用户「标记为广告」记住的选择器注入当前页 */
     private fun injectUserAdRules(view: WebView, pageUrl: String?) {
+        if (!pageEnhancements) return
         val host = pageUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return
         val selectors = UserAdRules.selectors(appContext, host)
         if (selectors.isEmpty()) return
@@ -357,6 +362,12 @@ class BrowserTab(private val appContext: Context) {
 
     /** 用 AndroidX WebKit 的 addDocumentStartJavaScript 注入 @run-at document-start 脚本 */
     private fun installDocumentStartScripts() {
+        if (!pageEnhancements) {
+            scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
+            scriptHandlers.clear()
+            installedScriptsSignature = ""
+            return
+        }
         if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
             return
         }
@@ -378,6 +389,7 @@ class BrowserTab(private val appContext: Context) {
 
     /** 页面加载完成后注入 document-end / document-idle 脚本 */
     private fun injectDocumentEndScripts(view: WebView) {
+        if (!pageEnhancements) return
         val pageUrl = url
         userScripts.filter { script ->
             if (!script.enabled) return@filter false

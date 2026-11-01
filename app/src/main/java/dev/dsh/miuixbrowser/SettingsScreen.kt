@@ -136,6 +136,12 @@ fun SettingsScreen(
                         onClick = { showWallpaper = true },
                     )
                     SwitchPreference(
+                        title = "页面增强",
+                        summary = "关闭后不注入油猴脚本、去广告规则和长按标记，用于排查",
+                        checked = settings.pageEnhancements,
+                        onCheckedChange = { settings.updatePageEnhancements(it) },
+                    )
+                    SwitchPreference(
                         title = "显示网页视口信息",
                         summary = "打开网页后弹窗显示 innerHeight / vh 实际值，排查用",
                         checked = settings.debugViewport,

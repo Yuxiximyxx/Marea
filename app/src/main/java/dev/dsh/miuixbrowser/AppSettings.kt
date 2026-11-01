@@ -100,6 +100,15 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_SOFTWARE, enabled).apply()
     }
 
+    /** 页面增强：油猴脚本、去广告规则、长按标记广告 */
+    var pageEnhancements by mutableStateOf(prefs.getBoolean(KEY_ENHANCE, true))
+        private set
+
+    fun updatePageEnhancements(enabled: Boolean) {
+        pageEnhancements = enabled
+        prefs.edit().putBoolean(KEY_ENHANCE, enabled).apply()
+    }
+
     /** 打开网页后弹一句视口尺寸，排查页面高度取不到的问题 */
     var debugViewport by mutableStateOf(prefs.getBoolean(KEY_VIEWPORT, false))
         private set
@@ -126,6 +135,7 @@ class AppSettings(context: Context) {
         const val KEY_WALL = "wallpaper"
         const val KEY_SOFTWARE = "software_render"
         const val KEY_VIEWPORT = "debug_viewport"
+        const val KEY_ENHANCE = "page_enhancements"
     }
 }
 
