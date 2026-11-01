@@ -2,9 +2,6 @@ package dev.dsh.miuixbrowser
 
 import android.app.Activity
 import android.os.Build
-import android.graphics.BlurMaskFilter
-import android.graphics.Paint as AndroidPaint
-import android.graphics.RectF
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -65,11 +62,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -1273,34 +1269,62 @@ private fun BottomBar(
 }
 
 /**
- * 沿按钮轮廓扩散的柔光阴影。
- * 只模糊圆形描边，不绘制径向实心圆，因此不会出现整块大圆形光斑。
+ * 图标轮廓重叠柔影：在原始矢量图标下方叠放两层轻微错位、模糊的同形图标。
+ * 阴影跟随实际图标路径，不绘制圆形底影或按钮外轮廓。
  */
-private fun Modifier.centeredSoftShadow(): Modifier = drawBehind {
-    val density = this
-    val inset = 2.0.dp.toPx()
-    val stroke = 1.15.dp.toPx()
-    val blur = 5.5.dp.toPx()
-    val left = inset + stroke / 2f
-    val top = inset + stroke / 2f
-    val right = size.width - inset - stroke / 2f
-    val bottom = size.height - inset - stroke / 2f
-    val radius = ((right - left).coerceAtMost(bottom - top)) / 2f
-
-    drawIntoCanvas { canvas ->
-        val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-            style = AndroidPaint.Style.STROKE
-            strokeWidth = stroke
-            color = android.graphics.Color.argb(82, 0, 0, 0)
-            maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
-        }
-        canvas.nativeCanvas.drawRoundRect(
-            RectF(left, top, right, bottom),
-            radius,
-            radius,
-            paint,
+@Composable
+private fun IconWithContourShadow(
+    imageVector: ImageVector,
+    description: String,
+    tint: Color,
+    scale: Float,
+    flip: Boolean = false,
+) {
+    val shadowAlpha = if (tint.alpha < 0.5f) 0.12f else 0.28f
+    Box(contentAlignment = Alignment.Center) {
+        // 暗色投影：向右下轻微错位，模糊后沿图标边缘自然扩散。
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = Color.Black.copy(alpha = shadowAlpha),
+            modifier = Modifier
+                .size(24.dp)
+                .offset(x = 0.8.dp, y = 1.0.dp)
+                .blur(2.2.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    if (flip) rotationZ = 180f
+                },
         )
-        paint.maskFilter = null
+        // 反向浅色柔影与暗影交叠，形成玻璃质感的轮廓层次。
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = if (tint.alpha < 0.5f) 0.10f else 0.24f),
+            modifier = Modifier
+                .size(24.dp)
+                .offset(x = (-0.6).dp, y = (-0.6).dp)
+                .blur(1.6.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    if (flip) rotationZ = 180f
+                },
+        )
+        // 清晰图标置顶，避免阴影影响图标辨识度。
+        Icon(
+            imageVector = imageVector,
+            contentDescription = description,
+            tint = tint,
+            modifier = Modifier
+                .size(21.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    if (flip) rotationZ = 180f
+                },
+        )
     }
 }
 
@@ -1317,7 +1341,6 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(44.dp)
-            .centeredSoftShadow()
             .clip(CircleShape)
             .combinedClickable(
                 interactionSource = interaction,
@@ -1328,16 +1351,11 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
-            Icon(
+            IconWithContourShadow(
                 imageVector = MiuixIcons.Layers,
-                contentDescription = "标签页",
+                description = "标签页",
                 tint = color,
-                modifier = Modifier
-                    .size(21.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    },
+                scale = scale,
             )
             if (count > 1) {
                 Box(
@@ -1385,7 +1403,6 @@ private fun PressIcon(
     Box(
         modifier = Modifier
             .size(44.dp)
-            .centeredSoftShadow()
             .clip(CircleShape)
             .clickable(
                 interactionSource = interaction,
@@ -1395,17 +1412,12 @@ private fun PressIcon(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
+        IconWithContourShadow(
             imageVector = icon,
-            contentDescription = description,
+            description = description,
             tint = color,
-            modifier = Modifier
-                .size(21.dp)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    if (flip) rotationZ = 180f
-                },
+            scale = scale,
+            flip = flip,
         )
     }
 }
