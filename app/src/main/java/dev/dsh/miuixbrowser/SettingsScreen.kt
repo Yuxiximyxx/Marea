@@ -136,6 +136,12 @@ fun SettingsScreen(
                         onClick = { showWallpaper = true },
                     )
                     SwitchPreference(
+                        title = "显示网页视口信息",
+                        summary = "打开网页后弹窗显示 innerHeight / vh 实际值，排查用",
+                        checked = settings.debugViewport,
+                        onCheckedChange = { settings.updateDebugViewport(it) },
+                    )
+                    SwitchPreference(
                         title = "网页软件渲染",
                         summary = "排查弹层错位用；开启后网页滚动会变慢",
                         checked = settings.softwareRender,

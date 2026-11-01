@@ -100,6 +100,15 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_SOFTWARE, enabled).apply()
     }
 
+    /** 打开网页后弹一句视口尺寸，排查页面高度取不到的问题 */
+    var debugViewport by mutableStateOf(prefs.getBoolean(KEY_VIEWPORT, false))
+        private set
+
+    fun updateDebugViewport(enabled: Boolean) {
+        debugViewport = enabled
+        prefs.edit().putBoolean(KEY_VIEWPORT, enabled).apply()
+    }
+
     fun updateUserAgent(value: String) {
         userAgent = value.trim()
         prefs.edit().putString(KEY_UA, userAgent).apply()
@@ -116,6 +125,7 @@ class AppSettings(context: Context) {
         const val KEY_SEARCH_CUSTOM = "search_custom"
         const val KEY_WALL = "wallpaper"
         const val KEY_SOFTWARE = "software_render"
+        const val KEY_VIEWPORT = "debug_viewport"
     }
 }
 

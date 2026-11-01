@@ -146,7 +146,7 @@ class BrowserTab(private val appContext: Context) {
             javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = userAgentString.replace("; wv", "")
+            // 保留 "; wv"：让站点识别为 WebView，避免走只对 Chrome 生效的 dvh/vh 分支
         }
         // 打开 WebView 的 WebAuthn（Passkey）支持
         runCatching {

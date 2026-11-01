@@ -204,6 +204,17 @@ fun BrowserScreen(
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
 
+    LaunchedEffect(tab.id, tab.url, settings.debugViewport) {
+        if (settings.debugViewport && tab.url.isNotBlank()) {
+            kotlinx.coroutines.delay(1200)
+            tab.webView.evaluateJavascript(
+                "(function(){var v=window.visualViewport;return JSON.stringify({inner:[innerWidth,innerHeight],visual:v?[v.width,v.height]:null,doc:[document.documentElement.clientWidth,document.documentElement.clientHeight],dpr:devicePixelRatio});})()",
+            ) { raw ->
+                android.widget.Toast.makeText(context, "视口 " + raw, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     LaunchedEffect(settings.softwareRender, tab.id) {
         tab.webView.setLayerType(
             if (settings.softwareRender) {
