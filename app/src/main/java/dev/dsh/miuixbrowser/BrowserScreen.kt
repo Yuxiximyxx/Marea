@@ -166,7 +166,6 @@ fun BrowserScreen(
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    val backdrop = rememberLayerBackdrop()
     val wallpaperBackdrop = rememberLayerBackdrop()
 
     // 从其他应用点进来的链接：新开标签页
@@ -431,7 +430,7 @@ fun BrowserScreen(
         }
 
         // ---- 网页内容：从状态栏下面开始，不再压到状态栏 ----
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -526,7 +525,6 @@ fun BrowserScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             BottomBar(
-                backdrop = backdrop,
                 blurEnabled = settings.blurEnabled,
                 shot = shot,
                 address = address,
@@ -1011,7 +1009,6 @@ fun BrowserScreen(
 @Composable
 private fun Modifier.glassBar(
     corner: Dp,
-    backdrop: LayerBackdrop? = null,
     blurEnabled: Boolean = true,
 ): Modifier {
     val dark = isAppDarkTheme()
@@ -1036,7 +1033,6 @@ private fun Modifier.glassBar(
 
 @Composable
 private fun BottomBar(
-    backdrop: LayerBackdrop? = null,
     blurEnabled: Boolean = true,
     shot: ImageBitmap?,
     address: String,
@@ -1062,7 +1058,7 @@ private fun BottomBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .glassBar(corner = 29.dp, backdrop = backdrop, blurEnabled = blurEnabled)
+            .glassBar(corner = 29.dp, blurEnabled = blurEnabled)
             .height(58.dp),
     ) {
         // 高斯模糊：把抓到的画面用 RenderEffect 真模糊
