@@ -94,6 +94,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -248,6 +249,17 @@ fun BrowserScreen(
         editing = false
         barHidden = false
     }
+    // URL 发生变化时先清掉上一页标题，避免新页面加载期间地址栏继续显示旧标题。
+    // WebChromeClient.onReceivedTitle 更新 tab.title 后，下面的同步逻辑会立即显示新标题。
+    var addressTitleUrl by remember(tab.id) { mutableStateOf(tab.url) }
+    LaunchedEffect(tab.id, tab.url) {
+        if (addressTitleUrl != tab.url) {
+            addressTitleUrl = tab.url
+            // 真正导航加载时旧标题会残留；同文档 history.pushState 则保留当前标题。
+            tab.title = if (tab.loading) "" else tab.webView.title.orEmpty()
+        }
+    }
+
     LaunchedEffect(tab.id, tab.url, editing, settings.addressDisplay, tab.title) {
         if (!editing) {
             address = when (settings.addressDisplay) {
@@ -524,12 +536,20 @@ fun BrowserScreen(
                 .padding(horizontal = 8.dp)
                 .padding(bottom = 8.dp),
         ) {
-            // 主页提示语也要有足够空间；长网址则继续扩展到屏幕可用宽度。
-            val minBarWidth = minOf(360.dp, maxWidth)
-            val targetBarWidth = minOf(
-                maxWidth,
-                (360.dp + address.length.coerceAtMost(120).dp * 1.55f).coerceAtLeast(minBarWidth),
-            )
+            // 按实际字体宽度计算地址栏所需空间：固定按钮区 + 地址文字 + 地址栏内边距。
+            // 不设置人为最小宽度，短文字不会留下空白；只有屏幕可用宽度作为上限。
+            val textMeasurer = rememberTextMeasurer()
+            val addressMeasureText = address.ifBlank { "搜索或输入网址" }
+            val measuredAddressPx = textMeasurer.measure(
+                text = AnnotatedString(addressMeasureText),
+                style = TextStyle(fontSize = 15.sp),
+                maxLines = 1,
+            ).size.width
+            val measuredAddressWidth = with(LocalDensity.current) { measuredAddressPx.toDp() }
+            val fixedToolbarWidth = 4 * 44.dp + 12.dp + 24.dp
+            val loadingIndicatorWidth = if (tab.loading) 15.dp else 0.dp
+            val targetBarWidth = (fixedToolbarWidth + measuredAddressWidth + loadingIndicatorWidth)
+                .coerceAtMost(maxWidth)
             val animatedBarWidth by animateDpAsState(
                 targetValue = targetBarWidth,
                 animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
@@ -657,6 +677,7 @@ fun BrowserScreen(
                 onDismiss = { sheet = Sheet.None },
                 backdrop = browserBackdrop,
                 textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+                blurEnabled = settings.blurEnabled,
             ) {
                 if (settings.tabsStyle == 1) {
                     // 卡片显示
@@ -758,6 +779,7 @@ fun BrowserScreen(
                 onDismiss = { sheet = Sheet.None },
                 backdrop = browserBackdrop,
                 textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+                blurEnabled = settings.blurEnabled,
             ) {
                 MenuGrid(
                     labelFor = { action ->
@@ -822,6 +844,7 @@ fun BrowserScreen(
                 onDismiss = { sheet = Sheet.None },
                 backdrop = browserBackdrop,
                 textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+                blurEnabled = settings.blurEnabled,
             ) {
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
@@ -847,6 +870,7 @@ fun BrowserScreen(
                 onDismiss = { sheet = Sheet.None },
                 backdrop = browserBackdrop,
                 textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+                blurEnabled = settings.blurEnabled,
             ) {
                 val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
                 SheetRow(
@@ -889,6 +913,7 @@ fun BrowserScreen(
                 onDismiss = { sheet = Sheet.None },
                 backdrop = browserBackdrop,
                 textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
+                blurEnabled = settings.blurEnabled,
             ) {
                 val hit = elementHit
                 if (hit != null) {
@@ -1116,10 +1141,25 @@ private fun Modifier.glassBar(
     val shape = RoundedCornerShape(corner)
     val canUseTextureBlur = blurEnabled && textureBlurEnabled &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val tint = if (dark) {
-        Brush.verticalGradient(listOf(Color(0xA82A2A2E), Color(0x981A1A1C)))
-    } else {
-        Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
+    // 主页使用 MIUIX 真纹理模糊；网页场景禁用 MIUIX 采集后，使用更明显的仿玻璃渐变。
+    // 关闭模糊时则使用接近不透明的纯色底板，确保开关状态有清晰的视觉区别。
+    val tint = when {
+        canUseTextureBlur -> if (dark) {
+            Brush.verticalGradient(listOf(Color(0xA82A2A2E), Color(0x981A1A1C)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
+        }
+        blurEnabled -> if (dark) {
+            Brush.verticalGradient(listOf(Color(0xC82B2B31), Color(0xB51A1A20)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xC8FFFFFF), Color(0xBDE7EAF0)))
+        }
+        else -> Brush.verticalGradient(
+            listOf(
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+            ),
+        )
     }
 
     return this
@@ -1497,14 +1537,28 @@ private fun SheetScaffold(
     onDismiss: () -> Unit,
     backdrop: LayerBackdrop? = null,
     textureBlurEnabled: Boolean = false,
+    blurEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val sheetShape = RoundedCornerShape(28.dp)
     val darkSheet = isAppDarkTheme()
-    val sheetTint = if (darkSheet) {
-        Brush.verticalGradient(listOf(Color(0xD92A2A2E), Color(0xD91A1A1C)))
-    } else {
-        Brush.verticalGradient(listOf(Color(0xDFFFFFFF), Color(0xD9E8E9EC)))
+    val sheetTint = when {
+        textureBlurEnabled && backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> if (darkSheet) {
+            Brush.verticalGradient(listOf(Color(0xD92A2A2E), Color(0xD91A1A1C)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xDFFFFFFF), Color(0xD9E8E9EC)))
+        }
+        blurEnabled -> if (darkSheet) {
+            Brush.verticalGradient(listOf(Color(0xE02A2A31), Color(0xD51A1A20)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xE0FFFFFF), Color(0xDCE7EAF0)))
+        }
+        else -> Brush.verticalGradient(
+            listOf(
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+            ),
+        )
     }
     val canBlurSheet = textureBlurEnabled && backdrop != null &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
