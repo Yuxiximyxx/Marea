@@ -318,9 +318,10 @@ fun BrowserScreen(
     val statusBarHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
         WindowInsets.statusBars.getTop(this).toDp()
     }
-    // 固定状态栏留白：滚动时不再改变 WebView 高度，
-    // 否则页面用 % / vh 计算高度的弹层会被反复 resize 影响
-    val contentTopPadding = statusBarHeight
+    // WebView 直接铺满整个窗口（含状态栏），不再通过父布局 padding 缩小它的高度。
+    // 之前 WebView 比窗口矮一截，Chromium 的 visual viewport 和窗口尺寸不一致，
+    // 页面里 position:fixed 的菜单会被按错误比例绘制成横条。
+    val contentTopPadding = 0.dp
 
     val hide by animateFloatAsState(
         targetValue = if (barHidden && sheet == Sheet.None) 1f else 0f,
