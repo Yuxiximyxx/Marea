@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -546,10 +547,11 @@ fun BrowserScreen(
                 maxLines = 1,
             ).size.width
             val measuredAddressWidth = with(LocalDensity.current) { measuredAddressPx.toDp() }
-            val fixedToolbarWidth = 4 * 44.dp + 12.dp + 24.dp
+            val fixedToolbarWidth = 44.dp * 4 + 12.dp + 24.dp
             val loadingIndicatorWidth = if (tab.loading) 15.dp else 0.dp
-            val targetBarWidth = (fixedToolbarWidth + measuredAddressWidth + loadingIndicatorWidth)
-                .coerceAtMost(maxWidth)
+            val requestedBarWidth = fixedToolbarWidth + measuredAddressWidth + loadingIndicatorWidth
+            // 显式比较 Dp，避免当前 Kotlin/Compose 版本对 coerceAtMost 的错误重载推断。
+            val targetBarWidth = if (requestedBarWidth < maxWidth) requestedBarWidth else maxWidth
             val animatedBarWidth by animateDpAsState(
                 targetValue = targetBarWidth,
                 animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
@@ -645,9 +647,10 @@ fun BrowserScreen(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .zIndex(10f)
                     .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .height(48.dp)
+                    // 覆盖到底部手势区域，避免只在导航栏上方留下过窄的恢复热区。
+                    .height(80.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
