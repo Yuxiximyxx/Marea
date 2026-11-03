@@ -292,6 +292,19 @@ fun BrowserScreen(
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
+    LaunchedEffect(
+        tab.id,
+        settings.thirdPartyCookie,
+        settings.sendDnt,
+        settings.webrtcDisabled,
+    ) {
+        tab.applyPrivacy(
+            thirdPartyCookiesAllowed = settings.thirdPartyCookie == 0,
+            sendDnt = settings.sendDnt,
+            webrtcDisabled = settings.webrtcDisabled,
+        )
+    }
+
     // WebView 不会把滚动事件抛给 Compose，这里轻量轮询页面滚动位置：
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.size, tab.id) {
@@ -379,7 +392,10 @@ fun BrowserScreen(
         label = "bottomBar",
     )
 
-    BackHandler {
+    // 有 NavigationEvent 宿主时，子页由 predictiveBackPage 手势驱动，这里避免双处理
+    val hasNavDispatcher = androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner.current != null
+    val secondaryOpen = showSettings || showAbout || showExtensions || showDownloads || showHistory
+    BackHandler(enabled = !(hasNavDispatcher && secondaryOpen)) {
         when {
             // 子页面：先回设置页（关于 / 脚本 / 下载一致）
             showAbout -> {
@@ -605,8 +621,13 @@ fun BrowserScreen(
             // 退出动画播放期间仍保留底栏；动画结束后直接从组合树移除，
             // 不留下透明/平移后的 Compose 节点拦截 WebView 的触摸事件。
             if (!barHidden || hide < 0.995f) {
-                // 缩小后的圆形搜索钮
+                // 缩小后的圆形搜索钮（弹性缩放入场）
                 if (barMinimized) {
+                    val circleScale by animateFloatAsState(
+                        targetValue = 1f,
+                        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+                        label = "barCircleIn",
+                    )
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -629,7 +650,10 @@ fun BrowserScreen(
                             }
                             .graphicsLayer {
                                 translationY = hide * 210.dp.toPx()
-                                alpha = 1f - hide
+                                alpha = (1f - hide) * circleScale
+                                scaleX = circleScale
+                                scaleY = circleScale
+                                transformOrigin = TransformOrigin(0.5f, 1f)
                             }
                             .clickable {
                                 barMinimized = false
@@ -802,7 +826,8 @@ fun BrowserScreen(
                             ) {
                                 rowItems.forEachIndexed { colIndex, item ->
                                     val index = rowIndex * 2 + colIndex
-                                    Column(
+                                    val thumb = item.thumbnail
+                                    Box(
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(84.dp)
@@ -811,39 +836,55 @@ fun BrowserScreen(
                                             .clickable {
                                                 state.select(index)
                                                 sheet = Sheet.None
-                                            }
-                                            .padding(10.dp),
+                                            },
                                     ) {
-                                        Text(
-                                            text = item.title.ifBlank { "新标签页" },
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Spacer(Modifier.weight(1f))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
+                                        // 网页缩略图铺满卡片，作为底图
+                                        if (thumb != null) {
+                                            Image(
+                                                bitmap = thumb,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .graphicsLayer { alpha = 0.45f },
+                                            )
+                                        }
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(10.dp),
                                         ) {
                                             Text(
-                                                text = if (item.url.isBlank()) "主页" else hostOf(item.url),
-                                                fontSize = 11.sp,
-                                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                                text = item.title.ifBlank { "新标签页" },
+                                                fontSize = 13.sp,
+                                                color = MiuixTheme.colorScheme.onSurface,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f),
                                             )
-                                            IconButton(
-                                                onClick = { state.closeTab(index) },
-                                                minWidth = 28.dp,
-                                                minHeight = 28.dp,
+                                            Spacer(Modifier.weight(1f))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
                                             ) {
-                                                Icon(
-                                                    imageVector = MiuixIcons.Close,
-                                                    contentDescription = "关闭",
-                                                    modifier = Modifier.size(14.dp),
+                                                Text(
+                                                    text = if (item.url.isBlank()) "主页" else hostOf(item.url),
+                                                    fontSize = 11.sp,
+                                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f),
                                                 )
+                                                IconButton(
+                                                    onClick = { state.closeTab(index) },
+                                                    minWidth = 28.dp,
+                                                    minHeight = 28.dp,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MiuixIcons.Close,
+                                                        contentDescription = "关闭",
+                                                        modifier = Modifier.size(14.dp),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1037,53 +1078,65 @@ fun BrowserScreen(
         }
 
         if (showSettings) {
-            SettingsScreen(
-                settings = settings,
-                onBack = { showSettings = false },
-                onPickUa = { showUaPicker = true },
-                onOpenDownloads = {
-                    settingsReturn = true
-                    showSettings = false
-                    showDownloads = true
-                },
-                onOpenScripts = {
-                    settingsReturn = true
-                    showSettings = false
-                    showExtensions = true
-                },
-                onOpenBookmarks = {
-                    settingsReturn = true
-                    showSettings = false
-                    libraryTab = 0
-                    showHistory = true
-                },
-                onOpenHistory = {
-                    settingsReturn = true
-                    showSettings = false
-                    libraryTab = 1
-                    showHistory = true
-                },
-                onOpenAbout = {
-                    settingsReturn = true
-                    showSettings = false
-                    showAbout = true
-                },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showSettings) { showSettings = false },
+            ) {
+                SettingsScreen(
+                    settings = settings,
+                    onBack = { showSettings = false },
+                    onPickUa = { showUaPicker = true },
+                    onOpenDownloads = {
+                        settingsReturn = true
+                        showSettings = false
+                        showDownloads = true
+                    },
+                    onOpenScripts = {
+                        settingsReturn = true
+                        showSettings = false
+                        showExtensions = true
+                    },
+                    onOpenBookmarks = {
+                        settingsReturn = true
+                        showSettings = false
+                        libraryTab = 0
+                        showHistory = true
+                    },
+                    onOpenAbout = {
+                        settingsReturn = true
+                        showSettings = false
+                        showAbout = true
+                    },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
 
         if (showAbout) {
-            AboutScreen(
-                onBack = {
-                    showAbout = false
-                    if (settingsReturn) {
-                        showSettings = true
-                        settingsReturn = false
-                    }
-                },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showAbout) {
+                        showAbout = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                AboutScreen(
+                    onBack = {
+                        showAbout = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
         val downloadRequest = pendingDownload
@@ -1174,42 +1227,79 @@ fun BrowserScreen(
         }
 
         if (showDownloads) {
-            DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showDownloads) {
+                        showDownloads = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
+            }
         }
 
         if (showExtensions) {
-            ExtensionsScreen(
-                store = extensions,
-                onBack = { showExtensions = false },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showExtensions) {
+                        showExtensions = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                ExtensionsScreen(
+                    store = extensions,
+                    onBack = { showExtensions = false },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
         if (showHistory) {
-            LibraryScreen(
-                favorites = favorites,
-                store = history,
-                onBack = {
-                    showHistory = false
-                    if (settingsReturn) {
-                        showSettings = true
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showHistory) {
+                        showHistory = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                LibraryScreen(
+                    favorites = favorites,
+                    store = history,
+                    onBack = {
+                        showHistory = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+                    onOpen = { url ->
+                        showHistory = false
                         settingsReturn = false
-                    }
-                },
-                onOpen = { url ->
-                    showHistory = false
-                    settingsReturn = false
-                    tab.loadUrl(url)
-                },
-                initialTab = libraryTab,
-                blurEnabled = settings.blurEnabled,
-            )
+                        tab.loadUrl(url)
+                    },
+                    initialTab = libraryTab,
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
         UaDialog(
             show = showUaPicker,
             initial = settings.userAgent,
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            // 不采样 browserBackdrop（主页可能含壁纸），用不透明回退色，避免壁纸取色
+            backdrop = null,
             onDismiss = { showUaPicker = false },
             onConfirm = {
                 settings.updateUserAgent(it)
@@ -1263,7 +1353,7 @@ private fun Modifier.glassBar(
     val rounded = RoundedCornerShape(corner)
     val canUseGlass = blurEnabled && textureBlurEnabled && backdrop != null &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    // 关闭模糊时使用接近不透明的纯色底板；无采样时用渐变近似玻璃。
+    // 关闭模糊时使用接近不透明的纯色底板；网页态（无采样）提高不透明度，避免内容透出干扰。
     val tint = when {
         !blurEnabled -> Brush.verticalGradient(
             listOf(
@@ -1271,8 +1361,8 @@ private fun Modifier.glassBar(
                 MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
             ),
         )
-        dark -> Brush.verticalGradient(listOf(Color(0xC82B2B31), Color(0xB51A1A20)))
-        else -> Brush.verticalGradient(listOf(Color(0xC8FFFFFF), Color(0xBDE7EAF0)))
+        dark -> Brush.verticalGradient(listOf(Color(0xF02B2B31), Color(0xE81A1A20)))
+        else -> Brush.verticalGradient(listOf(Color(0xF0FFFFFF), Color(0xE8E7EAF0)))
     }
 
     return this.glassPanel(
@@ -1859,12 +1949,29 @@ private fun FavoriteTile(
     onRemove: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val useBlur = blurEnabled && wallpaper != null && wallpaperBackdrop != null
+    val glassShape = GlassShape(16.dp)
+    val dark = isAppDarkTheme()
+    val useGlass = blurEnabled && wallpaperBackdrop != null
     val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(58.dp)
-            .clip(shape)
+            .glassPanel(
+                backdrop = if (useGlass) wallpaperBackdrop else null,
+                shape = glassShape,
+                style = GlassDefaults.style(dark),
+                material = if (useGlass) GlassMaterials.puredThinGlass(dark) else null,
+                stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
+                shading = false,
+                fallback = Modifier
+                    .clip(shape)
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh, shape)
+                    .border(
+                        width = 1.dp,
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                        shape = shape,
+                    ),
+            )
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1872,25 +1979,6 @@ private fun FavoriteTile(
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongPress()
-                },
-            )
-            .then(
-                if (useBlur) {
-                    Modifier.textureBlurBar(
-                        backdrop = wallpaperBackdrop,
-                        shape = shape,
-                        tint = Color.White.copy(alpha = 0.28f),
-                        radius = 22f,
-                        highlight = Highlight.GlassStrokeMiddleLight,
-                    )
-                } else {
-                    Modifier
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .border(
-                            width = 1.dp,
-                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                            shape = shape,
-                        )
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -2008,7 +2096,7 @@ private fun UaDialog(
     var custom by remember(show) { mutableStateOf(initial) }
     GlassBottomSheet(
         show = show,
-        title = "自定义 UA",
+        title = "UA 标识管理",
         backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {

@@ -174,40 +174,14 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Box {
-                if (blurEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .graphicsLayer {
-                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
-                                    .coerceIn(0f, 1f)
-                            }
-                            .progressiveTextureBlur(
-                                backdrop = backdrop,
-                                shape = RectangleShape,
-                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
-                                blurRadius = 80f,
-                                colors = BlurDefaults.blurColors(
-                                    blendColors = listOf(
-                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
-                                    ),
-                                ),
-                            ),
-                    )
-                }
-                GlassTopAppBar(
-                    title = "下载",
-                    backdrop = backdrop,
-                    scrollBehavior = scrollBehavior,
-                    isContentScrolled = isScrolled,
-                    navigationIcon = {
-                        GlassIconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                )
-            }
+            GlassPageTopBar(
+                title = "下载",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+            )
         },
     ) { padding ->
         Column(

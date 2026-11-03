@@ -136,16 +136,13 @@ fun LibraryScreen(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            GlassTopAppBar(
+            GlassPageTopBar(
                 title = if (pagerState.currentPage == TAB_BOOKMARKS) "书签" else "历史",
                 backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
                 scrollBehavior = scrollBehavior,
                 isContentScrolled = isScrolled,
-                navigationIcon = {
-                    GlassIconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
                 actions = {
                     if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
                         IconTextAction(
@@ -169,38 +166,39 @@ fun LibraryScreen(
             )
         },
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-                .background(MiuixTheme.colorScheme.surface)
-                .padding(top = padding.calculateTopPadding()),
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                // 竖向滚动交给各自 LazyColumn，横向翻页
-                userScrollEnabled = true,
-            ) { page ->
-                when (page) {
-                    TAB_BOOKMARKS -> BookmarksPage(
-                        favorites = favorites,
-                        listState = bookmarkListState,
-                        scrollBehavior = scrollBehavior,
-                        onOpen = onOpen,
-                        onEdit = { editingFav = it },
-                    )
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .background(MiuixTheme.colorScheme.surface)
+                    .padding(top = padding.calculateTopPadding()),
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = true,
+                ) { page ->
+                    when (page) {
+                        TAB_BOOKMARKS -> BookmarksPage(
+                            favorites = favorites,
+                            listState = bookmarkListState,
+                            scrollBehavior = scrollBehavior,
+                            onOpen = onOpen,
+                            onEdit = { editingFav = it },
+                        )
 
-                    else -> HistoryPage(
-                        store = store,
-                        listState = historyListState,
-                        scrollBehavior = scrollBehavior,
-                        onOpen = onOpen,
-                    )
+                        else -> HistoryPage(
+                            store = store,
+                            listState = historyListState,
+                            scrollBehavior = scrollBehavior,
+                            onOpen = onOpen,
+                        )
+                    }
                 }
             }
 
-            // 书签栏右下角 FAB
+            // 书签栏右下角 FAB（放在 layerBackdrop 之外，避免 GlassPopup 自采样）
             if (pagerState.currentPage == TAB_BOOKMARKS) {
                 Box(
                     modifier = Modifier

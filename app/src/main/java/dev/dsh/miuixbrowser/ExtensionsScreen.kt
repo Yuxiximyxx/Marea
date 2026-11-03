@@ -94,39 +94,14 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Box {
-                if (blurEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .graphicsLayer {
-                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
-                                    .coerceIn(0f, 1f)
-                            }
-                            .progressiveTextureBlur(
-                                backdrop = backdrop,
-                                shape = RectangleShape,
-                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
-                                blurRadius = 80f,
-                                colors = BlurDefaults.blurColors(
-                                    blendColors = listOf(
-                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
-                                    ),
-                                ),
-                            ),
-                    )
-                }
-                GlassTopAppBar(
-                    title = "脚本",
-                    backdrop = backdrop,
-                    scrollBehavior = scrollBehavior,
-                    isContentScrolled = isScrolled,
-                    navigationIcon = {
-                        GlassIconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                    actions = {
+            GlassPageTopBar(
+                title = "脚本",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+                actions = {
                     IconTextAction(
                         icon = MiuixIcons.Download,
                         label = "导入",
@@ -175,8 +150,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                         }
                     }
                 },
-                )
-            }
+            )
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {

@@ -83,13 +83,14 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenBookmarks: () -> Unit,
-    onOpenHistory: () -> Unit,
     onOpenAbout: () -> Unit,
     blurEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
+    var showCookieSheet by remember { mutableStateOf(false) }
+    var showPermSheet by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -111,40 +112,14 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Box {
-                if (blurEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .graphicsLayer {
-                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
-                                    .coerceIn(0f, 1f)
-                            }
-                            .progressiveTextureBlur(
-                                backdrop = backdrop,
-                                shape = RectangleShape,
-                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
-                                blurRadius = 80f,
-                                colors = BlurDefaults.blurColors(
-                                    blendColors = listOf(
-                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
-                                    ),
-                                ),
-                            ),
-                    )
-                }
-                GlassTopAppBar(
-                    title = "设置",
-                    backdrop = backdrop,
-                    scrollBehavior = scrollBehavior,
-                    isContentScrolled = isScrolled,
-                    navigationIcon = {
-                        GlassIconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                )
-            }
+            GlassPageTopBar(
+                title = "设置",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+            )
         },
     ) { padding ->
         Column(
@@ -232,17 +207,12 @@ fun SettingsScreen(
                     onClick = { showSearch = true },
                 )
                 SettingsRow(
-                    title = "书签",
-                    summary = "查看、分组与导入导出书签",
+                    title = "书签与历史",
+                    summary = "书签分组、浏览记录",
                     onClick = onOpenBookmarks,
                 )
                 SettingsRow(
-                    title = "历史",
-                    summary = "浏览记录",
-                    onClick = onOpenHistory,
-                )
-                SettingsRow(
-                    title = "自定义 UA",
+                    title = "UA 标识管理",
                     summary = uaSummary(settings.userAgent),
                     onClick = onPickUa,
                 )
@@ -250,6 +220,43 @@ fun SettingsScreen(
                     title = "下载",
                     summary = "查看已下载的文件",
                     onClick = onOpenDownloads,
+                )
+            }
+
+            SmallTitle(text = "隐私与安全")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                insideMargin = PaddingValues(0.dp),
+            ) {
+                SettingsRow(
+                    title = "Cookie 管理",
+                    summary = if (settings.thirdPartyCookie == 0) "允许第三方 Cookie" else "拒绝第三方 Cookie",
+                    onClick = { showCookieSheet = true },
+                )
+                SettingsRow(
+                    title = "网页权限",
+                    summary = "摄像头 · 麦克风 · 定位",
+                    onClick = { showPermSheet = true },
+                )
+                SwitchPreference(
+                    title = "发送禁止跟踪请求",
+                    summary = "页面请求附带 DNT / Sec-GPC 头",
+                    checked = settings.sendDnt,
+                    onCheckedChange = { settings.updateSendDnt(it) },
+                )
+                SwitchPreference(
+                    title = "禁用 WebRTC",
+                    summary = "防止通过 WebRTC 泄露真实 IP",
+                    checked = settings.webrtcDisabled,
+                    onCheckedChange = { settings.updateWebrtcDisabled(it) },
+                )
+                SwitchPreference(
+                    title = "拦截跟踪脚本",
+                    summary = "结合页面增强，尽量阻断追踪器",
+                    checked = settings.blockTrackingScripts,
+                    onCheckedChange = { settings.updateBlockTrackingScripts(it) },
                 )
             }
 
@@ -341,6 +348,108 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(text = "关闭", style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
+
+        GlassBottomSheet(
+            show = showCookieSheet,
+            title = "Cookie 管理",
+            backdrop = backdrop,
+            onDismissRequest = { showCookieSheet = false },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
+                listOf(
+                    "允许第三方 Cookie" to 0,
+                    "拒绝第三方 Cookie" to 1,
+                ).forEach { (label, mode) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                settings.updateThirdPartyCookie(mode)
+                                showCookieSheet = false
+                            }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 16.sp,
+                            color = if (settings.thirdPartyCookie == mode) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (settings.thirdPartyCookie == mode) {
+                            Icon(
+                                imageVector = MiuixIcons.Back,
+                                contentDescription = null,
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .graphicsLayer { rotationZ = 180f },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "拒绝后部分站点登录态可能失效，可在系统设置中为单站点例外。",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+            }
+        }
+
+        GlassBottomSheet(
+            show = showPermSheet,
+            title = "网页权限",
+            backdrop = backdrop,
+            onDismissRequest = { showPermSheet = false },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
+                listOf(
+                    Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
+                    Triple("麦克风", settings.micPermission, settings::updateMicPermission),
+                    Triple("定位", settings.locationPermission, settings::updateLocationPermission),
+                ).forEach { (label, current, update) ->
+                    SmallTitle(text = label)
+                    listOf("询问" to 0, "允许" to 1, "拒绝" to 2).forEach { (opt, mode) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    update(mode)
+                                }
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = opt,
+                                fontSize = 15.sp,
+                                color = if (current == mode) {
+                                    MiuixTheme.colorScheme.primary
+                                } else {
+                                    MiuixTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (current == mode) {
+                                Icon(
+                                    imageVector = MiuixIcons.Back,
+                                    contentDescription = null,
+                                    tint = MiuixTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .graphicsLayer { rotationZ = 180f },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
