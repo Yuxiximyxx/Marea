@@ -2557,32 +2557,35 @@ private fun TabAddMenu(
     onIncognito: () -> Unit,
 ) {
     if (!show) return
-    GlassPopup(
-        show = show,
-        onDismissRequest = onDismiss,
-        anchorBounds = anchorBounds,
-        backdrop = backdrop,
-        visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
-    ) {
-        GlassPopupItem(
-            text = "新建普通标签页",
-            enabled = canAdd,
-            onClick = {
-                onDismiss()
-                onNormal()
-            },
-            icon = MiuixIcons.Glass.Add,
-        )
-        GlassPopupItem(
-            text = "新建无痕标签页",
-            summary = "不保存浏览记录",
-            enabled = canAdd,
-            onClick = {
-                onDismiss()
-                onIncognito()
-            },
-            icon = MiuixIcons.Glass.Hide,
-        )
+    // GlassPopup 是 BoxScope 扩展，需包在 Box 内
+    Box {
+        GlassPopup(
+            show = show,
+            onDismissRequest = onDismiss,
+            anchorBounds = anchorBounds,
+            backdrop = backdrop,
+            visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
+        ) {
+            GlassPopupItem(
+                text = "新建普通标签页",
+                enabled = canAdd,
+                onClick = {
+                    onDismiss()
+                    onNormal()
+                },
+                icon = MiuixIcons.Glass.Add,
+            )
+            GlassPopupItem(
+                text = "新建无痕标签页",
+                summary = "不保存浏览记录",
+                enabled = canAdd,
+                onClick = {
+                    onDismiss()
+                    onIncognito()
+                },
+                icon = MiuixIcons.Glass.Hide,
+            )
+        }
     }
 }
 

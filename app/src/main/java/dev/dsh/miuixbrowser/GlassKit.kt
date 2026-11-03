@@ -70,7 +70,7 @@ fun GlassBackButton(onClick: () -> Unit) {
 fun HapticGlassIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable RowScope.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     GlassIconButton(
