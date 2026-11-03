@@ -49,11 +49,16 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -72,6 +77,10 @@ import top.yukonga.miuix.kmp.icon.extended.Photos
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 private enum class FileKind { IMAGE, VIDEO, AUDIO, ARCHIVE, APK, OTHER }
 
@@ -157,20 +166,48 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val backdrop = rememberLayerBackdrop()
     var pendingDelete by remember { mutableStateOf<DownloadTask?>(null) }
     val deleteTask = pendingDelete
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scrollBehavior = MiuixScrollBehavior()
+    val isScrolled by remember { derivedStateOf { listState.canScrollBackward } }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            GlassTopAppBar(
-                title = "下载",
-                backdrop = backdrop,
-                navigationIcon = {
-                    GlassIconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-            )
+            Box {
+                if (blurEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
+                                    .coerceIn(0f, 1f)
+                            }
+                            .progressiveTextureBlur(
+                                backdrop = backdrop,
+                                shape = RectangleShape,
+                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                                blurRadius = 80f,
+                                colors = BlurDefaults.blurColors(
+                                    blendColors = listOf(
+                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
+                                    ),
+                                ),
+                            ),
+                    )
+                }
+                GlassTopAppBar(
+                    title = "下载",
+                    backdrop = backdrop,
+                    scrollBehavior = scrollBehavior,
+                    isContentScrolled = isScrolled,
+                    navigationIcon = {
+                        GlassIconButton(onClick = onBack) {
+                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -179,7 +216,8 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 .layerBackdrop(backdrop)
                 .background(MiuixTheme.colorScheme.surface)
                 .padding(top = padding.calculateTopPadding())
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
         ) {
             if (tasks.isEmpty()) {
                 Text(
@@ -190,6 +228,7 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 )
             } else {
                 LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                 ) {
                     item {

@@ -42,6 +42,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
@@ -56,7 +57,11 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.File
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -64,6 +69,10 @@ import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 @Composable
 fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boolean = true) {
@@ -78,19 +87,46 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
     val backdrop = rememberLayerBackdrop()
     val deleteTarget = deleting
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scrollBehavior = MiuixScrollBehavior()
+    val isScrolled by remember { derivedStateOf { listState.canScrollBackward } }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            GlassTopAppBar(
-                title = "脚本",
-                backdrop = backdrop,
-                navigationIcon = {
-                    GlassIconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-                actions = {
+            Box {
+                if (blurEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
+                                    .coerceIn(0f, 1f)
+                            }
+                            .progressiveTextureBlur(
+                                backdrop = backdrop,
+                                shape = RectangleShape,
+                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                                blurRadius = 80f,
+                                colors = BlurDefaults.blurColors(
+                                    blendColors = listOf(
+                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
+                                    ),
+                                ),
+                            ),
+                    )
+                }
+                GlassTopAppBar(
+                    title = "脚本",
+                    backdrop = backdrop,
+                    scrollBehavior = scrollBehavior,
+                    isContentScrolled = isScrolled,
+                    navigationIcon = {
+                        GlassIconButton(onClick = onBack) {
+                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
                     IconTextAction(
                         icon = MiuixIcons.Download,
                         label = "导入",
@@ -139,7 +175,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                         }
                     }
                 },
-            )
+                )
+            }
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -149,7 +186,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     .layerBackdrop(backdrop)
                     .background(MiuixTheme.colorScheme.surface)
                     .padding(top = padding.calculateTopPadding())
-                    .navigationBarsPadding(),
+                    .navigationBarsPadding()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
             ) {
                 val subscriptions = store.items.filter { it.subscriptionUrl.isNotBlank() }
                 val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
@@ -160,7 +198,10 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                             (builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl)
                     }
                 }
-                LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
+                ) {
                     if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
                         item {
                             SmallTitle(text = "内置脚本")

@@ -34,6 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,13 +48,18 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -73,7 +82,10 @@ fun SettingsScreen(
     onPickUa: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenAbout: () -> Unit,
+    blurEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
     var showSearch by remember { mutableStateOf(false) }
@@ -92,19 +104,47 @@ fun SettingsScreen(
 
     val backdrop = rememberLayerBackdrop()
     val popupVisuals = GlassPopupDefaults.visuals()
+    val scrollState = rememberScrollState()
+    val scrollBehavior = MiuixScrollBehavior()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            GlassTopAppBar(
-                title = "设置",
-                backdrop = backdrop,
-                navigationIcon = {
-                    GlassIconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-            )
+            Box {
+                if (blurEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
+                                    .coerceIn(0f, 1f)
+                            }
+                            .progressiveTextureBlur(
+                                backdrop = backdrop,
+                                shape = RectangleShape,
+                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                                blurRadius = 80f,
+                                colors = BlurDefaults.blurColors(
+                                    blendColors = listOf(
+                                        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
+                                    ),
+                                ),
+                            ),
+                    )
+                }
+                GlassTopAppBar(
+                    title = "设置",
+                    backdrop = backdrop,
+                    scrollBehavior = scrollBehavior,
+                    isContentScrolled = isScrolled,
+                    navigationIcon = {
+                        GlassIconButton(onClick = onBack) {
+                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -114,7 +154,8 @@ fun SettingsScreen(
                 .background(MiuixTheme.colorScheme.surface)
                 .padding(top = padding.calculateTopPadding())
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .verticalScroll(scrollState)
                 .padding(bottom = 24.dp),
         ) {
             SmallTitle(text = "外观")
@@ -189,6 +230,16 @@ fun SettingsScreen(
                     title = "搜索引擎",
                     summary = SEARCH_ENGINES.getOrNull(settings.searchIndex)?.name ?: "自定义",
                     onClick = { showSearch = true },
+                )
+                SettingsRow(
+                    title = "书签",
+                    summary = "查看、分组与导入导出书签",
+                    onClick = onOpenBookmarks,
+                )
+                SettingsRow(
+                    title = "历史",
+                    summary = "浏览记录",
+                    onClick = onOpenHistory,
                 )
                 SettingsRow(
                     title = "自定义 UA",

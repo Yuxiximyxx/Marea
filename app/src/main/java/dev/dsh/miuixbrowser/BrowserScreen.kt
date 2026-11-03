@@ -87,6 +87,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -127,6 +128,7 @@ import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDefaults
@@ -197,6 +199,8 @@ fun BrowserScreen(
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
+    /** 底栏被左右滑动缩小为圆形搜索钮 */
+    var barMinimized by remember { mutableStateOf(false) }
     var favEditing by remember { mutableStateOf(false) }
     var showFavEditor by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -205,6 +209,7 @@ fun BrowserScreen(
     var showDownloads by remember { mutableStateOf(false) }
     var showExtensions by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var libraryTab by remember { mutableIntStateOf(1) }
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var settingsReturn by remember { mutableStateOf(false) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
@@ -258,6 +263,7 @@ fun BrowserScreen(
         }
         editing = false
         barHidden = false
+        barMinimized = false
     }
     // URL 发生变化时先清掉上一页标题，避免新页面加载期间地址栏继续显示旧标题。
     // WebChromeClient.onReceivedTitle 更新 tab.title 后，下面的同步逻辑会立即显示新标题。
@@ -313,6 +319,8 @@ fun BrowserScreen(
     LaunchedEffect(tab.id) {
         var last = 0
         var lastShow = 0
+        var scrollDownAccum = 0f
+        var scrollUpAccum = 0f
         while (true) {
             runCatching {
                 val webView = tab.webView
@@ -322,11 +330,30 @@ fun BrowserScreen(
                     offset <= 12 -> {
                         barHidden = false
                         lastShow = offset
+                        scrollDownAccum = 0f
+                        scrollUpAccum = 0f
                     }
-                    dy > 10 && offset - lastShow > 48 -> barHidden = true
-                    dy < -10 -> {
-                        barHidden = false
-                        lastShow = offset
+                    dy > 0 -> {
+                        scrollUpAccum = 0f
+                        scrollDownAccum += dy
+                        // 向下累计约 100px 且离开顶部足够远才隐藏，降低误触
+                        if (scrollDownAccum >= 100f && offset - lastShow >= 96f) {
+                            barHidden = true
+                            scrollDownAccum = 0f
+                            scrollUpAccum = 0f
+                        }
+                    }
+                    dy < 0 -> {
+                        scrollDownAccum = 0f
+                        // 隐藏后须向上累计约 120px 才恢复，避免轻微回弹就弹出
+                        scrollUpAccum += -dy
+                        if (barHidden && scrollUpAccum >= 120f) {
+                            barHidden = false
+                            lastShow = offset
+                            scrollUpAccum = 0f
+                        } else if (!barHidden) {
+                            lastShow = offset
+                        }
                     }
                 }
                 last = offset
@@ -373,7 +400,13 @@ fun BrowserScreen(
                 settingsReturn = false
             }
             showExtensions -> showExtensions = false
-            showHistory -> showHistory = false
+            showHistory -> {
+                showHistory = false
+                if (settingsReturn) {
+                    showSettings = true
+                    settingsReturn = false
+                }
+            }
             showSettings -> showSettings = false
             showDownloads -> showDownloads = false
             showUaPicker -> showUaPicker = false
@@ -567,26 +600,99 @@ fun BrowserScreen(
                 label = "dynamicBottomBarWidth",
             )
             var dragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
+            var hDragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
 
             // 退出动画播放期间仍保留底栏；动画结束后直接从组合树移除，
             // 不留下透明/平移后的 Compose 节点拦截 WebView 的触摸事件。
             if (!barHidden || hide < 0.995f) {
+                // 缩小后的圆形搜索钮
+                if (barMinimized) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 4.dp)
+                            .size(48.dp)
+                            .pointerInput(tab.id) {
+                                detectDragGestures(
+                                    onDrag = { change, dragAmount ->
+                                        hDragDistance += dragAmount.x
+                                        // 再次左右滑或上滑可展开
+                                        if (kotlin.math.abs(hDragDistance) > 72f || dragAmount.y < -40f) {
+                                            barMinimized = false
+                                            hDragDistance = 0f
+                                            change.consume()
+                                        }
+                                    },
+                                    onDragEnd = { hDragDistance = 0f },
+                                    onDragCancel = { hDragDistance = 0f },
+                                )
+                            }
+                            .graphicsLayer {
+                                translationY = hide * 210.dp.toPx()
+                                alpha = 1f - hide
+                            }
+                            .clickable {
+                                barMinimized = false
+                                if (!editing) {
+                                    editing = true
+                                    address = tab.url
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .glassBar(
+                                    backdrop = browserBackdrop,
+                                    corner = 24.dp,
+                                    blurEnabled = settings.blurEnabled,
+                                    textureBlurEnabled = homeBlurAvailable,
+                                ),
+                        )
+                        Icon(
+                            imageVector = MiuixIcons.Search,
+                            contentDescription = "搜索或输入网址",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                } else {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .width(animatedBarWidth)
-                        // 在底栏上向下滑动即可主动收起。
+                        // 在底栏上向下滑动主动收起；左右滑动缩小为搜索圆钮。
                         .pointerInput(tab.id, barHidden) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { change, dragAmount ->
-                                    dragDistance += dragAmount
-                                    if (dragDistance > 26f && !barHidden) {
-                                        barHidden = true
-                                        change.consume()
+                            detectDragGestures(
+                                onDrag = { change, dragAmount ->
+                                    if (kotlin.math.abs(dragAmount.x) > kotlin.math.abs(dragAmount.y)) {
+                                        hDragDistance += dragAmount.x
+                                        if (kotlin.math.abs(hDragDistance) > 72f) {
+                                            barMinimized = true
+                                            hDragDistance = 0f
+                                            change.consume()
+                                        }
+                                    } else {
+                                        dragDistance += dragAmount.y
+                                        // 提高竖向隐藏阈值，降低误触
+                                        if (dragDistance > 56f && !barHidden) {
+                                            barHidden = true
+                                            change.consume()
+                                        } else if (dragDistance < -56f && barHidden) {
+                                            barHidden = false
+                                            change.consume()
+                                        }
                                     }
                                 },
-                                onDragEnd = { dragDistance = 0f },
-                                onDragCancel = { dragDistance = 0f },
+                                onDragEnd = {
+                                    dragDistance = 0f
+                                    hDragDistance = 0f
+                                },
+                                onDragCancel = {
+                                    dragDistance = 0f
+                                    hDragDistance = 0f
+                                },
                             )
                         }
                         .graphicsLayer {
@@ -651,6 +757,7 @@ fun BrowserScreen(
                 onMore = { sheet = Sheet.Menu },
             )
                 }
+                } // end else (!barMinimized)
             }
         }
 
@@ -826,7 +933,10 @@ fun BrowserScreen(
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> showDownloads = true
                             MenuAction.Extensions -> showExtensions = true
-                            MenuAction.History -> showHistory = true
+                            MenuAction.History -> {
+                                libraryTab = 1
+                                showHistory = true
+                            }
                             MenuAction.Settings -> showSettings = true
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
                         }
@@ -941,11 +1051,24 @@ fun BrowserScreen(
                     showSettings = false
                     showExtensions = true
                 },
+                onOpenBookmarks = {
+                    settingsReturn = true
+                    showSettings = false
+                    libraryTab = 0
+                    showHistory = true
+                },
+                onOpenHistory = {
+                    settingsReturn = true
+                    showSettings = false
+                    libraryTab = 1
+                    showHistory = true
+                },
                 onOpenAbout = {
                     settingsReturn = true
                     showSettings = false
                     showAbout = true
                 },
+                blurEnabled = settings.blurEnabled,
             )
         }
 
@@ -1063,13 +1186,22 @@ fun BrowserScreen(
         }
 
         if (showHistory) {
-            HistoryScreen(
+            LibraryScreen(
+                favorites = favorites,
                 store = history,
-                onBack = { showHistory = false },
+                onBack = {
+                    showHistory = false
+                    if (settingsReturn) {
+                        showSettings = true
+                        settingsReturn = false
+                    }
+                },
                 onOpen = { url ->
                     showHistory = false
+                    settingsReturn = false
                     tab.loadUrl(url)
                 },
+                initialTab = libraryTab,
                 blurEnabled = settings.blurEnabled,
             )
         }

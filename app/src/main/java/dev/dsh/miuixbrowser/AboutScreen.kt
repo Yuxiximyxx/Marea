@@ -37,15 +37,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 @Composable
 fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
@@ -57,6 +67,9 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val surface = MiuixTheme.colorScheme.surface
     val iconShape = RoundedCornerShape(26.dp)
+    val scrollState = rememberScrollState()
+    val scrollBehavior = MiuixScrollBehavior()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
 
     Box(modifier = Modifier.fillMaxSize().background(surface)) {
         // ---- 整页背景：铺满全屏的主题色渐变，供玻璃图标与顶栏采样 ----
@@ -79,7 +92,8 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .verticalScroll(scrollState)
                 .padding(top = statusTop + 56.dp)
                 .padding(bottom = 24.dp),
         ) {
@@ -181,16 +195,41 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             )
         }
 
-        GlassTopAppBar(
-            title = "关于",
-            backdrop = pageBackdrop,
-            modifier = Modifier.align(Alignment.TopCenter),
-            navigationIcon = {
-                GlassIconButton(onClick = onBack) {
-                    Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                }
-            },
-        )
+        Box {
+            if (blurEnabled) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            alpha = (-scrollBehavior.state.contentOffset / 48.dp.toPx())
+                                .coerceIn(0f, 1f)
+                        }
+                        .progressiveTextureBlur(
+                            backdrop = pageBackdrop,
+                            shape = RectangleShape,
+                            gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                            blurRadius = 80f,
+                            colors = BlurDefaults.blurColors(
+                                blendColors = listOf(
+                                    BlendColorEntry(color = surface.copy(alpha = 0.3f)),
+                                ),
+                            ),
+                        ),
+                )
+            }
+            GlassTopAppBar(
+                title = "关于",
+                backdrop = pageBackdrop,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+                modifier = Modifier.align(Alignment.TopCenter),
+                navigationIcon = {
+                    GlassIconButton(onClick = onBack) {
+                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
+                    }
+                },
+            )
+        }
     }
 }
 

@@ -22,11 +22,33 @@
 | `OverlayDialog` + `TextButton` | `GlassDialog` + `GlassDialogButton` |
 | `OverlayBottomSheet` | `GlassBottomSheet` |
 | 自绘 `SheetScaffold` | `GlassBottomSheet` |
-| `SmallTopAppBar` + 渐进模糊 | `GlassTopAppBar` + `GlassIconButton` |
+| `SmallTopAppBar` + 渐进模糊 | `GlassTopAppBar` + `GlassIconButton` + `MiuixScrollBehavior` |
 | `OverlayDropdownPreference` | `GlassDropdownPreference`（带 backdrop） |
 | 自绘 `glassBar` 纹理模糊 | `Modifier.glassPanel` |
 
 背景采样遵循 [glass 指南](miuix/docs/zh_CN/guide/glass.md)：页面内容包在 `layerBackdrop` 内，浮层放在采样层之外、`Scaffold` 之内。
+
+### 书签 / 历史
+
+- 设置 → 浏览 → 书签 / 历史；底栏「更多」→ 历史
+- 库页面顶部分「书签 | 历史」两栏，可左右滑动切换
+- 书签按分组展示（默认「个人收藏」）；右下角 FAB：新建 / 导入 / 导出
+- 导入导出兼容 Chrome、Firefox 的 Netscape Bookmark HTML（导出到 `Download/mafari/`）
+
+### 底栏手势
+
+- 网页向下累计约 100px 才隐藏；隐藏后须向上累计约 120px 才恢复（降低误触）
+- 底栏上竖滑阈值提高到 56px；**左右滑动**缩小为圆形搜索钮，点按或再滑展开
+
+### WebView 与 glass 采样
+
+`layerBackdrop` 只记录 Compose 图层；`AndroidView`/`WebView` 不在采样范围内（SurfaceView 与 RuntimeShader 组合易闪烁）。因此：
+
+- **主页**（Compose 内容）：`glassPanel` / `GlassDialog` 用真 backdrop 模糊
+- **网页态**：底栏 `backdrop = null`，走 `glassPanel` 的 `fallback` 渐变底板，不采样 WebView，避免页面闪烁
+
+若要在网页态做真模糊，需先把 WebView 位图拷到 ImageBitmap 再作 backdrop（滚动时逐帧拷贝成本高、仍可能与硬件层冲突），当前实现有意不做。
+
 
 ## 功能
 

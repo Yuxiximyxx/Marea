@@ -7,9 +7,18 @@ import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class Favorite(val name: String, val url: String)
+data class Favorite(
+    val name: String,
+    val url: String,
+    /** 书签分组；「个人收藏」为默认组。 */
+    val group: String = GROUP_PERSONAL,
+) {
+    companion object {
+        const val GROUP_PERSONAL = "个人收藏"
+    }
+}
 
-/** 主页收藏（书签）的增删改 + 本地持久化。 */
+/** 主页收藏（书签）的增删改、分组 + 本地持久化。 */
 class FavoritesStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari", Context.MODE_PRIVATE)
@@ -25,7 +34,13 @@ class FavoritesStore(context: Context) {
             buildList {
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
-                    add(Favorite(obj.optString("name"), obj.optString("url")))
+                    add(
+                        Favorite(
+                            name = obj.optString("name"),
+                            url = obj.optString("url"),
+                            group = obj.optString("group").ifBlank { Favorite.GROUP_PERSONAL },
+                        ),
+                    )
                 }
             }
         }.getOrDefault(defaults())
@@ -40,17 +55,38 @@ class FavoritesStore(context: Context) {
         Favorite("淘宝", "https://www.taobao.com"),
     )
 
-    fun add(name: String, url: String) {
+    /** 按出现顺序返回全部分组名。 */
+    fun groups(): List<String> {
+        val seen = linkedSetOf<String>()
+        items.forEach { seen.add(it.group.ifBlank { Favorite.GROUP_PERSONAL }) }
+        if (Favorite.GROUP_PERSONAL !in seen) seen.add(Favorite.GROUP_PERSONAL)
+        return seen.toList()
+    }
+
+    fun itemsIn(group: String): List<Favorite> =
+        items.filter { (it.group.ifBlank { Favorite.GROUP_PERSONAL }) == group }
+
+    fun add(name: String, url: String, group: String = Favorite.GROUP_PERSONAL) {
         if (url.isBlank()) return
         val fixed = toUrl(url)
-        items.add(Favorite(name.ifBlank { hostOf(fixed) }, fixed))
+        items.add(
+            Favorite(
+                name = name.ifBlank { hostOf(fixed) },
+                url = fixed,
+                group = group.ifBlank { Favorite.GROUP_PERSONAL },
+            ),
+        )
         persist()
     }
 
-    fun update(index: Int, name: String, url: String) {
+    fun update(index: Int, name: String, url: String, group: String = items.getOrNull(index)?.group ?: Favorite.GROUP_PERSONAL) {
         if (index !in items.indices || url.isBlank()) return
         val fixed = toUrl(url)
-        items[index] = Favorite(name.ifBlank { hostOf(fixed) }, fixed)
+        items[index] = Favorite(
+            name = name.ifBlank { hostOf(fixed) },
+            url = fixed,
+            group = group.ifBlank { Favorite.GROUP_PERSONAL },
+        )
         persist()
     }
 
@@ -61,18 +97,107 @@ class FavoritesStore(context: Context) {
         }
     }
 
+    fun removeAtUrl(url: String) {
+        val i = items.indexOfFirst { it.url == url }
+        if (i >= 0) remove(i)
+    }
+
     fun reset() {
         items.clear()
         items.addAll(defaults())
         persist()
     }
 
+    /**
+     * 解析 Chrome / Firefox 导出的 Netscape Bookmark HTML。
+     * 返回写入的条数；非法输入返回 0。
+     */
+    fun importNetscapeHtml(html: String): Int {
+        if (html.isBlank() || !html.contains("HREF", ignoreCase = true)) return 0
+        var group = Favorite.GROUP_PERSONAL
+        var added = 0
+        // 逐行/逐块扫描：H3 开组，A 入条
+        val h3 = Regex("""<H3[^>]*>(.*?)</H3>""", RegexOption.IGNORE_CASE)
+        val anchor = Regex("""<A\s[^>]*HREF\s*=\s*"([^"]+)"[^>]*>(.*?)</A>""", RegexOption.IGNORE_CASE)
+        val tagStrip = Regex("""<[^>]+>""")
+        // 按标签顺序线性扫描，保持分组上下文
+        val token = Regex("""(<H3[^>]*>.*?</H3>)|(<A\s[^>]*HREF\s*=\s*"[^"]+"[^>]*>.*?</A>)""", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL)
+        token.findAll(html).forEach { m ->
+            val raw = m.value
+            if (raw.startsWith("<H3", ignoreCase = true)) {
+                val g = h3.find(raw)?.groupValues?.get(1)?.replace(tagStrip, "")?.trim().orEmpty()
+                group = g.ifBlank { Favorite.GROUP_PERSONAL }
+            } else {
+                val href = anchor.find(raw)?.groupValues?.get(1)?.trim().orEmpty()
+                val title = anchor.find(raw)?.groupValues?.get(2)?.replace(tagStrip, "")?.trim().orEmpty()
+                if (href.isNotBlank()) {
+                    val fixed = toUrl(href)
+                    // 去重：同 URL 同组跳过
+                    val exists = items.any {
+                        it.url == fixed &&
+                            (it.group.ifBlank { Favorite.GROUP_PERSONAL }) == group
+                    }
+                    if (!exists) {
+                        items.add(
+                            Favorite(
+                                name = title.ifBlank { hostOf(fixed) },
+                                url = fixed,
+                                group = group,
+                            ),
+                        )
+                        added++
+                    }
+                }
+            }
+        }
+        if (added > 0) persist()
+        return added
+    }
+
+    /** 导出为 Chrome / Firefox 可导入的 Netscape Bookmark HTML。 */
+    fun exportNetscapeHtml(): String {
+        val sb = StringBuilder()
+        sb.appendLine("<!DOCTYPE NETSCAPE-Bookmark-file-1>")
+        sb.appendLine("<!-- This is an automatically generated file. -->")
+        sb.appendLine("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">")
+        sb.appendLine("<TITLE>Bookmarks</TITLE>")
+        sb.appendLine("<H1>Bookmarks</H1>")
+        sb.appendLine("<DL><p>")
+        groups().forEach { g ->
+            sb.appendLine("    <DT><H3>${escapeHtml(g)}</H3>")
+            sb.appendLine("    <DL><p>")
+            itemsIn(g).forEach { f ->
+                sb.appendLine("        <DT><A HREF=\"${escapeHtml(f.url)}\">${escapeHtml(f.name)}</A>")
+            }
+            sb.appendLine("    </DL><p>")
+        }
+        sb.appendLine("</DL><p>")
+        return sb.toString()
+    }
+
     private fun persist() {
         val array = JSONArray()
         items.forEach {
-            array.put(JSONObject().put("name", it.name).put("url", it.url))
+            array.put(
+                JSONObject()
+                    .put("name", it.name)
+                    .put("url", it.url)
+                    .put("group", it.group),
+            )
         }
         prefs.edit().putString(KEY, array.toString()).apply()
+    }
+
+    private fun escapeHtml(s: String): String = buildString(s.length) {
+        s.forEach { c ->
+            when (c) {
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '&' -> append("&amp;")
+                '"' -> append("&quot;")
+                else -> append(c)
+            }
+        }
     }
 
     private companion object {
