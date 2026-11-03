@@ -46,16 +46,6 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
           fi
 
-      - name: Build Servo runtime plugin
-        run: |
-          gradle :servo-engine-plugin:assembleRelease --no-daemon --stacktrace
-          mkdir -p dist
-          PLUGIN_APK="servo-engine-plugin/build/outputs/apk/release/servo-engine-plugin-release-unsigned.apk"
-          test -s "$PLUGIN_APK"
-          cp "$PLUGIN_APK" dist/servo-engine.apk
-          sha256sum dist/servo-engine.apk > dist/servo-engine.apk.sha256
-          echo "Servo plugin SHA-256: $(cut -d' ' -f1 dist/servo-engine.apk.sha256)"
-
       - name: Build debug
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
@@ -112,12 +102,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mafari-apk
-          path: dist/*
+          path: dist/*.apk
           if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.apk dist/*.sha256
+          files: dist/*.apk
           generate_release_notes: true

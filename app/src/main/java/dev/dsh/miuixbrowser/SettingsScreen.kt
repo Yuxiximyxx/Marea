@@ -1,5 +1,12 @@
 package dev.dsh.miuixbrowser
 
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.glass.GlassBottomSheet
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Import
+import top.yukonga.miuix.kmp.icon.glass.Refresh
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.statusBars
@@ -27,7 +34,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -73,7 +79,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import androidx.compose.ui.graphics.Color
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -83,20 +89,10 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onPickUa: () -> Unit,
     onOpenDownloads: () -> Unit,
-    onOpenBookmarksHistory: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     val context = LocalContext.current
-    val engineScope = rememberCoroutineScope()
-    var engineDownloadState by remember { mutableStateOf("") }
-    val servoManager = remember { dev.dsh.miuixbrowser.engine.ServoPluginManager(context) }
-    // Servo 暂不支持 Mafari 的页面增强能力，切换到 Servo 后持久化关闭。
-    LaunchedEffect(settings.browserEngine) {
-        if (settings.browserEngine == 1 && settings.pageEnhancements) {
-            settings.updatePageEnhancements(false)
-        }
-    }
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -112,20 +108,32 @@ fun SettingsScreen(
     }
 
     val backdrop = rememberLayerBackdrop()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val glass = rememberGlassActive(settings.blurEnabled)
+    val scrollBehavior = MiuixScrollBehavior()
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = "设置",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding()
                     .verticalScroll(rememberScrollState())
-                    .padding(top = statusTop + 56.dp)
+                    .padding(top = topInset)
                     .padding(bottom = 24.dp),
             ) {
             SmallTitle(text = "外观")
@@ -135,7 +143,8 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    OverlayDropdownPreference(
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
                         title = "显示模式",
                         items = listOf("跟随系统", "日间", "夜间"),
                         selectedIndex = settings.themeMode.coerceIn(0, 2),
@@ -147,8 +156,8 @@ fun SettingsScreen(
                         onClick = { showWallpaper = true },
                     )
                     SwitchPreference(
-                        title = "模糊效果",
-                        summary = "关闭后底栏、收藏卡片和页面顶栏不再模糊",
+                        title = "玻璃效果",
+                        summary = "关闭后底栏、弹层、收藏卡片和顶栏改用不透明底色",
                         checked = settings.blurEnabled,
                         onCheckedChange = { settings.updateBlur(it) },
                     )
@@ -161,13 +170,15 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    OverlayDropdownPreference(
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
                         title = "地址栏显示",
                         items = listOf("网站标题", "主域名", "完整域名"),
                         selectedIndex = settings.addressDisplay.coerceIn(0, 2),
                         onSelectedIndexChange = { settings.updateAddressDisplay(it) },
                     )
-                    OverlayDropdownPreference(
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
                         title = "标签栏样式",
                         items = listOf("文字显示", "卡片显示"),
                         selectedIndex = settings.tabsStyle.coerceIn(0, 1),
@@ -182,7 +193,8 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    OverlayDropdownPreference(
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
                         title = "外部链接打开方式",
                         items = listOf("应用内打开", "自定义标签页", "其他浏览器"),
                         selectedIndex = settings.linkOpenMode.coerceIn(0, 2),
@@ -197,11 +209,6 @@ fun SettingsScreen(
                         title = "自定义 UA",
                         summary = uaSummary(settings.userAgent),
                         onClick = onPickUa,
-                    )
-                    SettingsRow(
-                        title = "书签与历史",
-                        summary = "管理收藏的书签与浏览记录",
-                        onClick = onOpenBookmarksHistory,
                     )
                     SettingsRow(
                         title = "下载",
@@ -222,89 +229,12 @@ fun SettingsScreen(
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
                     )
-                    OverlayDropdownPreference(
-                        title = "浏览器内核",
-                        items = listOf("Android WebView", "Servo（实验性）"),
-                        selectedIndex = settings.browserEngine,
-                        onSelectedIndexChange = { selected ->
-                            if (selected == 0) {
-                                settings.updateBrowserEngine(0)
-                                engineDownloadState = ""
-                            } else if (servoManager.isInstalled()) {
-                                settings.updateBrowserEngine(1)
-                                settings.updatePageEnhancements(false)
-                            } else {
-                                engineScope.launch {
-                                    val url = BuildConfig.SERVO_PLUGIN_APK_URL
-                                    val sha = BuildConfig.SERVO_PLUGIN_SHA256
-                                    if (url.isBlank()) {
-                                        engineDownloadState = "Servo 插件发布地址未配置"
-                                    } else {
-                                        engineDownloadState = "正在下载 Servo 内核…"
-                                        runCatching { servoManager.install(url, sha) }
-                                            .onSuccess {
-                                                settings.updateBrowserEngine(1)
-                                                settings.updatePageEnhancements(false)
-                                                engineDownloadState = "Servo 内核已安装"
-                                            }
-                                            .onFailure { engineDownloadState = "下载失败：${it.message ?: "未知错误"}" }
-                                    }
-                                }
-                            }
-                        },
+                    SwitchPreference(
+                        title = "页面增强",
+                        summary = "关闭后不注入油猴脚本、去广告规则和长按标记",
+                        checked = settings.pageEnhancements,
+                        onCheckedChange = { settings.updatePageEnhancements(it) },
                     )
-                    if (engineDownloadState.isNotBlank()) {
-                        Text(
-                            text = engineDownloadState,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                            fontSize = 12.sp,
-                        )
-                    }
-                    SettingsRow(
-                        title = "Servo 内核管理",
-                        summary = if (servoManager.isInstalled()) "已安装 · ${(servoManager.installedSize() / (1024 * 1024))} MB · 点击检查更新/重新下载" else "未安装 · 从 Mafari 发布页下载",
-                        onClick = {
-                            engineScope.launch {
-                                val url = BuildConfig.SERVO_PLUGIN_APK_URL
-                                val sha = BuildConfig.SERVO_PLUGIN_SHA256
-                                if (url.isBlank()) {
-                                    engineDownloadState = "Servo 插件发布地址未配置"
-                                } else {
-                                    engineDownloadState = "正在下载/更新 Servo 内核…"
-                                    runCatching { servoManager.install(url, sha) }
-                                        .onSuccess { engineDownloadState = "Servo 内核已安装/更新" }
-                                        .onFailure { engineDownloadState = "更新失败：${it.message ?: "未知错误"}" }
-                                }
-                            }
-                        },
-                    )
-                    if (settings.browserEngine == 1) {
-                        // 用纯展示行替代开关，避免 Servo 模式下用户误以为可以开启。
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                        ) {
-                            Text(
-                                text = "页面增强",
-                                fontSize = 14.sp,
-                                color = MiuixTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "Servo 内核暂不支持，已自动关闭",
-                                fontSize = 12.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                    } else {
-                        SwitchPreference(
-                            title = "页面增强",
-                            summary = "关闭后不注入油猴脚本、去广告规则和长按标记",
-                            checked = settings.pageEnhancements,
-                            onCheckedChange = { settings.updatePageEnhancements(it) },
-                        )
-                    }
                 }
 
                 SmallTitle(text = "关于")
@@ -322,33 +252,12 @@ fun SettingsScreen(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp + statusTop)
-                    .progressiveTopBar(
-                        backdrop = backdrop,
-                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
-                        enabled = settings.blurEnabled,
-                    ),
-            ) {
-                SmallTopAppBar(
-                    title = "设置",
-                    color = Color.Transparent,
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                    defaultWindowInsetsPadding = false,
-                    modifier = Modifier.statusBarsPadding(),
-                )
-            }
         }
     }
 
     SearchSheet(
         show = showSearch,
+        backdrop = if (glass) backdrop else null,
         current = settings.searchIndex,
         custom = settings.customSearch,
         onDismiss = { showSearch = false },
@@ -363,10 +272,12 @@ fun SettingsScreen(
     )
 
     if (showWallpaper) {
-        OverlayDialog(
+        AppDialog(
             show = true,
             title = "主页壁纸",
             onDismissRequest = { showWallpaper = false },
+            backdrop = backdrop,
+            glass = glass,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -419,7 +330,7 @@ private const val PROJECT_URL = "https://github.com/rosenii/mafari"
 private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
 
 @Composable
-internal fun CheckUpdateButton() {
+private fun CheckUpdateButton() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -486,6 +397,7 @@ private fun uaSummary(ua: String): String = when {
 
 @Composable
 private fun SearchSheet(
+    backdrop: Backdrop?,
     show: Boolean,
     current: Int,
     custom: String,
@@ -494,8 +406,9 @@ private fun SearchSheet(
     onCustom: (String) -> Unit,
 ) {
     var text by remember(show) { mutableStateOf(custom) }
-    OverlayBottomSheet(
+    GlassBottomSheet(
         show = show,
+        backdrop = backdrop,
         title = "搜索引擎",
         onDismissRequest = onDismiss,
     ) {

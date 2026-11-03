@@ -1,5 +1,13 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.glass.GlassDefaults
+import top.yukonga.miuix.kmp.glass.GlassShadows
+import top.yukonga.miuix.kmp.glass.GlassShape
+import top.yukonga.miuix.kmp.glass.GlassStrokes
+import top.yukonga.miuix.kmp.glass.glassPanel
 import android.content.Intent
 import android.net.Uri
 import android.webkit.WebSettings
@@ -56,10 +64,26 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val ua = remember { runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault("未知") }
 
     val pageBackdrop = rememberLayerBackdrop()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val glass = rememberGlassActive(blurEnabled)
+    val scrollBehavior = MiuixScrollBehavior()
+    val dark = isAppDarkTheme()
     val surface = MiuixTheme.colorScheme.surface
     val iconShape = RoundedCornerShape(26.dp)
 
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            PageGlassTopBar(
+                title = "关于",
+                backdrop = pageBackdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+            )
+        },
+    ) { innerPadding ->
+    val topInset = innerPadding.calculateTopPadding()
     Box(modifier = Modifier.fillMaxSize().background(surface)) {
         // ---- 整页背景：铺满全屏的主题色渐变，供玻璃图标与顶栏采样 ----
         Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
@@ -81,8 +105,9 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .verticalScroll(rememberScrollState())
-                .padding(top = statusTop + 56.dp)
+                .padding(top = topInset)
                 .padding(bottom = 24.dp),
         ) {
             // ---- 头部：居中磨砂图标 + 应用名 ----
@@ -94,13 +119,14 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     modifier = Modifier
                         .size(92.dp)
                         .then(
-                            if (blurEnabled) {
-                                Modifier.textureBlurBar(
+                            if (glass) {
+                                Modifier.glassPanel(
                                     backdrop = pageBackdrop,
-                                    shape = iconShape,
-                                    tint = Color.White.copy(alpha = 0.22f),
-                                    radius = 42f,
-                                    highlight = Highlight.GlassStrokeMiddleLight,
+                                    shape = GlassShape(26.dp),
+                                    style = GlassDefaults.Style,
+                                    stroke = GlassStrokes.forTheme(dark, GlassStrokes.MiddleLight, GlassStrokes.MiddleDark),
+                                    shadow = GlassShadows.Regular,
+                                    shading = true,
                                 )
                             } else {
                                 Modifier.background(MiuixTheme.colorScheme.surfaceContainerHigh, iconShape)
@@ -140,7 +166,6 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 AboutRow("MIUIX", "0.9.4")
                 AboutRow("内核版本", kernel)
             }
-            CheckUpdateButton()
 
             SmallTitle(text = "本机 UA")
             Card(
@@ -196,26 +221,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp + statusTop)
-                .progressiveTopBar(
-                    backdrop = pageBackdrop,
-                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
-                    enabled = blurEnabled,
-                ),
-        ) {
-            SmallTopAppBar(
-                title = "关于",
-                color = Color.Transparent,
-                navigationIcon = {
-                    GlassBackButton(backdrop = pageBackdrop, onClick = onBack)
-                },
-                defaultWindowInsetsPadding = false,
-                modifier = Modifier.statusBarsPadding(),
-            )
-        }
+    }
     }
 }
 

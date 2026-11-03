@@ -1,5 +1,12 @@
 package dev.dsh.miuixbrowser
 
+import top.yukonga.miuix.kmp.blur.Backdrop
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Import
+import top.yukonga.miuix.kmp.icon.glass.Refresh
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -78,16 +85,74 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val scope = rememberCoroutineScope()
 
     val backdrop = rememberLayerBackdrop()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val glass = rememberGlassActive(blurEnabled)
+    val scrollBehavior = MiuixScrollBehavior()
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = "脚本",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+                actions = {
+                    GlassBarAction(MiuixIcons.Glass.Import, "导入") { importing = true }
+                    GlassBarAction(
+                        icon = MiuixIcons.Glass.Refresh,
+                        description = if (updatingAll) "更新中" else "全部更新",
+                        modifier = Modifier.alpha(if (updatingAll) 0.4f else 1f),
+                    ) {
+                        if (!updatingAll) {
+                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
+                            if (targets.isEmpty()) {
+                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                updatingAll = true
+                                busy = true
+                                scope.launch {
+                                    var ok = 0
+                                    targets.forEach { target ->
+                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            fetchScript(target.sourceUrl)
+                                        }
+                                        if (fresh != null) {
+                                            if (target.subscriptionUrl.isNotBlank()) {
+                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
+                                                if (converted != null) {
+                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
+                                                    ok++
+                                                }
+                                            } else {
+                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
+                                                ok++
+                                            }
+                                        }
+                                    }
+                                    busy = false
+                                    updatingAll = false
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "已更新 $ok/${targets.size} 个脚本",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                
+                },
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .layerBackdrop(backdrop)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding(),
         ) {
@@ -100,7 +165,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                         (builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl)
                 }
             }
-            LazyColumn(contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp)) {
+            LazyColumn(contentPadding = PaddingValues(top = topInset, bottom = 24.dp)) {
                 if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
                     item {
                         SmallTitle(text = "内置脚本")
@@ -274,77 +339,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp + statusTop)
-                .progressiveTopBar(
-                    backdrop = backdrop,
-                    tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
-                    enabled = blurEnabled,
-                ),
-        ) {
-            SmallTopAppBar(
-                title = "脚本",
-                color = Color.Transparent,
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconTextAction(
-                        icon = MiuixIcons.Download,
-                        label = "导入",
-                        modifier = Modifier.padding(end = 6.dp),
-                    ) { importing = true }
-                    IconTextAction(
-                        icon = MiuixIcons.Refresh,
-                        label = if (updatingAll) "更新中" else "全部更新",
-                        modifier = Modifier.padding(end = 10.dp),
-                    ) {
-                        if (!updatingAll) {
-                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
-                            if (targets.isEmpty()) {
-                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                updatingAll = true
-                                busy = true
-                                scope.launch {
-                                    var ok = 0
-                                    targets.forEach { target ->
-                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            fetchScript(target.sourceUrl)
-                                        }
-                                        if (fresh != null) {
-                                            if (target.subscriptionUrl.isNotBlank()) {
-                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
-                                                if (converted != null) {
-                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
-                                                    ok++
-                                                }
-                                            } else {
-                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
-                                                ok++
-                                            }
-                                        }
-                                    }
-                                    busy = false
-                                    updatingAll = false
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "已更新 $ok/${targets.size} 个脚本",
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
-                        }
-                    }
-                },
-                defaultWindowInsetsPadding = false,
-                modifier = Modifier.statusBarsPadding(),
-            )
-        }
 
         // 右下圆形添加按钮
         Box(
@@ -370,7 +364,9 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
 
     deleting?.let { target ->
-        OverlayDialog(
+        AppDialog(
+            backdrop = backdrop,
+            glass = glass,
             show = true,
             title = "删除脚本",
             summary = target.name,
@@ -380,19 +376,19 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TextButton(
+                DialogTextButton(
                     text = "取消",
                     onClick = { deleting = null },
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(
+                DialogTextButton(
                     text = "删除",
                     onClick = {
                         store.remove(target.id)
                         deleting = null
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(textColor = MiuixTheme.colorScheme.error),
+                    destructive = true,
                 )
             }
         }
@@ -400,6 +396,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
     if (importing) {
         ImportDialog(
+            backdrop = backdrop,
+            glass = glass,
             onDismiss = { importing = false },
             onImport = { url ->
                 importing = false
@@ -435,6 +433,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
     if (creating || editing != null) {
         ScriptDialog(
+            backdrop = backdrop,
+            glass = glass,
             initial = editing,
             onDismiss = {
                 creating = false
@@ -456,6 +456,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
 @Composable
 private fun ScriptDialog(
+    backdrop: Backdrop?,
+    glass: Boolean,
     initial: UserScript?,
     onDismiss: () -> Unit,
     onConfirmMatch: (String, String, Boolean, String) -> Unit,
@@ -465,7 +467,9 @@ private fun ScriptDialog(
     var match by remember(initial) { mutableStateOf(initial?.match ?: "") }
     var enabled by remember(initial) { mutableStateOf(initial?.enabled ?: true) }
 
-    OverlayDialog(
+    AppDialog(
+        backdrop = backdrop,
+        glass = glass,
         show = true,
         title = if (initial == null) "新建脚本" else "编辑脚本",
         summary = "JavaScript 会在页面加载完成后执行",
@@ -508,12 +512,12 @@ private fun ScriptDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                TextButton(
+                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
+                DialogTextButton(
                     text = "保存",
                     onClick = { if (code.isNotBlank()) onConfirmMatch(name, code, enabled, match) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                 )
             }
         }
@@ -521,9 +525,9 @@ private fun ScriptDialog(
 }
 
 @Composable
-private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
+private fun ImportDialog(backdrop: Backdrop?, glass: Boolean, onDismiss: () -> Unit, onImport: (String) -> Unit) {
     var url by remember { mutableStateOf("") }
-    OverlayDialog(show = true, title = "从 URL 导入脚本", onDismissRequest = onDismiss) {
+    AppDialog(show = true, title = "从 URL 导入脚本", onDismissRequest = onDismiss, backdrop = backdrop, glass = glass) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = url,
@@ -534,12 +538,12 @@ private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                TextButton(
+                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
+                DialogTextButton(
                     text = "导入",
                     onClick = { if (url.isNotBlank()) onImport(url.trim()) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                 )
             }
         }

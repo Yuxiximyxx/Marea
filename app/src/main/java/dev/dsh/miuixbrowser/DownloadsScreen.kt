@@ -1,5 +1,10 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Import
+import top.yukonga.miuix.kmp.icon.glass.Refresh
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -155,18 +160,30 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val context = LocalContext.current
     val tasks = Downloader.tasks
     val backdrop = rememberLayerBackdrop()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val glass = rememberGlassActive(blurEnabled)
+    val scrollBehavior = MiuixScrollBehavior()
     var pendingDelete by remember { mutableStateOf<DownloadTask?>(null) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = "下载",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding(),
             ) {
@@ -176,12 +193,12 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         fontSize = 13.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier
-                            .padding(top = statusTop + 56.dp)
+                            .padding(top = topInset)
                             .padding(24.dp),
                     )
                 } else {
                     LazyColumn(
-                        contentPadding = PaddingValues(top = statusTop + 56.dp, bottom = 24.dp),
+                        contentPadding = PaddingValues(top = topInset, bottom = 24.dp),
                     ) {
                         item {
                             SmallTitle(text = "本应用下载")
@@ -269,32 +286,12 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp + statusTop)
-                    .progressiveTopBar(
-                        backdrop = backdrop,
-                        tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.62f),
-                        enabled = blurEnabled,
-                    ),
-            ) {
-                SmallTopAppBar(
-                    title = "下载",
-                    color = Color.Transparent,
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                    defaultWindowInsetsPadding = false,
-                    modifier = Modifier.statusBarsPadding(),
-                )
-            }
         }
 
         pendingDelete?.let { task ->
-            OverlayDialog(
+            AppDialog(
+                backdrop = backdrop,
+                glass = glass,
                 show = true,
                 title = "删除文件",
                 summary = task.name + "\n\n会同时删除本地文件",
@@ -304,19 +301,19 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    TextButton(
+                    DialogTextButton(
                         text = "取消",
                         onClick = { pendingDelete = null },
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(
+                    DialogTextButton(
                         text = "删除",
                         onClick = {
                             Downloader.delete(context, task.id)
                             pendingDelete = null
                         },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.textButtonColors(textColor = MiuixTheme.colorScheme.error),
+                        destructive = true,
                     )
                 }
             }

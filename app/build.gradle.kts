@@ -1,21 +1,7 @@
-import java.io.File
-import java.net.URL
-import java.security.MessageDigest
-import java.util.zip.ZipFile
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-
-// Servo engine is delivered as a separately built APK plugin. The main app has no Servo classes.
-// Default to the latest Servo plugin asset published with Mafari GitHub Releases.
-// A SHA-256 may be supplied at build time; otherwise the app fetches the adjacent .sha256 file.
-val servoPluginUrl = providers.gradleProperty("servoPluginUrl")
-    .orElse("https://github.com/CarvenXi/mafari/releases/latest/download/servo-engine.apk")
-val servoPluginSha256 = providers.gradleProperty("servoPluginSha256").orElse("")
 
 android {
     namespace = "dev.dsh.miuixbrowser"
@@ -32,8 +18,6 @@ android {
         targetSdk = 36
         versionCode = 95
         versionName = "v1.0.11-dev"
-        buildConfigField("String", "SERVO_PLUGIN_APK_URL", "\"${servoPluginUrl.get()}\"")
-        buildConfigField("String", "SERVO_PLUGIN_SHA256", "\"${servoPluginSha256.get()}\"")
     }
 
     buildFeatures {
@@ -83,18 +67,17 @@ android {
 
 
 dependencies {
-    val miuix = "0.9.4"
-    implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuix")
-    implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuix")
-    implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuix")
-    implementation("top.yukonga.miuix.kmp:miuix-squircle-android:$miuix")
-    implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuix")
+    // miuix 来自 miuix/ 目录的源码（feat/miuix-glass 分支），Maven 上还没有 glass 模块。
+    implementation(project(":miuix-ui"))
+    implementation(project(":miuix-preference"))
+    implementation(project(":miuix-icons"))
+    implementation(project(":miuix-glass-icons"))
+    implementation(project(":miuix-squircle"))
+    implementation(project(":miuix-blur"))
+    implementation(project(":miuix-glass"))
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.browser:browser:1.8.0")
-
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }

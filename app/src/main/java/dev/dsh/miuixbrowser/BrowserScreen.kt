@@ -1,5 +1,13 @@
 package dev.dsh.miuixbrowser
 
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.glass.GlassBottomSheet
+import top.yukonga.miuix.kmp.glass.GlassBottomSheetDefaults
+import top.yukonga.miuix.kmp.glass.GlassDefaults
+import top.yukonga.miuix.kmp.glass.GlassShape
+import top.yukonga.miuix.kmp.glass.GlassStrokes
+import top.yukonga.miuix.kmp.glass.glassPanel
 import android.app.Activity
 import android.os.Build
 import android.content.Intent
@@ -102,9 +110,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.dsh.miuixbrowser.engine.BrowserEngineHost
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -153,25 +162,7 @@ fun BrowserScreen(
     onOpenDownloadsConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val state = remember {
-        BrowserState(
-            context,
-            if (settings.browserEngine == 1) BrowserEngineType.SERVO else BrowserEngineType.WEBVIEW,
-        )
-    }
-    LaunchedEffect(settings.browserEngine) {
-        val target = if (settings.browserEngine == 1) BrowserEngineType.SERVO else BrowserEngineType.WEBVIEW
-        val switched = runCatching { state.switchEngine(target) }.isSuccess
-        if (!switched && settings.browserEngine == 1) {
-            settings.updateBrowserEngine(0)
-            android.widget.Toast.makeText(context, "Servo 内核加载失败，已回退到 WebView", android.widget.Toast.LENGTH_LONG).show()
-        }
-        if (settings.browserEngine == 1 && settings.pageEnhancements) settings.updatePageEnhancements(false)
-    }
-    LaunchedEffect(settings.pageEnhancements, settings.browserEngine, state.tabs.size) {
-        val enabled = settings.browserEngine == 0 && settings.pageEnhancements
-        state.tabs.forEach { it.pageEnhancements = enabled }
-    }
+    val state = remember { BrowserState(context) }
     val favorites = remember { FavoritesStore(context) }
     remember { Diag.log("BrowserScreen composed, favorites=" + favorites.items.size) }
     val menuOrder = remember { MenuOrderStore(context) }
@@ -216,7 +207,6 @@ fun BrowserScreen(
     var showDownloads by remember { mutableStateOf(false) }
     var showExtensions by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
-    var showBookmarksHistory by remember { mutableStateOf(false) }
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var settingsReturn by remember { mutableStateOf(false) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
@@ -240,7 +230,7 @@ fun BrowserScreen(
         tab.searchTemplate = settings.searchTemplate
         tab.onPullRefresh = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            tab.reload()
+            tab.webView.reload()
         }
         tab.onUserScriptLink = { url -> pendingScript = url }
         tab.onDownload = { url, ua, disposition, mime ->
@@ -276,7 +266,7 @@ fun BrowserScreen(
         if (addressTitleUrl != tab.url) {
             addressTitleUrl = tab.url
             // 真正导航加载时旧标题会残留；同文档 history.pushState 则保留当前标题。
-            tab.title = if (tab.loading) "" else tab.pageTitle.ifBlank { tab.title }
+            tab.title = if (tab.loading) "" else tab.webView.title.orEmpty()
         }
     }
 
@@ -291,8 +281,8 @@ fun BrowserScreen(
     }
 
     // 回到主页时把 WebView 隐藏掉，否则网页会从主页底下透出来
-    LaunchedEffect(tab.id, tab.url, tab.engine) {
-        tab.currentView.alpha = if (tab.url.isEmpty()) 0f else 1f
+    LaunchedEffect(tab.id, tab.url) {
+        tab.webView.alpha = if (tab.url.isEmpty()) 0f else 1f
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
@@ -307,7 +297,7 @@ fun BrowserScreen(
         tab.searchTemplate = settings.searchTemplate
         tab.onPullRefresh = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            tab.reload()
+            tab.webView.reload()
         }
         tab.onUserScriptLink = { url -> pendingScript = url }
         tab.onDownload = { url, ua, disposition, mime ->
@@ -325,25 +315,21 @@ fun BrowserScreen(
         var lastShow = 0
         while (true) {
             runCatching {
-                if (tab.engine == BrowserEngineType.SERVO) {
-                    tab.refreshNavigationState()
-                    barHidden = false
-                } else {
-                    val offset = tab.scrollY.coerceAtLeast(0)
-                    val dy = offset - last
-                    when {
-                        offset <= 12 -> {
-                            barHidden = false
-                            lastShow = offset
-                        }
-                        dy > 10 && offset - lastShow > 48 -> barHidden = true
-                        dy < -10 -> {
-                            barHidden = false
-                            lastShow = offset
-                        }
+                val webView = tab.webView
+                val offset = webView.scrollY.coerceAtLeast(0)
+                val dy = offset - last
+                when {
+                    offset <= 12 -> {
+                        barHidden = false
+                        lastShow = offset
                     }
-                    last = offset
+                    dy > 10 && offset - lastShow > 48 -> barHidden = true
+                    dy < -10 -> {
+                        barHidden = false
+                        lastShow = offset
+                    }
                 }
+                last = offset
             }
             delay(80)
         }
@@ -387,10 +373,6 @@ fun BrowserScreen(
                 settingsReturn = false
             }
             showExtensions -> showExtensions = false
-            showBookmarksHistory -> {
-                showBookmarksHistory = false
-                if (settingsReturn) { showSettings = true; settingsReturn = false }
-            }
             showHistory -> showHistory = false
             showSettings -> showSettings = false
             showDownloads -> showDownloads = false
@@ -445,10 +427,57 @@ fun BrowserScreen(
                     .fillMaxSize()
                     .padding(top = contentTopPadding),
             ) {
-                key(tab.id, tab.engine) {
-                    BrowserEngineHost(
-                        adapter = tab.activeEngineAdapter,
-                        modifier = Modifier.fillMaxSize(),
+                key(tab.id) {
+                    AndroidView(
+                        factory = { _ ->
+                            // AndroidView.factory 接收的是 Context，而不是 View。
+                            // 这里返回已经由 BrowserTab 持有的 WebView 实例。
+                            tab.webView.apply {
+                                layoutParams = android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                )
+                                androidx.core.view.ViewCompat.requestApplyInsets(this)
+                                requestLayout()
+                            }
+                        },
+                        update = { view ->
+                            // update 在 View 已进入 AndroidView 容器后执行；此时重新请求 Insets
+                            // 才能确保 WebView 获得当前 Window 的真实可用区域。
+                            view.post {
+                                if (view.isAttachedToWindow) {
+                                    androidx.core.view.ViewCompat.requestApplyInsets(view)
+                                    view.requestLayout()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { size ->
+                                // Compose 的尺寸才是当前沉浸式内容区域的真实可用尺寸。
+                                // 尺寸有效后让 WebView 重新布局，再通知页面重新计算响应式布局。
+                                if (size.width > 0 && size.height > 0) {
+                                    tab.webView.post {
+                                        if (tab.webView.isAttachedToWindow) {
+                                            tab.webView.requestLayout()
+                                            tab.webView.invalidate()
+                                            tab.webView.evaluateJavascript(
+                                                """
+                                                (function() {
+                                                    try {
+                                                        window.dispatchEvent(new Event('resize'));
+                                                        if (window.visualViewport) {
+                                                            window.visualViewport.dispatchEvent(new Event('resize'));
+                                                        }
+                                                    } catch (_) {}
+                                                })();
+                                                """.trimIndent(),
+                                                null
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                     )
                 }
                 if (tab.url.isEmpty()) {
@@ -481,8 +510,8 @@ fun BrowserScreen(
             }
             if (tab.url.isNotEmpty()) {
                 PullRefreshArea(
-                    canPull = { tab.canPullToRefresh },
-                    onRefresh = { tab.reload() },
+                    canPull = { tab.webView.scrollY <= 0 },
+                    onRefresh = { tab.webView.reload() },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }
@@ -892,15 +921,11 @@ fun BrowserScreen(
                     ) {
                         sheet = Sheet.None
                         UserAdRules.add(context, hostOf(tab.url), hit.selector)
-                        if (tab.engineCapabilities.elementInspection) {
-                            tab.evaluateJavaScript(removeElementJs(hit.selector))
-                        }
+                        tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
                     }
                     SheetRow(title = "仅移除该元素") {
                         sheet = Sheet.None
-                        if (tab.engineCapabilities.elementInspection) {
-                            tab.evaluateJavaScript(removeElementJs(hit.selector))
-                        }
+                        tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
                     }
                 }
             }
@@ -913,11 +938,6 @@ fun BrowserScreen(
                 settings = settings,
                 onBack = { showSettings = false },
                 onPickUa = { showUaPicker = true },
-                onOpenBookmarksHistory = {
-                    settingsReturn = true
-                    showSettings = false
-                    showBookmarksHistory = true
-                },
                 onOpenDownloads = {
                     settingsReturn = true
                     showSettings = false
@@ -951,7 +971,9 @@ fun BrowserScreen(
         }
 
         pendingDownload?.let { request ->
-            OverlayDialog(
+            AppDialog(
+                backdrop = if (homeBlurAvailable) browserBackdrop else null,
+                glass = settings.blurEnabled,
                 show = true,
                 title = "下载文件",
                 summary = request.fileName + "\n保存到 /sdcard/Download/mafari",
@@ -962,12 +984,12 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        TextButton(
+                        DialogTextButton(
                             text = "取消",
                             onClick = { pendingDownload = null },
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(
+                        DialogTextButton(
                             text = "下载",
                             onClick = {
                                 pendingDownload = null
@@ -982,7 +1004,7 @@ fun BrowserScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            primary = true,
                         )
                     }
                 }
@@ -990,7 +1012,9 @@ fun BrowserScreen(
         }
 
         pendingScript?.let { scriptUrl ->
-            OverlayDialog(
+            AppDialog(
+                backdrop = if (homeBlurAvailable) browserBackdrop else null,
+                glass = settings.blurEnabled,
                 show = true,
                 title = "导入脚本？",
                 summary = scriptUrl,
@@ -1001,12 +1025,12 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        TextButton(
+                        DialogTextButton(
                             text = "取消",
                             onClick = { pendingScript = null },
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(
+                        DialogTextButton(
                             text = "导入",
                             onClick = {
                                 val target = scriptUrl
@@ -1022,7 +1046,7 @@ fun BrowserScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            primary = true,
                         )
                     }
                 }
@@ -1041,24 +1065,6 @@ fun BrowserScreen(
             )
         }
 
-        if (showBookmarksHistory) {
-            BookmarksHistoryScreen(
-                favorites = favorites,
-                history = history,
-                onBack = {
-                    showBookmarksHistory = false
-                    if (settingsReturn) { showSettings = true; settingsReturn = false }
-                },
-                onOpen = { targetUrl ->
-                    showBookmarksHistory = false
-                    showSettings = false
-                    settingsReturn = false
-                    tab.loadUrl(targetUrl)
-                },
-                blurEnabled = settings.blurEnabled,
-            )
-        }
-
         if (showHistory) {
             HistoryScreen(
                 store = history,
@@ -1072,6 +1078,7 @@ fun BrowserScreen(
         }
 
         UaDialog(
+            backdrop = if (settings.blurEnabled && homeBlurAvailable) browserBackdrop else null,
             show = showUaPicker,
             initial = settings.userAgent,
             onDismiss = { showUaPicker = false },
@@ -1084,6 +1091,8 @@ fun BrowserScreen(
 
         if (showFind) {
             FindDialog(
+                backdrop = if (homeBlurAvailable) browserBackdrop else null,
+                glass = settings.blurEnabled,
                 onDismiss = {
                     tab.clearFind()
                     showFind = false
@@ -1096,6 +1105,8 @@ fun BrowserScreen(
 
         if (showFavEditor) {
             FavoriteEditor(
+                backdrop = if (homeBlurAvailable) browserBackdrop else null,
+                glass = settings.blurEnabled,
                 initial = favorites.items.getOrNull(editingFavIndex),
                 onDismiss = { showFavEditor = false },
                 onConfirm = { name, url ->
@@ -1123,52 +1134,17 @@ private fun Modifier.glassBar(
     textureBlurEnabled: Boolean = true,
 ): Modifier {
     val dark = isAppDarkTheme()
-    val shape = RoundedCornerShape(corner)
-    val canUseTextureBlur = blurEnabled && textureBlurEnabled &&
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    // 主页使用 MIUIX 真纹理模糊；网页场景禁用 MIUIX 采集后，使用更明显的仿玻璃渐变。
-    // 关闭模糊时则使用接近不透明的纯色底板，确保开关状态有清晰的视觉区别。
-    val tint = when {
-        canUseTextureBlur -> if (dark) {
-            Brush.verticalGradient(listOf(Color(0xA82A2A2E), Color(0x981A1A1C)))
-        } else {
-            Brush.verticalGradient(listOf(Color(0xAFFFFFFF), Color(0xA8E8E9EC)))
-        }
-        blurEnabled -> if (dark) {
-            Brush.verticalGradient(listOf(Color(0xC82B2B31), Color(0xB51A1A20)))
-        } else {
-            Brush.verticalGradient(listOf(Color(0xC8FFFFFF), Color(0xBDE7EAF0)))
-        }
-        else -> Brush.verticalGradient(
-            listOf(
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-            ),
-        )
+    // 只有主页（Compose 内容）能被采样；网页状态下 WebView 不入采集层，退回半透明实色。
+    val sampled = blurEnabled && textureBlurEnabled && isRuntimeShaderSupported()
+    val fallback = when {
+        blurEnabled -> if (dark) Color(0xEB26262B) else Color(0xEBF4F5F8)
+        else -> MiuixTheme.colorScheme.surface.copy(alpha = 0.97f)
     }
-
-    return this
-        .shadow(elevation = if (dark) 8.dp else 10.dp, shape = shape, clip = false)
-        .then(
-            if (canUseTextureBlur) {
-                Modifier.textureBlur(
-                    backdrop = backdrop,
-                    shape = shape,
-                    blurRadius = 26f,
-                    noiseCoefficient = 0.0045f,
-                    enabled = true,
-                )
-            } else {
-                Modifier
-            },
-        )
-        .clip(shape)
-        .background(tint, shape)
-        .border(
-            width = 1.dp,
-            color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
-            shape = shape,
-        )
+    return glassSurfacePanel(
+        backdrop = if (sampled) backdrop else null,
+        cornerRadius = corner,
+        fallbackColor = fallback,
+    )
 }
 
 @Composable
@@ -1575,28 +1551,12 @@ private fun SheetScaffold(
     blurEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val sheetShape = RoundedCornerShape(28.dp)
     val darkSheet = isAppDarkTheme()
-    val sheetTint = when {
-        textureBlurEnabled && backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> if (darkSheet) {
-            Brush.verticalGradient(listOf(Color(0xD92A2A2E), Color(0xD91A1A1C)))
-        } else {
-            Brush.verticalGradient(listOf(Color(0xDFFFFFFF), Color(0xD9E8E9EC)))
-        }
-        blurEnabled -> if (darkSheet) {
-            Brush.verticalGradient(listOf(Color(0xE02A2A31), Color(0xD51A1A20)))
-        } else {
-            Brush.verticalGradient(listOf(Color(0xE0FFFFFF), Color(0xDCE7EAF0)))
-        }
-        else -> Brush.verticalGradient(
-            listOf(
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-            ),
-        )
+    val canBlurSheet = textureBlurEnabled && backdrop != null && isRuntimeShaderSupported()
+    val sheetFallback = when {
+        blurEnabled -> if (darkSheet) Color(0xF01E1E22) else Color(0xF2F6F7F9)
+        else -> MiuixTheme.colorScheme.surface.copy(alpha = 0.97f)
     }
-    val canBlurSheet = textureBlurEnabled && backdrop != null &&
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     // 弹出后 220ms 内吞掉触摸，避免「打开它的那一次点击」把弹层立刻关掉
     var armed by remember { mutableStateOf(false) }
     var entered by remember { mutableStateOf(false) }
@@ -1654,26 +1614,12 @@ private fun SheetScaffold(
                 .padding(horizontal = 12.dp)
                 .padding(bottom = 10.dp)
                 .fillMaxWidth()
-                .shadow(elevation = 12.dp, shape = sheetShape, clip = false)
-                .then(
-                    if (canBlurSheet) {
-                        Modifier.textureBlur(
-                            backdrop = backdrop!!,
-                            shape = sheetShape,
-                            blurRadius = 24f,
-                            noiseCoefficient = 0.0045f,
-                            enabled = true,
-                        )
-                    } else {
-                        Modifier
-                    },
-                )
-                .clip(sheetShape)
-                .background(sheetTint, sheetShape)
-                .border(
-                    width = 1.dp,
-                    color = if (darkSheet) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.72f),
-                    shape = sheetShape,
+                .glassSurfacePanel(
+                    backdrop = if (canBlurSheet) backdrop else null,
+                    cornerRadius = 28.dp,
+                    material = GlassBottomSheetDefaults.material(),
+                    stroke = GlassBottomSheetDefaults.stroke(),
+                    fallbackColor = sheetFallback,
                 )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -1883,12 +1829,13 @@ private fun FavoriteTile(
             )
             .then(
                 if (useBlur) {
-                    Modifier.textureBlurBar(
+                    Modifier.glassPanel(
                         backdrop = wallpaperBackdrop,
-                        shape = shape,
-                        tint = Color.White.copy(alpha = 0.28f),
-                        radius = 22f,
-                        highlight = Highlight.GlassStrokeMiddleLight,
+                        shape = GlassShape(16.dp),
+                        style = GlassDefaults.Style,
+                        stroke = GlassStrokes.SmallLight,
+                        shadow = null,
+                        shading = true,
                     )
                 } else {
                     Modifier
@@ -1951,13 +1898,17 @@ private fun FavoriteTile(
 /** 新增 / 编辑收藏：MIUIX 规范对话框 */
 @Composable
 private fun FavoriteEditor(
+    backdrop: Backdrop?,
+    glass: Boolean,
     initial: Favorite?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String) -> Unit,
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial) { mutableStateOf(initial?.url ?: "") }
-    OverlayDialog(
+    AppDialog(
+        backdrop = backdrop,
+        glass = glass,
         show = true,
         title = if (initial == null) "添加收藏" else "编辑收藏",
         onDismissRequest = onDismiss,
@@ -1985,12 +1936,12 @@ private fun FavoriteEditor(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                TextButton(
+                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
+                DialogTextButton(
                     text = "保存",
                     onClick = { if (url.isNotBlank()) onConfirm(name, url) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                 )
             }
         }
@@ -2000,14 +1951,16 @@ private fun FavoriteEditor(
 /** UA 选择：预设 + 自定义 */
 @Composable
 private fun UaDialog(
+    backdrop: Backdrop?,
     show: Boolean,
     initial: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     var custom by remember(show) { mutableStateOf(initial) }
-    OverlayBottomSheet(
+    GlassBottomSheet(
         show = show,
+        backdrop = backdrop,
         title = "自定义 UA",
         onDismissRequest = onDismiss,
     ) {
@@ -2052,13 +2005,17 @@ private fun UaDialog(
 /** 页内查找 */
 @Composable
 private fun FindDialog(
+    backdrop: Backdrop?,
+    glass: Boolean,
     onDismiss: () -> Unit,
     onQuery: (String) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
-    OverlayDialog(
+    AppDialog(
+        backdrop = backdrop,
+        glass = glass,
         show = true,
         title = "查找页内",
         onDismissRequest = onDismiss,
@@ -2080,13 +2037,13 @@ private fun FindDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TextButton(text = "上一个", onClick = onPrev, modifier = Modifier.weight(1f))
-                TextButton(text = "下一个", onClick = onNext, modifier = Modifier.weight(1f))
-                TextButton(
+                DialogTextButton(text = "上一个", onClick = onPrev, modifier = Modifier.weight(1f))
+                DialogTextButton(text = "下一个", onClick = onNext, modifier = Modifier.weight(1f))
+                DialogTextButton(
                     text = "关闭",
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                 )
             }
         }

@@ -20,8 +20,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -69,32 +67,4 @@ fun isAppDarkTheme(): Boolean = when (MiuixTheme.colorSchemeMode) {
     ColorSchemeMode.Light, ColorSchemeMode.MonetLight -> false
     ColorSchemeMode.Dark, ColorSchemeMode.MonetDark -> true
     else -> isSystemInDarkTheme()
-}
-
-/** OS4 风格的柔光玻璃返回按钮。 */
-@Composable
-fun GlassBackButton(backdrop: top.yukonga.miuix.kmp.blur.Backdrop, onClick: () -> Unit) {
-    androidx.compose.foundation.layout.Box(
-        modifier = Modifier
-            .size(40.dp)
-            .then(
-                Modifier.textureBlurBar(
-                    backdrop = backdrop,
-                    shape = RoundedCornerShape(50),
-                    tint = Color.White.copy(alpha = if (isAppDarkTheme()) 0.10f else 0.30f),
-                    radius = 26f,
-                    noise = 0.035f,
-                    highlight = top.yukonga.miuix.kmp.blur.highlight.Highlight.GlassStrokeMiddleLight,
-                ),
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = MiuixIcons.Back,
-            contentDescription = "返回",
-            tint = MiuixTheme.colorScheme.onSurface,
-            modifier = Modifier.size(20.dp),
-        )
-    }
 }

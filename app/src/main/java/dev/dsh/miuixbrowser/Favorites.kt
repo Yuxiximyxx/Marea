@@ -6,7 +6,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
-import android.text.Html
 
 data class Favorite(val name: String, val url: String)
 
@@ -60,43 +59,6 @@ class FavoritesStore(context: Context) {
             items.removeAt(index)
             persist()
         }
-    }
-
-    /** 导入 Netscape Bookmark HTML（Chrome / Firefox / Via 通用导出格式）。 */
-    fun importHtml(html: String): Int {
-        val anchor = Regex("(?is)<a\\b([^>]*)>(.*?)</a>")
-        val imported = mutableListOf<Favorite>()
-        anchor.findAll(html).forEach { match ->
-            val attrs = match.groupValues[1]
-            val rawHref = Regex("(?i)href\\s*=\\s*[\"']([^\"']+)[\"']")
-                .find(attrs)?.groupValues?.get(1)?.trim().orEmpty()
-            val href = Html.fromHtml(rawHref, Html.FROM_HTML_MODE_LEGACY).toString()
-            if (href.isBlank() || !(href.startsWith("http://") || href.startsWith("https://"))) return@forEach
-            val rawName = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
-            val name = Html.fromHtml(rawName, Html.FROM_HTML_MODE_LEGACY).toString().ifBlank { hostOf(href) }
-            imported += Favorite(name, href)
-        }
-        if (imported.isEmpty()) return 0
-        val existing = items.map { it.url }.toMutableSet()
-        val unique = imported.filter { existing.add(it.url) }
-        items.addAll(unique)
-        persist()
-        return unique.size
-    }
-
-    /** 导出为 Netscape Bookmark HTML，Chrome / Firefox / Via 均可识别。 */
-    fun exportHtml(): String = buildString {
-        appendLine("<!DOCTYPE NETSCAPE-Bookmark-file-1>")
-        appendLine("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">")
-        appendLine("<TITLE>Mafari Bookmarks</TITLE>")
-        appendLine("<H1>Bookmarks</H1>")
-        appendLine("<DL><p>")
-        items.forEach { item ->
-            val title = item.name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-            val url = item.url.replace("&", "&amp;").replace("\"", "&quot;")
-            appendLine("<DT><A HREF=\"$url\">$title</A>")
-        }
-        appendLine("</DL><p>")
     }
 
     fun reset() {

@@ -6,8 +6,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
-import android.view.View
-import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -22,14 +20,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.net.URLEncoder
-import dev.dsh.miuixbrowser.engine.BrowserEngineAdapter
-import dev.dsh.miuixbrowser.engine.BrowserEngineFactory
-import dev.dsh.miuixbrowser.engine.DynamicServoEngineAdapter
-import dev.dsh.miuixbrowser.engine.ServoPluginManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 
 /** 判断输入是网址还是搜索词。 */
 fun looksLikeUrl(input: String): Boolean {
@@ -57,11 +47,9 @@ fun hostOf(url: String): String {
     return if (!host.isNullOrBlank()) host else trimmed.take(48)
 }
 
-enum class BrowserEngineType { WEBVIEW, SERVO }
-
-/** 一个标签页：保留 WebView，并按需创建 ServoView。 */
+/** 一个标签页：持有自己的 WebView 和页面状态。 */
 @SuppressLint("SetJavaScriptEnabled")
-class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineType = BrowserEngineType.WEBVIEW) {
+class BrowserTab(private val appContext: Context) {
 
     /** 每个标签的唯一 id，Compose 用它做 key。 */
     val id: Int = nextId()
@@ -71,29 +59,7 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
     var progress by mutableFloatStateOf(0f)
     var loading by mutableStateOf(false)
     var canGoBack by mutableStateOf(false)
-        private set
     var canGoForward by mutableStateOf(false)
-        private set
-
-    var engine by mutableStateOf(BrowserEngineType.WEBVIEW)
-        private set
-    private var servoAdapter: BrowserEngineAdapter? = null
-    private var servoScope: CoroutineScope? = null
-    var servoView: View? = null
-        private set
-    private val servoPluginManager = ServoPluginManager(appContext)
-
-    private lateinit var engineAdapter: BrowserEngineAdapter
-
-    val currentView: View
-        get() = if (::engineAdapter.isInitialized) engineAdapter.view else webView
-
-    val activeEngineAdapter: BrowserEngineAdapter get() = engineAdapter
-    val engineCapabilities get() = engineAdapter.capabilities
-    val canPullToRefresh get() = engineAdapter.capabilities.pullToRefresh && engineAdapter.scrollY <= 0
-    val scrollY get() = engineAdapter.scrollY
-    val pageTitle get() = engineAdapter.pageTitle
-    fun evaluateJavaScript(script: String): Boolean = engineAdapter.evaluateJavaScript(script)
     var errorText by mutableStateOf<String?>(null)
     /** 是否是从主页打开的第一个页面（用于「返回到主页」） */
     var fromHome by mutableStateOf(false)
@@ -146,7 +112,6 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
     var onVisited: ((url: String, title: String) -> Unit)? = null
 
     val webView: WebView = WebView(appContext)
-    private var webViewAdapter: BrowserEngineAdapter = BrowserEngineFactory.webView(webView)
 
     private val elementBridge = object {
         @android.webkit.JavascriptInterface
@@ -164,7 +129,6 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
     private var installedScriptsSignature = ""
 
     init {
-        engineAdapter = webViewAdapter
         runCatching {
             webView.addJavascriptInterface(
                 GmBridge(appContext, { webView }, { target -> onOpenNewTab?.invoke(target) }),
@@ -318,7 +282,6 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
                 else -> false
             }
         }
-        if (initialEngine != BrowserEngineType.WEBVIEW) switchEngine(initialEngine)
     }
 
     data class ElementHit(val tag: String, val imageUrl: String, val selector: String)
@@ -450,106 +413,31 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
         Diag.log("userscript: page=$pageUrl matched=${matched.size}/${userScripts.size}")
     }
 
-    fun refreshNavigationState() = syncNav()
-
     private fun syncNav() {
-        if (engine == BrowserEngineType.SERVO) {
-            canGoBack = engineAdapter.canGoBack() || fromHome ||
-                (url.isEmpty() && savedUrl.isNotBlank())
-            canGoForward = engineAdapter.canGoForward()
-        } else {
-            canGoBack = runCatching { engineAdapter.canGoBack() }.getOrDefault(false) || fromHome ||
-                (url.isEmpty() && savedUrl.isNotBlank())
-            canGoForward = runCatching { engineAdapter.canGoForward() }.getOrDefault(false)
-        }
-    }
-
-    private fun createServoView(initialUri: String) {
-        if (servoView != null && servoAdapter != null) {
-            engineAdapter = servoAdapter!!
-            return
-        }
-        check(servoPluginManager.isInstalled()) { "Servo 内核尚未安装，请先在设置中下载引擎包" }
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        servoScope = scope
-        val adapter = DynamicServoEngineAdapter.create(
-            appContext,
-            servoPluginManager.createClassLoader(),
-            initialUri,
-            scope,
-        ) { event, args ->
-            when (event) {
-                "onLoadStarted" -> {
-                    loading = true; progress = 0f; errorText = null
-                }
-                "onLoadEnded" -> {
-                    loading = false; progress = 1f; syncNav(); onVisited?.invoke(url, title)
-                }
-                "onTitleChanged" -> args?.getOrNull(0)?.toString()?.takeIf { it.isNotBlank() }?.let { title = it }
-                "onUrlChanged" -> args?.getOrNull(0)?.toString()?.let { url = it; syncNav() }
-                "onImeShow" -> servoView?.post {
-                    val view = servoView ?: return@post
-                    view.isFocusableInTouchMode = true; view.requestFocus()
-                    val imm = appContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                    imm?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
-                }
-                "onImeHide" -> servoView?.post {
-                    val view = servoView ?: return@post
-                    val imm = appContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                    imm?.hideSoftInputFromWindow(view.windowToken, 0)
-                }
-            }
-        }
-        servoAdapter = adapter
-        servoView = adapter.view
-        engineAdapter = adapter
-    }
-
-    fun switchEngine(target: BrowserEngineType) {
-        if (engine == target) return
-        val currentUrl = url
-        engine = target
-        if (target == BrowserEngineType.SERVO) {
-            webView.onPause()
-            createServoView(currentUrl.ifBlank { "about:blank" })
-        } else {
-            webView.onResume()
-            engineAdapter = webViewAdapter
-            applyUserAgent()
-            if (currentUrl.isNotBlank()) engineAdapter.load(currentUrl)
-        }
-        syncNav()
+        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome ||
+            (url.isEmpty() && savedUrl.isNotBlank())
+        canGoForward = runCatching { webView.canGoForward() }.getOrDefault(false)
     }
 
     fun load(input: String) {
         val target = toUrl(input, searchTemplate)
         if (url.isEmpty()) fromHome = true
         url = target
-        if (engine == BrowserEngineType.SERVO) {
-            createServoView("about:blank")
-            engineAdapter.load(target)
-        } else {
-            engineAdapter.load(target)
-        }
+        webView.loadUrl(target)
         syncNav()
     }
 
     fun loadUrl(raw: String) {
         url = raw
-        if (engine == BrowserEngineType.SERVO) {
-            createServoView("about:blank")
-            engineAdapter.load(raw)
-        } else {
-            engineAdapter.load(raw)
-        }
+        webView.loadUrl(raw)
     }
 
     fun reload() {
         if (loading) {
-            engineAdapter.stop()
+            webView.stopLoading()
             loading = false
         } else {
-            engineAdapter.reload()
+            webView.reload()
         }
     }
 
@@ -560,36 +448,35 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
             customUserAgent.isBlank() || customUserAgent == DESKTOP_UA -> defaultUserAgent
             else -> customUserAgent
         }
-        if (engine == BrowserEngineType.WEBVIEW) {
-            runCatching { webView.settings.userAgentString = ua }
-        }
+        runCatching { webView.settings.userAgentString = ua }
     }
 
     fun toggleDesktopMode(enabled: Boolean) {
         desktopMode = enabled
-        if (engine == BrowserEngineType.WEBVIEW) {
-            runCatching {
-                webView.settings.useWideViewPort = true
-                webView.settings.loadWithOverviewMode = true
-            }
-            applyUserAgent()
+        runCatching {
+            webView.settings.useWideViewPort = true
+            webView.settings.loadWithOverviewMode = true
         }
-        val target = url
-        if (target.isNotBlank() && !target.startsWith("about:")) loadUrl(target) else reload()
+        applyUserAgent()
+        val target = webView.url ?: url
+        if (target.isNotBlank() && !target.startsWith("about:")) {
+            webView.loadUrl(target)
+        } else {
+            webView.reload()
+        }
     }
 
     /** 页内查找 */
     fun findAll(text: String) {
-        if (engine != BrowserEngineType.WEBVIEW) return
         if (text.isBlank()) webView.clearMatches() else webView.findAllAsync(text)
     }
 
     fun findNext(forward: Boolean) {
-        if (engine == BrowserEngineType.WEBVIEW) runCatching { webView.findNext(forward) }
+        runCatching { webView.findNext(forward) }
     }
 
     fun clearFind() {
-        if (engine == BrowserEngineType.WEBVIEW) runCatching { webView.clearMatches() }
+        runCatching { webView.clearMatches() }
     }
 
     /** 回主页 */
@@ -605,48 +492,44 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
     }
 
     fun goBack() {
-        // 从主页返回时恢复此前页面；否则交由当前内核处理历史栈。
+        // 从主页返回：恢复刚才那页（WebView 没销毁，直接还原状态即可）
         if (url.isEmpty() && savedUrl.isNotBlank()) {
             url = savedUrl
             savedUrl = ""
             syncNav()
             return
         }
-        if (!engineAdapter.goBack() && fromHome) {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else if (fromHome) {
+            // 回到主页（主页是 Compose 覆盖层，把 url 清空即可），而不是退出
             fromHome = false
             url = ""
             errorText = null
+            syncNav()
         }
-        syncNav()
     }
 
     fun goForward() {
-        engineAdapter.goForward()
-        syncNav()
+        if (webView.canGoForward()) webView.goForward()
     }
 
     fun destroyNow() {
         if (destroyed) return
         destroyed = true
-        runCatching { (servoView?.parent as? ViewGroup)?.removeView(servoView) }
-        runCatching { (webView.parent as? ViewGroup)?.removeView(webView) }
-        // 每个内核适配器负责释放自己的底层资源，标签不再重复实现内核销毁细节。
-        runCatching { servoAdapter?.destroy() }
-        runCatching { webViewAdapter.destroy() }
-        servoScope?.cancel()
-        servoAdapter = null
-        servoView = null
+        runCatching {
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.removeAllViews()
+            webView.destroy()
+        }
     }
 
     /** 关闭标签：等界面把 WebView 从视图树摘下来后再销毁。 */
     fun close() {
         closed = true
-        webView.post {
-            if (webView.parent == null && (servoView?.parent == null)) destroyNow()
-        }
-        servoView?.post {
-            if (servoView?.parent == null && webView.parent == null) destroyNow()
-        }
+        webView.post { if (webView.parent == null) destroyNow() }
     }
 
     private companion object {
@@ -660,13 +543,7 @@ class BrowserTab(private val appContext: Context, initialEngine: BrowserEngineTy
 }
 
 /** 多标签状态。 */
-class BrowserState(
-    private val context: Context,
-    initialEngine: BrowserEngineType = BrowserEngineType.WEBVIEW,
-) {
-    var engine by mutableStateOf(initialEngine)
-        private set
-
+class BrowserState(private val context: Context) {
 
     val tabs = mutableStateListOf<BrowserTab>()
 
@@ -684,24 +561,12 @@ class BrowserState(
     }
 
     fun newTab(target: String = "") {
-        // 当前 Servo AAR 的多实例/多标签切换尚未验证稳定性，Servo 模式暂用单标签回退：
-        // 点击“新建标签页”回到当前标签主页；带目标地址的新标签请求则在当前标签加载。
-        if (engine == BrowserEngineType.SERVO && tabs.isNotEmpty()) {
-            if (target.isBlank()) activeTab.goHome() else activeTab.load(target)
-            return
-        }
-        val tab = BrowserTab(context, engine)
+        val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
-    }
-
-    fun switchEngine(value: BrowserEngineType) {
-        if (engine == value) return
-        engine = value
-        tabs.forEach { it.switchEngine(value) }
     }
 
     fun applyUserAgent(ua: String) {
@@ -728,12 +593,7 @@ class BrowserState(
     }
 
     fun newTabInBackground(target: String) {
-        // Servo 暂不创建后台 ServoView，退化为在当前标签打开目标地址。
-        if (engine == BrowserEngineType.SERVO && tabs.isNotEmpty()) {
-            activeTab.load(target)
-            return
-        }
-        val tab = BrowserTab(context, engine)
+        val tab = BrowserTab(context)
         tabs.add(tab)
         tab.load(target)
     }

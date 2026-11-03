@@ -12,15 +12,6 @@ class AppSettings(context: Context) {
     var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
         private set
 
-    /** Selected browser engine: 0=WebView, 1=Servo plugin. */
-    var browserEngine by mutableStateOf(prefs.getInt(KEY_ENGINE, 0))
-        private set
-
-    fun updateBrowserEngine(value: Int) {
-        browserEngine = value.coerceIn(0, 1)
-        prefs.edit().putInt(KEY_ENGINE, browserEngine).apply()
-    }
-
     /** 外部链接打开方式：0=应用内打开 1=交给其他浏览器（询问） */
     var linkOpenMode by mutableStateOf(prefs.getInt(KEY_LINK_MODE, 0))
         private set
@@ -116,7 +107,6 @@ class AppSettings(context: Context) {
 
     private companion object {
         const val KEY_BLUR = "blur"
-        const val KEY_ENGINE = "browser_engine"
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"
