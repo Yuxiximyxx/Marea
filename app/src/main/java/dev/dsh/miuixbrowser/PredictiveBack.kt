@@ -4,25 +4,18 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.navigationevent.NavigationEventInfo
-import androidx.navigationevent.NavigationEventTransitionState
-import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
-import androidx.navigationevent.compose.NavigationBackHandler
-import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.nav.gesture.PredictiveBackHandler
 
 /**
- * 预测性返回页级 Modifier：子页展示时消费返回手势，
- * 手势期间按 progress 侧滑 + 微缩 + 淡出，松手提交时调用 [onBack]。
- * 无 NavigationEvent 宿主时退化为普通返回。
+ * 预测性返回页级 Modifier：对齐 miuix-nav demo 的 PredictiveBackHandler。
+ * 手势期间按 progress 做 MiuixDefault 同款侧滑（全宽 trailing 滑出）+ 微缩 + 淡出；
+ * 松手提交调用 [onBack]，取消则弹回。
  */
 @Composable
 fun Modifier.predictiveBackPage(
@@ -33,38 +26,32 @@ fun Modifier.predictiveBackPage(
 
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val hasDispatcher = LocalNavigationEventDispatcherOwner.current != null
 
-    if (hasDispatcher) {
-        val backState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
-        NavigationBackHandler(
-            state = backState,
-            isBackEnabled = true,
-            onBackCancelled = {
-                scope.launch {
-                    progress.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
-                }
-            },
-            onBackCompleted = onBack,
-        )
-        LaunchedEffect(backState) {
-            snapshotFlow { backState.transitionState }.collect { state ->
-                if (
-                    state is NavigationEventTransitionState.InProgress &&
-                    state.direction == NavigationEventTransitionState.TRANSITIONING_BACK
-                ) {
-                    progress.snapTo(state.latestEvent.progress.coerceIn(0f, 1f))
-                }
+    PredictiveBackHandler(
+        enabled = true,
+        onProgress = { events ->
+            events.collect { event ->
+                progress.snapTo(event.progress.coerceIn(0f, 1f))
             }
-        }
-    }
+        },
+        onCommit = onBack,
+        onCancel = {
+            scope.launch {
+                progress.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(dampingRatio = 0.9f, stiffness = 500f),
+                )
+            }
+        },
+    )
 
     val p = progress.value
     return this.graphicsLayer {
-        translationX = size.width * p * 0.35f
-        scaleX = 1f - 0.06f * p
-        scaleY = 1f - 0.06f * p
+        // miuix MiuixDefault 离开顶层：全宽从 trailing 滑出
+        translationX = size.width * p
+        scaleX = 1f - 0.02f * p
+        scaleY = 1f - 0.02f * p
         transformOrigin = TransformOrigin(0f, 0.5f)
-        alpha = 1f - 0.25f * p
+        alpha = 1f - 0.12f * p
     }
 }

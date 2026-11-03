@@ -328,6 +328,13 @@ fun SettingsScreen(
                             }
                             .padding(horizontal = 6.dp, vertical = 12.dp),
                     )
+                    Spacer(Modifier.height(4.dp))
+                    SwitchPreference(
+                        title = "模糊壁纸",
+                        summary = "主页壁纸做高斯模糊，减少干扰",
+                        checked = settings.wallpaperBlur,
+                        onCheckedChange = { settings.updateWallpaperBlur(it) },
+                    )
                     Spacer(Modifier.height(8.dp))
                     GlassDialogButton(
                         onClick = { showWallpaper = false },

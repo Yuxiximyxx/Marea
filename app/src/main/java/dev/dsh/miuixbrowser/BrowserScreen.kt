@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.blur
 
 import androidx.compose.foundation.layout.widthIn
 import top.yukonga.miuix.kmp.icon.extended.Layers
@@ -131,15 +132,21 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.Phone
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Search
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDefaults
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassMaterials
 import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassStrokes
@@ -222,6 +229,7 @@ fun BrowserScreen(
     var editingFavIndex by remember { mutableStateOf(-1) }
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
+    var showClearTabsConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -467,7 +475,15 @@ fun BrowserScreen(
                         bitmap = wallpaperImage,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (settings.wallpaperBlur) {
+                                    Modifier.blur(28.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                 }
@@ -804,7 +820,21 @@ fun BrowserScreen(
                 Sheet.Link -> hostOf(linkUrl)
                 Sheet.Image -> "图片"
                 Sheet.Element -> "页面元素"
+                Sheet.Tabs -> "标签页"
                 else -> null
+            },
+            endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
+                {
+                    GlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                        Icon(
+                            imageVector = MiuixIcons.Delete,
+                            contentDescription = "全部删除",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+            } else {
+                null
             },
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
@@ -821,20 +851,34 @@ fun BrowserScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = screenH * 0.65f)
+                        .heightIn(max = screenH * 0.7f)
                         .verticalScroll(rememberScrollState()),
                 ) {
+                // 弹窗顶部 miuix progressiveTopBar 渐进模糊
+                if (settings.blurEnabled && homeBlurAvailable && browserBackdrop != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp)
+                            .progressiveTopBar(
+                                backdrop = browserBackdrop,
+                                radius = 40f,
+                                curve = 0.55f,
+                                enabled = true,
+                            ),
+                    )
+                }
                 if (settings.tabsStyle == 1) {
-                    // 卡片显示
+                    // 卡片显示：加高、左右对齐
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         val rows = state.tabs.chunked(2)
                         rows.forEachIndexed { rowIndex, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowItems.forEachIndexed { colIndex, item ->
                                     val index = rowIndex * 2 + colIndex
@@ -842,7 +886,7 @@ fun BrowserScreen(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(120.dp)
+                                            .height(160.dp)
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
                                             .clickable {
@@ -864,7 +908,7 @@ fun BrowserScreen(
                                         Column(
                                             modifier = Modifier.fillMaxSize(),
                                         ) {
-                                            // 标题行：miuix-glass 模糊底（仅采样卡片区域，避免顶部矩形壁纸）
+                                            // 标题行：miuix-glass 模糊底
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -1345,6 +1389,37 @@ fun BrowserScreen(
                 showUaPicker = false
             },
         )
+
+        GlassDialog(
+            show = showClearTabsConfirm,
+            title = "删除全部标签页？",
+            summary = "将关闭除当前外的所有标签，并新建一个空白标签。",
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismissRequest = { showClearTabsConfirm = false },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                GlassDialogButton(
+                    onClick = { showClearTabsConfirm = false },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
+                    onClick = {
+                        state.closeAll()
+                        showClearTabsConfirm = false
+                        sheet = Sheet.None
+                    },
+                    modifier = Modifier.weight(1f),
+                    role = GlassDialogButtonRole.Destructive,
+                ) {
+                    Text(text = "全部删除", style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
 
         FindDialog(
             show = showFind,
@@ -2140,16 +2215,35 @@ private fun UaDialog(
     ) {
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             UA_PRESETS.forEach { preset ->
-                Text(
-                    text = preset.name,
-                    fontSize = 15.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
+                val presetIcon = when (preset.name) {
+                    "跟随系统" -> MiuixIcons.Settings
+                    "Android Chrome" -> MiuixIcons.Phone
+                    "桌面 Chrome" -> MiuixIcons.HorizontalSplit
+                    "iPhone Safari" -> MiuixIcons.Phone
+                    else -> MiuixIcons.Info
+                }
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .clickable { onConfirm(preset.value) }
-                        .padding(horizontal = 6.dp, vertical = 10.dp),
-                )
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = presetIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = preset.name,
+                        fontSize = 15.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             TextField(

@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 108
-        versionName = "v1.2.12-dev"
+        versionCode = 109
+        versionName = "v1.2.13-dev"
     }
 
     buildFeatures {
@@ -75,6 +75,7 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-glass-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-glass-icons-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuix")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")

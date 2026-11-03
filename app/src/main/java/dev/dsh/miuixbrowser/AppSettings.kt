@@ -72,6 +72,15 @@ class AppSettings(context: Context) {
     var wallpaper by mutableStateOf(prefs.getString(KEY_WALL, "").orEmpty())
         private set
 
+    /** 主页壁纸模糊 */
+    var wallpaperBlur by mutableStateOf(prefs.getBoolean(KEY_WALL_BLUR, false))
+        private set
+
+    fun updateWallpaperBlur(enabled: Boolean) {
+        wallpaperBlur = enabled
+        prefs.edit().putBoolean(KEY_WALL_BLUR, enabled).apply()
+    }
+
     /** 空串表示跟随系统 WebView 默认 UA */
     var userAgent by mutableStateOf(prefs.getString(KEY_UA, "").orEmpty())
         private set
@@ -196,6 +205,7 @@ class AppSettings(context: Context) {
         const val KEY_TABS = "tabs_style"
         const val KEY_SEARCH_CUSTOM = "search_custom"
         const val KEY_WALL = "wallpaper"
+        const val KEY_WALL_BLUR = "wallpaper_blur"
         const val KEY_ENHANCE = "page_enhancements"
         const val KEY_DNT = "send_dnt"
         const val KEY_WEBRTC = "webrtc_disabled"

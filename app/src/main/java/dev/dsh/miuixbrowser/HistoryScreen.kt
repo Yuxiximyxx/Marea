@@ -197,11 +197,12 @@ fun LibraryScreen(
 
             // 书签栏右下角 FAB：GlassPopup 放在全屏 Box 根坐标系，锚点用 boundsInRoot
             if (pagerState.currentPage == TAB_BOOKMARKS) {
+                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
-                        .padding(end = 20.dp, bottom = 24.dp),
+                        .padding(end = 20.dp, bottom = 96.dp),
                 ) {
                     Box(
                         modifier = Modifier
@@ -209,7 +210,12 @@ fun LibraryScreen(
                             .clip(CircleShape)
                             .background(MiuixTheme.colorScheme.primary)
                             .onGloballyPositioned { menuAnchor = it.boundsInRoot() }
-                            .clickable { showMenu = true },
+                            .clickable {
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                                showMenu = true
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -264,6 +270,16 @@ fun LibraryScreen(
             onDismiss = {
                 creatingFav = false
                 editingFav = null
+            },
+            onDelete = editingFav?.let { fav ->
+                {
+                    val idx = favorites.items.indexOfFirst {
+                        it.url == fav.url && it.name == fav.name
+                    }
+                    if (idx >= 0) favorites.remove(idx)
+                    creatingFav = false
+                    editingFav = null
+                }
             },
             onConfirm = { name, url ->
                 if (editingFav != null) {
@@ -490,6 +506,7 @@ private fun FavoriteEditorDialog(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String) -> Unit,
+    onDelete: (() -> Unit)? = null,
 ) {
     var name by remember(initial, show) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial, show) { mutableStateOf(initial?.url ?: "") }
@@ -522,11 +539,21 @@ private fun FavoriteEditorDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                top.yukonga.miuix.kmp.glass.GlassDialogButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                if (initial != null && onDelete != null) {
+                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f),
+                        role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Destructive,
+                    ) {
+                        Text(text = "删除", style = MiuixTheme.textStyles.button)
+                    }
+                } else {
+                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(text = "取消", style = MiuixTheme.textStyles.button)
+                    }
                 }
                 top.yukonga.miuix.kmp.glass.GlassDialogButton(
                     onClick = { if (url.isNotBlank()) onConfirm(name, url) },
