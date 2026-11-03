@@ -163,10 +163,12 @@ kotlin {
     }
 
     sourceSets {
-        commonMain.kotlin.srcDir(bakeSquircleSdf)
-        commonMain.dependencies {
-            api(project(":miuix-shader"))
-            implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
+        commonMain {
+            kotlin.srcDir(bakeSquircleSdf)
+            dependencies {
+                api(project(":miuix-shader"))
+                implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
+            }
         }
     }
 }
