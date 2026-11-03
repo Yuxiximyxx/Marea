@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -303,9 +304,22 @@ fun BrowserScreen(
         }
     }
 
-    // 回到主页时把 WebView 隐藏掉，否则网页会从主页底下透出来
+    // 回到主页时隐藏 WebView：alpha=0 仍会吃触摸，必须 INVISIBLE + 禁用，
+    // 否则主页看起来是首页，点击却落到下层网页。
     LaunchedEffect(tab.id, tab.url) {
-        tab.webView.alpha = if (tab.url.isEmpty()) 0f else 1f
+        val onHome = tab.url.isEmpty()
+        tab.webView.apply {
+            alpha = if (onHome) 0f else 1f
+            visibility = if (onHome) {
+                android.view.View.INVISIBLE
+            } else {
+                android.view.View.VISIBLE
+            }
+            isEnabled = !onHome
+            isClickable = !onHome
+            isFocusable = !onHome
+            isFocusableInTouchMode = !onHome
+        }
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
@@ -1954,7 +1968,14 @@ private fun StartPage(
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 根 Box 吸收空白区点击，避免穿透到下层 WebView（子项仍优先命中）
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { /* absorb empty-area taps on home */ }
+            },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
