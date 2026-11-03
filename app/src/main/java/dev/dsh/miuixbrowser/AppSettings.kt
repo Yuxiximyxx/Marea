@@ -72,6 +72,15 @@ class AppSettings(context: Context) {
     var wallpaper by mutableStateOf(prefs.getString(KEY_WALL, "").orEmpty())
         private set
 
+    /** 主页壁纸模糊 */
+    var wallpaperBlur by mutableStateOf(prefs.getBoolean(KEY_WALL_BLUR, false))
+        private set
+
+    fun updateWallpaperBlur(enabled: Boolean) {
+        wallpaperBlur = enabled
+        prefs.edit().putBoolean(KEY_WALL_BLUR, enabled).apply()
+    }
+
     /** 空串表示跟随系统 WebView 默认 UA */
     var userAgent by mutableStateOf(prefs.getString(KEY_UA, "").orEmpty())
         private set
@@ -105,6 +114,87 @@ class AppSettings(context: Context) {
         prefs.edit().putString(KEY_UA, userAgent).apply()
     }
 
+    /** 发送 Do Not Track 请求头 */
+    var sendDnt by mutableStateOf(prefs.getBoolean(KEY_DNT, false))
+        private set
+
+    fun updateSendDnt(enabled: Boolean) {
+        sendDnt = enabled
+        prefs.edit().putBoolean(KEY_DNT, enabled).apply()
+    }
+
+    /** 禁用 WebRTC（防 IP 泄露） */
+    var webrtcDisabled by mutableStateOf(prefs.getBoolean(KEY_WEBRTC, false))
+        private set
+
+    fun updateWebrtcDisabled(enabled: Boolean) {
+        webrtcDisabled = enabled
+        prefs.edit().putBoolean(KEY_WEBRTC, enabled).apply()
+    }
+
+    /** 第三方 Cookie：0=允许 1=拒绝 */
+    var thirdPartyCookie by mutableStateOf(prefs.getInt(KEY_3P_COOKIE, 0))
+        private set
+
+    fun updateThirdPartyCookie(mode: Int) {
+        thirdPartyCookie = mode.coerceIn(0, 1)
+        prefs.edit().putInt(KEY_3P_COOKIE, thirdPartyCookie).apply()
+    }
+
+    /** 网页权限：摄像头 0=询问 1=允许 2=拒绝 */
+    var cameraPermission by mutableStateOf(prefs.getInt(KEY_CAM, 0))
+        private set
+
+    fun updateCameraPermission(mode: Int) {
+        cameraPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_CAM, cameraPermission).apply()
+    }
+
+    /** 网页权限：麦克风 0=询问 1=允许 2=拒绝 */
+    var micPermission by mutableStateOf(prefs.getInt(KEY_MIC, 0))
+        private set
+
+    fun updateMicPermission(mode: Int) {
+        micPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_MIC, micPermission).apply()
+    }
+
+    /** 网页权限：定位 0=询问 1=允许 2=拒绝 */
+    var locationPermission by mutableStateOf(prefs.getInt(KEY_LOC, 0))
+        private set
+
+    fun updateLocationPermission(mode: Int) {
+        locationPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_LOC, locationPermission).apply()
+    }
+
+    /** 网页权限：剪贴板读写 0=询问 1=允许 2=拒绝 */
+    var clipboardPermission by mutableStateOf(prefs.getInt(KEY_CLIP, 0))
+        private set
+
+    fun updateClipboardPermission(mode: Int) {
+        clipboardPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_CLIP, clipboardPermission).apply()
+    }
+
+    /** 网页权限：网站媒体发声/自动播放 0=询问 1=允许 2=拒绝 */
+    var mediaAutoplay by mutableStateOf(prefs.getInt(KEY_MEDIA, 0))
+        private set
+
+    fun updateMediaAutoplay(mode: Int) {
+        mediaAutoplay = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_MEDIA, mediaAutoplay).apply()
+    }
+
+    /** 启用「请勿追踪」类隐私增强：合并 DNT + 禁第三方跟踪脚本提示 */
+    var blockTrackingScripts by mutableStateOf(prefs.getBoolean(KEY_TRACK, true))
+        private set
+
+    fun updateBlockTrackingScripts(enabled: Boolean) {
+        blockTrackingScripts = enabled
+        prefs.edit().putBoolean(KEY_TRACK, enabled).apply()
+    }
+
     private companion object {
         const val KEY_BLUR = "blur"
         const val KEY_UA = "ua"
@@ -115,7 +205,17 @@ class AppSettings(context: Context) {
         const val KEY_TABS = "tabs_style"
         const val KEY_SEARCH_CUSTOM = "search_custom"
         const val KEY_WALL = "wallpaper"
+        const val KEY_WALL_BLUR = "wallpaper_blur"
         const val KEY_ENHANCE = "page_enhancements"
+        const val KEY_DNT = "send_dnt"
+        const val KEY_WEBRTC = "webrtc_disabled"
+        const val KEY_3P_COOKIE = "third_party_cookie"
+        const val KEY_CAM = "perm_camera"
+        const val KEY_MIC = "perm_mic"
+        const val KEY_LOC = "perm_location"
+        const val KEY_CLIP = "perm_clipboard"
+        const val KEY_MEDIA = "perm_media_autoplay"
+        const val KEY_TRACK = "block_tracking"
     }
 }
 

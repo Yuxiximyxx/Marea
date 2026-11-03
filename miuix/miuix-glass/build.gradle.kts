@@ -1,31 +1,69 @@
-// Vendored from compose-miuix-ui/miuix (feat/miuix-glass, PR #423), Apache-2.0.
-// Android-only build of the module; see /miuix/README.md.
+// Copyright 2026, compose-miuix-ui contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+
 plugins {
-    id("com.android.kotlin.multiplatform.library")
-    id("org.jetbrains.kotlin.multiplatform")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
+    alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.kotlinMultiplatform)
+    id("module.kotlin-jvm-toolchain")
+    id("module.publication")
+    id("module.spotless")
+}
+
+miuixPublication {
+    description.set("Glass material library for Miuix")
 }
 
 kotlin {
-    jvmToolchain(17)
+    withSourcesJar(true)
 
     android {
-        namespace = "top.yukonga.miuix.kmp.glass"
+        buildToolsVersion = BuildConfig.BUILD_TOOLS_VERSION
         compileSdk {
-            version = release(37) {
-                minorApiLevel = 0
-            }
+            version =
+                release(BuildConfig.COMPILE_SDK) {
+                    minorApiLevel = BuildConfig.COMPILE_SDK_MINOR
+                }
         }
-        buildToolsVersion = "36.0.0"
         minSdk = 33
+        namespace = "${BuildConfig.LIBRARY_ID}.glass"
     }
+
+    jvm("desktop")
+
+    iosArm64()
+    iosSimulatorArm64()
+    macosArm64()
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+    }
+
+    js {
+        browser()
+    }
+
+    applyMiuixSourceSetHierarchy()
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":miuix-blur"))
-            api(project(":miuix-ui"))
-            implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
-            implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
+            api(projects.miuixBlur)
+            api(projects.miuixUi)
+            implementation(libs.jetbrains.compose.foundation)
+            implementation(libs.androidx.navigationevent)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation(libs.jetbrains.compose.ui.test)
+            }
         }
     }
 }

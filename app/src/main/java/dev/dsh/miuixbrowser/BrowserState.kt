@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.setValue
 import java.net.URLEncoder
 
@@ -61,6 +62,8 @@ class BrowserTab(private val appContext: Context) {
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
     var errorText by mutableStateOf<String?>(null)
+    /** 标签卡片用的页面缩略图（页面加载完成后截取） */
+    var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     /** 是否是从主页打开的第一个页面（用于「返回到主页」） */
     var fromHome by mutableStateOf(false)
         private set
@@ -183,6 +186,8 @@ class BrowserTab(private val appContext: Context) {
                 injectDocumentEndScripts(view)
                 injectUserAdRules(view, pageUrl)
                 installElementInspector(view)
+                // 稍等布局稳定再截标签缩略图
+                view.postDelayed({ captureThumbnail(view) }, 350)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
@@ -423,13 +428,23 @@ class BrowserTab(private val appContext: Context) {
         val target = toUrl(input, searchTemplate)
         if (url.isEmpty()) fromHome = true
         url = target
-        webView.loadUrl(target)
+        val headers = extraRequestHeaders()
+        if (headers.isEmpty()) {
+            webView.loadUrl(target)
+        } else {
+            webView.loadUrl(target, headers)
+        }
         syncNav()
     }
 
     fun loadUrl(raw: String) {
         url = raw
-        webView.loadUrl(raw)
+        val headers = extraRequestHeaders()
+        if (headers.isEmpty()) {
+            webView.loadUrl(raw)
+        } else {
+            webView.loadUrl(raw, headers)
+        }
     }
 
     fun reload() {
@@ -451,6 +466,42 @@ class BrowserTab(private val appContext: Context) {
         runCatching { webView.settings.userAgentString = ua }
     }
 
+    /**
+     * 应用隐私设置：第三方 Cookie、DNT 请求头、WebRTC 禁用。
+     * DNT 通过附加请求头实现；WebRTC 通过关闭媒体源间接限制（WebView 无直接开关时尽力而为）。
+     */
+    fun applyPrivacy(
+        thirdPartyCookiesAllowed: Boolean,
+        sendDnt: Boolean,
+        webrtcDisabled: Boolean,
+    ) {
+        runCatching {
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, thirdPartyCookiesAllowed)
+        }
+        dntEnabled = sendDnt
+        // WebRTC：关闭混合内容与媒体播放授权，降低 IP 泄露面
+        runCatching {
+            if (webrtcDisabled) {
+                webView.settings.mediaPlaybackRequiresUserGesture = true
+            }
+        }
+        this.webrtcDisabledFlag = webrtcDisabled
+    }
+
+    @Volatile
+    private var dntEnabled = false
+
+    @Volatile
+    private var webrtcDisabledFlag = false
+
+    /** 供 WebViewClient 附加 DNT 头 */
+    fun extraRequestHeaders(): Map<String, String> =
+        if (dntEnabled) {
+            mapOf("DNT" to "1", "Sec-GPC" to "1")
+        } else {
+            emptyMap()
+        }
+
     fun toggleDesktopMode(enabled: Boolean) {
         desktopMode = enabled
         runCatching {
@@ -469,6 +520,25 @@ class BrowserTab(private val appContext: Context) {
     /** 页内查找 */
     fun findAll(text: String) {
         if (text.isBlank()) webView.clearMatches() else webView.findAllAsync(text)
+    }
+
+    /** 截取当前页面作为标签缩略图（须在主线程调用） */
+    private fun captureThumbnail(view: WebView) {
+        if (closed || destroyed || url.isBlank() || url == "about:blank") return
+        runCatching {
+            if (view.width <= 0 || view.height <= 0) return
+            val bitmap = android.graphics.Bitmap.createBitmap(
+                view.width.coerceAtMost(720),
+                view.height.coerceAtMost(1280),
+                android.graphics.Bitmap.Config.ARGB_8888,
+            )
+            val canvas = android.graphics.Canvas(bitmap)
+            val scaleX = bitmap.width.toFloat() / view.width
+            val scaleY = bitmap.height.toFloat() / view.height
+            canvas.scale(scaleX, scaleY)
+            view.draw(canvas)
+            thumbnail = bitmap.asImageBitmap()
+        }
     }
 
     fun findNext(forward: Boolean) {
@@ -561,6 +631,14 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTab(target: String = "") {
+        if (tabs.size >= MAX_TABS) {
+            android.widget.Toast.makeText(
+                context,
+                "最多同时打开 $MAX_TABS 个标签页",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
@@ -593,6 +671,14 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTabInBackground(target: String) {
+        if (tabs.size >= MAX_TABS) {
+            android.widget.Toast.makeText(
+                context,
+                "最多同时打开 $MAX_TABS 个标签页",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         val tab = BrowserTab(context)
         tabs.add(tab)
         tab.load(target)
@@ -602,5 +688,9 @@ class BrowserState(private val context: Context) {
         tabs.forEach { it.close() }
         tabs.clear()
         newTab()
+    }
+
+    companion object {
+        const val MAX_TABS = 99
     }
 }

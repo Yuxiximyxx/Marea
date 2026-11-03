@@ -1,12 +1,24 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -84,14 +96,53 @@ fun PageGlassTopBar(
     scrollBehavior: ScrollBehavior,
     onBack: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
+    bottomContent: @Composable () -> Unit = {},
 ) {
-    GlassTopAppBar(
-        title = title,
-        backdrop = if (glass) backdrop else null,
-        scrollBehavior = scrollBehavior,
-        navigationIcon = { GlassBackButton(onClick = onBack) },
-        actions = actions,
+    val isContentScrolled by remember(scrollBehavior) {
+        derivedStateOf { scrollBehavior.state.contentOffset < 0f }
+    }
+    // 内容滚到顶栏下方时，渐进模糊淡入；回到顶部时淡出。
+    val blurAlpha by animateFloatAsState(
+        targetValue = if (isContentScrolled) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "pageTopBarProgressiveBlur",
     )
+    val overhang = GlassTopAppBarDefaults.BandOverhang
+    val surface = MiuixTheme.colorScheme.surface
+    Box {
+        if (glass) {
+            // 渐进模糊层：位于录制层之外，采样页面内容；高度 = 顶栏 + 下探 overhang。
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .layout { measurable, constraints ->
+                        val extra = overhang.roundToPx()
+                        val placeable = measurable.measure(
+                            Constraints.fixed(constraints.maxWidth, constraints.maxHeight + extra),
+                        )
+                        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(0, 0) }
+                    }
+                    .graphicsLayer { alpha = blurAlpha }
+                    .progressiveTopBar(
+                        backdrop = backdrop,
+                        tint = surface.copy(alpha = 0.18f),
+                        radius = 40f,
+                        curve = 0.55f,
+                    ),
+            )
+        }
+        GlassTopAppBar(
+            title = title,
+            isContentScrolled = isContentScrolled,
+            backdrop = if (glass) backdrop else null,
+            scrollBehavior = scrollBehavior,
+            // 玻璃开启时由上面的渐进模糊取代纯色渐变遮罩；关闭时保留原遮罩保证可读性。
+            bandBrush = if (glass) SolidColor(Color.Transparent) else GlassTopAppBarDefaults.bandBrush(surface),
+            navigationIcon = { GlassBackButton(onClick = onBack) },
+            actions = actions,
+            bottomContent = bottomContent,
+        )
+    }
 }
 
 /**
@@ -154,7 +205,7 @@ fun Modifier.glassSurfacePanel(
     cornerRadius: Dp,
     material: GlassMaterial = GlassNavigationBarDefaults.material(),
     stroke: GlassStroke? = GlassNavigationBarDefaults.stroke(),
-    fallbackColor: androidx.compose.ui.graphics.Color = MiuixTheme.colorScheme.surfaceContainer,
+    fallbackColor: Color = MiuixTheme.colorScheme.surfaceContainer,
 ): Modifier {
     val shape = GlassShape(cornerRadius)
     return glassPanel(

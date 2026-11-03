@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 119
-        versionName = "v1.2.11-stable"
+        versionCode = 115
+        versionName = "v1.2.18-stable"
     }
 
     buildFeatures {
@@ -67,17 +67,19 @@ android {
 
 
 dependencies {
-    // miuix 来自 miuix/ 目录的源码（feat/miuix-glass 分支），Maven 上还没有 glass 模块。
-    implementation(project(":miuix-ui"))
-    implementation(project(":miuix-preference"))
-    implementation(project(":miuix-icons"))
-    implementation(project(":miuix-glass-icons"))
-    implementation(project(":miuix-squircle"))
-    implementation(project(":miuix-blur"))
-    implementation(project(":miuix-glass"))
+    val miuix = "0.9.4"
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-squircle-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-glass-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-glass-icons-android:$miuix")
+    implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuix")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
 }

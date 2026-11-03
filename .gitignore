@@ -1,4 +1,4 @@
-*.iml
+﻿*.iml
 .gradle/
 local.properties
 .idea/
@@ -10,3 +10,14 @@ app/build/
 
 mafari-release.jks
 *.jks
+
+# 本地参考/会话，不入库
+_ref/
+.mimocode/
+**/.gradle/
+**/build/
+**/.idea/
+**/.claude/
+miuix/docs/.vitepress/cache/
+miuix/docs/.vitepress/dist/
+node_modules/

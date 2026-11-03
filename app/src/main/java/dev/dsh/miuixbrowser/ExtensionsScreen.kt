@@ -1,12 +1,5 @@
 package dev.dsh.miuixbrowser
 
-import top.yukonga.miuix.kmp.blur.Backdrop
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.icon.glass.Delete
-import top.yukonga.miuix.kmp.icon.glass.Import
-import top.yukonga.miuix.kmp.icon.glass.Refresh
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,16 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,9 +42,9 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -67,10 +57,17 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.File
+import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.glass.GlassDialogButton
+import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassIconButton
+import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 @Composable
 fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boolean = true) {
@@ -80,12 +77,13 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     var busy by remember { mutableStateOf(false) }
     var updatingAll by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<UserScript?>(null) }
-    var message by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val backdrop = rememberLayerBackdrop()
     val glass = rememberGlassActive(blurEnabled)
+    val deleteTarget = deleting
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -98,11 +96,15 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
                 actions = {
-                    GlassBarAction(MiuixIcons.Glass.Import, "导入") { importing = true }
-                    GlassBarAction(
-                        icon = MiuixIcons.Glass.Refresh,
-                        description = if (updatingAll) "更新中" else "全部更新",
-                        modifier = Modifier.alpha(if (updatingAll) 0.4f else 1f),
+                    IconTextAction(
+                        icon = MiuixIcons.Download,
+                        label = "导入",
+                        modifier = Modifier.padding(end = 6.dp),
+                    ) { importing = true }
+                    IconTextAction(
+                        icon = MiuixIcons.Refresh,
+                        label = if (updatingAll) "更新中" else "全部更新",
+                        modifier = Modifier.padding(end = 10.dp),
                     ) {
                         if (!updatingAll) {
                             val targets = store.items.filter { it.sourceUrl.isNotBlank() }
@@ -141,143 +143,145 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                             }
                         }
                     }
-                
                 },
             )
         },
     ) { innerPadding ->
         val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .background(MiuixTheme.colorScheme.surface)
-                .navigationBarsPadding(),
-        ) {
+                    .background(MiuixTheme.colorScheme.surface)
+                    .navigationBarsPadding(),
+            ) {
             val subscriptions = store.items.filter { it.subscriptionUrl.isNotBlank() }
-            val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
-            val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
-                store.items.none { item ->
-                    (builtin.subscriptionUrl.isNotBlank() &&
-                        (item.subscriptionUrl == builtin.subscriptionUrl || item.sourceUrl == builtin.subscriptionUrl)) ||
-                        (builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl)
-                }
-            }
-            LazyColumn(contentPadding = PaddingValues(top = topInset, bottom = 24.dp)) {
-                if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
-                    item {
-                        SmallTitle(text = "内置脚本")
+                val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
+                val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
+                    store.items.none { item ->
+                        (builtin.subscriptionUrl.isNotBlank() &&
+                            (item.subscriptionUrl == builtin.subscriptionUrl || item.sourceUrl == builtin.subscriptionUrl)) ||
+                            (builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl)
                     }
-                    items(missingBuiltins.size) { index ->
-                        val builtin = missingBuiltins[index]
-                        BuiltinScriptCard(builtin) {
-                            if (!busy) {
-                                busy = true
-                                scope.launch {
-                                    when {
-                                        builtin.subscriptionUrl.isNotBlank() -> {
-                                            val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                fetchScript(builtin.subscriptionUrl)
-                                            }
-                                            val converted = text?.let {
-                                                if (AdblockRules.looksLikeFilterList(it)) {
-                                                    AdblockRules.convert(it, builtin.subscriptionUrl)
-                                                } else {
-                                                    null
+                }
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp),
+                ) {
+                    if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
+                        item {
+                            SmallTitle(text = "内置脚本")
+                        }
+                        items(missingBuiltins.size) { index ->
+                            val builtin = missingBuiltins[index]
+                            BuiltinScriptCard(builtin) {
+                                if (!busy) {
+                                    busy = true
+                                    scope.launch {
+                                        when {
+                                            builtin.subscriptionUrl.isNotBlank() -> {
+                                                val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    fetchScript(builtin.subscriptionUrl)
                                                 }
-                                            }
-                                            if (converted != null) {
-                                                store.add(
-                                                    converted.name,
-                                                    converted.code,
-                                                    sourceUrl = builtin.subscriptionUrl,
-                                                    subscriptionUrl = builtin.subscriptionUrl,
-                                                )
-                                                android.widget.Toast.makeText(context, "已订阅 " + converted.name, android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                store.add(
-                                                    builtin.name,
-                                                    builtin.code,
-                                                    sourceUrl = builtin.subscriptionUrl,
-                                                    subscriptionUrl = builtin.subscriptionUrl,
-                                                )
-                                                android.widget.Toast.makeText(context, "订阅源不可用，已添加内置规则", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                        builtin.userScriptUrl.isNotBlank() -> {
-                                            val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                fetchScript(builtin.userScriptUrl)
-                                            }
-                                            if (code != null) {
-                                                val converted = if (AdblockRules.looksLikeFilterList(code)) {
-                                                    AdblockRules.convert(code, builtin.userScriptUrl)
-                                                } else {
-                                                    null
+                                                val converted = text?.let {
+                                                    if (AdblockRules.looksLikeFilterList(it)) {
+                                                        AdblockRules.convert(it, builtin.subscriptionUrl)
+                                                    } else {
+                                                        null
+                                                    }
                                                 }
                                                 if (converted != null) {
                                                     store.add(
                                                         converted.name,
                                                         converted.code,
-                                                        sourceUrl = builtin.userScriptUrl,
-                                                        subscriptionUrl = builtin.userScriptUrl,
+                                                        sourceUrl = builtin.subscriptionUrl,
+                                                        subscriptionUrl = builtin.subscriptionUrl,
                                                     )
+                                                    android.widget.Toast.makeText(context, "已订阅 " + converted.name, android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
-                                                    store.add("", code, sourceUrl = builtin.userScriptUrl)
+                                                    store.add(
+                                                        builtin.name,
+                                                        builtin.code,
+                                                        sourceUrl = builtin.subscriptionUrl,
+                                                        subscriptionUrl = builtin.subscriptionUrl,
+                                                    )
+                                                    android.widget.Toast.makeText(context, "订阅源不可用，已添加内置规则", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
-                                                android.widget.Toast.makeText(context, "已添加 " + builtin.name, android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                android.widget.Toast.makeText(context, "下载失败，检查网络", android.widget.Toast.LENGTH_SHORT).show()
                                             }
-                                        }
-                                        else -> store.add(builtin.name, builtin.code)
-                                    }
-                                    busy = false
-                                }
-                            }
-                        }
-                    }
-                    items(subscriptions.size) { index ->
-                        val script = subscriptions[index]
-                        SubscriptionCard(
-                            script = script,
-                            onToggle = { store.setEnabled(script.id, it) },
-                            onUpdate = {
-                                if (!busy) {
-                                    busy = true
-                                    scope.launch {
-                                        val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            fetchScript(script.subscriptionUrl)
-                                        }
-                                        val converted = text?.let { AdblockRules.convert(it, script.subscriptionUrl) }
-                                        if (converted != null) {
-                                            store.update(script.id, converted.name, converted.code, script.enabled, script.match)
-                                            android.widget.Toast.makeText(context, "已更新订阅", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
+                                            builtin.userScriptUrl.isNotBlank() -> {
+                                                val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    fetchScript(builtin.userScriptUrl)
+                                                }
+                                                if (code != null) {
+                                                    val converted = if (AdblockRules.looksLikeFilterList(code)) {
+                                                        AdblockRules.convert(code, builtin.userScriptUrl)
+                                                    } else {
+                                                        null
+                                                    }
+                                                    if (converted != null) {
+                                                        store.add(
+                                                            converted.name,
+                                                            converted.code,
+                                                            sourceUrl = builtin.userScriptUrl,
+                                                            subscriptionUrl = builtin.userScriptUrl,
+                                                        )
+                                                    } else {
+                                                        store.add("", code, sourceUrl = builtin.userScriptUrl)
+                                                    }
+                                                    android.widget.Toast.makeText(context, "已添加 " + builtin.name, android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "下载失败，检查网络", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            else -> store.add(builtin.name, builtin.code)
                                         }
                                         busy = false
                                     }
                                 }
-                            },
-                            onDelete = { deleting = script },
-                        )
+                            }
+                        }
+                        items(subscriptions.size) { index ->
+                            val script = subscriptions[index]
+                            SubscriptionCard(
+                                script = script,
+                                onToggle = { store.setEnabled(script.id, it) },
+                                onUpdate = {
+                                    if (!busy) {
+                                        busy = true
+                                        scope.launch {
+                                            val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                fetchScript(script.subscriptionUrl)
+                                            }
+                                            val converted = text?.let { AdblockRules.convert(it, script.subscriptionUrl) }
+                                            if (converted != null) {
+                                                store.update(script.id, converted.name, converted.code, script.enabled, script.match)
+                                                android.widget.Toast.makeText(context, "已更新订阅", android.widget.Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                            busy = false
+                                        }
+                                    }
+                                },
+                                onDelete = { deleting = script },
+                            )
+                        }
                     }
-                }
-                if (normalScripts.isEmpty() && subscriptions.isEmpty()) {
-                    item {
-                        Text(
-                            text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
-                            fontSize = 13.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(24.dp),
-                        )
-                    }
-                } else if (normalScripts.isNotEmpty()) {
-                    item {
-                        SmallTitle(text = "已安装脚本")
-                    }
+                    if (normalScripts.isEmpty() && subscriptions.isEmpty()) {
+                        item {
+                            Text(
+                                text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(24.dp),
+                            )
+                        }
+                    } else if (normalScripts.isNotEmpty()) {
+                        item {
+                            SmallTitle(text = "已安装脚本")
+                        }
                         items(normalScripts.size) { index ->
                             val script = normalScripts[index]
                             Card(
@@ -335,69 +339,64 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                 }
                             }
                         }
+                    }
                 }
             }
-        }
 
+            // 右下圆形添加按钮
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(20.dp)
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MiuixTheme.colorScheme.primary)
+                    .clickable { creating = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Add,
+                    contentDescription = "新建脚本",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        } // end outer Box
 
-        // 右下圆形添加按钮
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(20.dp)
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MiuixTheme.colorScheme.primary)
-                .clickable { creating = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Add,
-                contentDescription = "新建脚本",
-                tint = Color.White,
-                modifier = Modifier.size(26.dp),
-            )
-        }
-        }
-    }
-
-
-    deleting?.let { target ->
-        AppDialog(
-            backdrop = backdrop,
-            glass = glass,
-            show = true,
+        GlassDialog(
+            show = deleteTarget != null,
             title = "删除脚本",
-            summary = target.name,
+            summary = deleteTarget?.name,
+            backdrop = backdrop,
             onDismissRequest = { deleting = null },
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                DialogTextButton(
-                    text = "取消",
+                GlassDialogButton(
                     onClick = { deleting = null },
                     modifier = Modifier.weight(1f),
-                )
-                DialogTextButton(
-                    text = "删除",
+                ) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = {
-                        store.remove(target.id)
+                        deleteTarget?.let { store.remove(it.id) }
                         deleting = null
                     },
                     modifier = Modifier.weight(1f),
-                    destructive = true,
-                )
+                    role = GlassDialogButtonRole.Destructive,
+                ) {
+                    Text(text = "删除", style = MiuixTheme.textStyles.button)
+                }
             }
         }
-    }
 
-    if (importing) {
         ImportDialog(
+            show = importing,
             backdrop = backdrop,
-            glass = glass,
             onDismiss = { importing = false },
             onImport = { url ->
                 importing = false
@@ -429,13 +428,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 }
             },
         )
-    }
 
-    if (creating || editing != null) {
         ScriptDialog(
-            backdrop = backdrop,
-            glass = glass,
+            show = creating || editing != null,
             initial = editing,
+            backdrop = backdrop,
             onDismiss = {
                 creating = false
                 editing = null
@@ -456,9 +453,9 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
 
 @Composable
 private fun ScriptDialog(
-    backdrop: Backdrop?,
-    glass: Boolean,
+    show: Boolean,
     initial: UserScript?,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onConfirmMatch: (String, String, Boolean, String) -> Unit,
 ) {
@@ -467,12 +464,11 @@ private fun ScriptDialog(
     var match by remember(initial) { mutableStateOf(initial?.match ?: "") }
     var enabled by remember(initial) { mutableStateOf(initial?.enabled ?: true) }
 
-    AppDialog(
-        backdrop = backdrop,
-        glass = glass,
-        show = true,
+    GlassDialog(
+        show = show,
         title = if (initial == null) "新建脚本" else "编辑脚本",
         summary = "JavaScript 会在页面加载完成后执行",
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -510,24 +506,37 @@ private fun ScriptDialog(
             Spacer(Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                DialogTextButton(
-                    text = "保存",
+                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = { if (code.isNotBlank()) onConfirmMatch(name, code, enabled, match) },
                     modifier = Modifier.weight(1f),
-                    primary = true,
-                )
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "保存", style = MiuixTheme.textStyles.button)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ImportDialog(backdrop: Backdrop?, glass: Boolean, onDismiss: () -> Unit, onImport: (String) -> Unit) {
+private fun ImportDialog(
+    show: Boolean,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    onDismiss: () -> Unit,
+    onImport: (String) -> Unit,
+) {
     var url by remember { mutableStateOf("") }
-    AppDialog(show = true, title = "从 URL 导入脚本", onDismissRequest = onDismiss, backdrop = backdrop, glass = glass) {
+    GlassDialog(
+        show = show,
+        title = "从 URL 导入脚本",
+        backdrop = backdrop,
+        onDismissRequest = onDismiss,
+    ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = url,
@@ -537,14 +546,17 @@ private fun ImportDialog(backdrop: Backdrop?, glass: Boolean, onDismiss: () -> U
                 singleLine = true,
             )
             Spacer(Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                DialogTextButton(
-                    text = "导入",
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = { if (url.isNotBlank()) onImport(url.trim()) },
                     modifier = Modifier.weight(1f),
-                    primary = true,
-                )
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "导入", style = MiuixTheme.textStyles.button)
+                }
             }
         }
     }

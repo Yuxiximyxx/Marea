@@ -1,33 +1,163 @@
-// Vendored from compose-miuix-ui/miuix (feat/miuix-glass, PR #423), Apache-2.0.
-// Android-only build of the module; see /miuix/README.md.
+// Copyright 2025, compose-miuix-ui contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+
 plugins {
-    id("com.android.kotlin.multiplatform.library")
-    id("org.jetbrains.kotlin.multiplatform")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
+    alias(libs.plugins.baselineprofile)
+    alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.kotlinMultiplatform)
+    id("module.kotlin-jvm-toolchain")
+    id("module.publication")
+    id("module.spotless")
+}
+
+miuixPublication {
+    description.set("A UI library for Compose Multiplatform")
 }
 
 kotlin {
-    jvmToolchain(17)
+    withSourcesJar(true)
 
     android {
-        namespace = "top.yukonga.miuix.kmp.ui"
+        buildToolsVersion = BuildConfig.BUILD_TOOLS_VERSION
         compileSdk {
-            version = release(37) {
-                minorApiLevel = 0
-            }
+            version =
+                release(BuildConfig.COMPILE_SDK) {
+                    minorApiLevel = BuildConfig.COMPILE_SDK_MINOR
+                }
         }
-        buildToolsVersion = "36.0.0"
-        minSdk = 24
+        minSdk = BuildConfig.MIN_SDK
+        namespace = "${BuildConfig.LIBRARY_ID}.ui"
+        withHostTest {}
     }
 
+    jvm("desktop")
+
+    iosArm64()
+    iosSimulatorArm64()
+    macosArm64()
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+    }
+
+    js {
+        browser()
+    }
+
+    applyMiuixSourceSetHierarchy()
+
     sourceSets {
-        commonMain.dependencies {
-            api(project(":miuix-core"))
-            api(project(":miuix-squircle"))
-            api("org.jetbrains.compose.foundation:foundation:1.12.2")
-            implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
-            implementation("org.jetbrains.compose.material3:material3-window-size-class:1.12.0-alpha03")
-            implementation("com.materialkolor:material-color-utilities:6.0.0")
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
+
+        commonMain.dependencies {
+            api(projects.miuixCore)
+            api(projects.miuixSquircle)
+            api(libs.jetbrains.compose.foundation)
+
+            implementation(libs.androidx.navigationevent)
+            implementation(libs.jetbrains.compose.window.size)
+
+            implementation(libs.materialKolor.utilities) // Material Color for Multiplatform
+        }
+    }
+}
+
+baselineProfile {
+    filter {
+        include("top.yukonga.miuix.kmp.**")
+    }
+}
+
+val convertBaselineProfile =
+    tasks.register<ConvertBaselineProfileTask>("convertBaselineProfile") {
+        description = "convertBaselineProfile"
+        inputFile.convention(
+            provider {
+                val generatedUiProfile = layout.projectDirectory.file("src/androidMain/generated/baselineProfiles/baseline-prof.txt")
+                val generatedExampleProfile =
+                    rootProject.layout.projectDirectory.file(
+                        "example/android/src/release/generated/baselineProfiles/baseline-prof.txt",
+                    )
+                if (generatedUiProfile.asFile.exists()) generatedUiProfile else generatedExampleProfile
+            },
+        )
+        outputFile.set(
+            layout.projectDirectory.file("src/androidMain/baselineProfiles/baseline-prof.txt"),
+        )
+        targetPackage.set("top/yukonga/miuix/kmp/")
+        excludePackages.set(
+            listOf(
+                "top/yukonga/miuix/kmp/icon/extended/",
+                "top/yukonga/miuix/kmp/shared/",
+            ),
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/preference/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-preference/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/menu/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-preference/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/popup/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-preference/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/blur/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-blur/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/nav/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-nav/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/shader/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-shader/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+        additionalOutputs.put(
+            "top/yukonga/miuix/kmp/squircle/",
+            rootProject.layout.projectDirectory
+                .file(
+                    "miuix-squircle/src/androidMain/baselineProfiles/baseline-prof.txt",
+                ).asFile.absolutePath,
+        )
+    }
+
+tasks.matching { it.name == "generateBaselineProfile" }.configureEach {
+    finalizedBy(convertBaselineProfile)
+}
+
+dependencies {
+    // mafari includeBuild 默认不含 baselineprofile/example；完整 miuix 开发时再挂上
+    val bp = rootProject.findProject(":baselineprofile")
+    if (bp != null) {
+        "baselineProfile"(bp)
     }
 }

@@ -1,6 +1,8 @@
 # Mafari
 
-基于 **MIUIX**（Compose Multiplatform）+ **系统 WebView** 的 Android 浏览器。不内嵌 Chromium 内核，安装包约 1.5 MB（R8 精简后）。
+基于 **MIUIX Glass**（Compose Multiplatform）+ **系统 WebView** 的 Android 浏览器。不内嵌 Chromium 内核，安装包约 1.5 MB（R8 精简后）。
+
+本仓库内嵌 `miuix/`（miuix-glass 分支源码），通过 Gradle `includeBuild` 依赖替换接入，无需先 `publishToMavenLocal`。
 
 ## 界面
 
@@ -8,14 +10,45 @@
 | --- | --- | --- |
 | ![主页](docs/screenshot-home.jpg) | ![更多](docs/screenshot-menu.jpg) | ![设置](docs/screenshot-settings.jpg) |
 
-| 网页 |
-| --- |
-| ![网页](docs/) |
-
-- 单条悬浮玻璃底栏：`‹` `›` + 地址胶囊 + 标签页 + 更多
-- 主页液态玻璃字标、收藏（带 favicon、可编辑、OS4 玻璃材质）
-- 全部弹层走 MIUIX 规范：`OverlayDialog` / 自制面板（spring 滑入）
+- 单条悬浮玻璃底栏：`glassPanel` 材质 + 地址胶囊 + 标签页 + 更多
+- 主页液态玻璃字标、收藏（带 favicon、可编辑、模糊底 + 高光描边）
+- 全部弹层按 miuix-glass demo 规范：`GlassDialog` / `GlassBottomSheet` / `GlassDropdownPreference` / `GlassTopAppBar`
 - 状态栏：初始留白，向下滚动顶满，回顶回落
+
+## Glass 迁移说明
+
+| 旧（miuix-ui） | 新（miuix-glass） |
+| --- | --- |
+| `OverlayDialog` + `TextButton` | `GlassDialog` + `GlassDialogButton` |
+| `OverlayBottomSheet` | `GlassBottomSheet` |
+| 自绘 `SheetScaffold` | `GlassBottomSheet` |
+| `SmallTopAppBar` + 渐进模糊 | `GlassTopAppBar` + `GlassIconButton` + `MiuixScrollBehavior` |
+| `OverlayDropdownPreference` | `GlassDropdownPreference`（带 backdrop） |
+| 自绘 `glassBar` 纹理模糊 | `Modifier.glassPanel` |
+
+背景采样遵循 [glass 指南](miuix/docs/zh_CN/guide/glass.md)：页面内容包在 `layerBackdrop` 内，浮层放在采样层之外、`Scaffold` 之内。
+
+### 书签 / 历史
+
+- 设置 → 浏览 → 书签 / 历史；底栏「更多」→ 历史
+- 库页面顶部分「书签 | 历史」两栏，可左右滑动切换
+- 书签按分组展示（默认「个人收藏」）；右下角 FAB：新建 / 导入 / 导出
+- 导入导出兼容 Chrome、Firefox 的 Netscape Bookmark HTML（导出到 `Download/mafari/`）
+
+### 底栏手势
+
+- 网页向下累计约 100px 才隐藏；隐藏后须向上累计约 120px 才恢复（降低误触）
+- 底栏上竖滑阈值提高到 56px；**左右滑动**缩小为圆形搜索钮，点按或再滑展开
+
+### WebView 与 glass 采样
+
+`layerBackdrop` 只记录 Compose 图层；`AndroidView`/`WebView` 不在采样范围内（SurfaceView 与 RuntimeShader 组合易闪烁）。因此：
+
+- **主页**（Compose 内容）：`glassPanel` / `GlassDialog` 用真 backdrop 模糊
+- **网页态**：底栏 `backdrop = null`，走 `glassPanel` 的 `fallback` 渐变底板，不采样 WebView，避免页面闪烁
+
+若要在网页态做真模糊，需先把 WebView 位图拷到 ImageBitmap 再作 backdrop（滚动时逐帧拷贝成本高、仍可能与硬件层冲突），当前实现有意不做。
+
 
 ## 功能
 
@@ -39,7 +72,7 @@
 
 **其他**
 - 收藏 / 历史（最多 300 条）/ 下载管理 / 脚本管理
-- 设置：显示模式（跟随系统/日间/夜间）、主页壁纸、玻璃效果、搜索引擎、自定义 UA、检查更新
+- 设置：显示模式（跟随系统/日间/夜间）、主页壁纸、柔光玻璃、搜索引擎、自定义 UA、检查更新
 - 网页弹窗（`window.open`）在当前标签打开
 
 ## 部署
@@ -47,9 +80,11 @@
 ### 本地构建
 
 ```bash
-# 需要 JDK 17+、Android SDK（platforms;android-37.0、build-tools;36.0.0）
+# 需要 JDK 17+（推荐 21）、Android SDK（platforms;android-37.0、build-tools;36.0.0）
+# 根工程 Gradle 9.8.2；miuix 源码在 ./miuix，由 includeBuild 参与构建
 ./gradlew :app:assembleDebug     # app/build/outputs/apk/debug/app-debug.apk
 ```
+
 
 ### GitHub Actions 自动发布
 

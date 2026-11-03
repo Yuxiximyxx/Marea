@@ -1,13 +1,5 @@
 package dev.dsh.miuixbrowser
 
-import top.yukonga.miuix.kmp.blur.Backdrop
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
-import top.yukonga.miuix.kmp.glass.GlassBottomSheet
-import top.yukonga.miuix.kmp.glass.GlassBottomSheetDefaults
-import top.yukonga.miuix.kmp.glass.GlassDefaults
-import top.yukonga.miuix.kmp.glass.GlassShape
-import top.yukonga.miuix.kmp.glass.GlassStrokes
-import top.yukonga.miuix.kmp.glass.glassPanel
 import android.app.Activity
 import android.os.Build
 import android.content.Intent
@@ -20,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.blur
 
 import androidx.compose.foundation.layout.widthIn
 import top.yukonga.miuix.kmp.icon.extended.Layers
@@ -50,6 +43,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -86,6 +82,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.SolidColor
@@ -95,6 +92,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -122,8 +120,6 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -131,14 +127,31 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.Phone
 import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Search
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Share
+import top.yukonga.miuix.kmp.glass.GlassBottomSheet
+import top.yukonga.miuix.kmp.glass.GlassDefaults
+import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.glass.GlassDialogButton
+import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassIconButton
+import top.yukonga.miuix.kmp.glass.GlassMaterials
+import top.yukonga.miuix.kmp.glass.GlassShape
+import top.yukonga.miuix.kmp.glass.GlassStrokes
+import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private enum class Sheet { None, Tabs, Menu, Link, Image, Element }
@@ -199,6 +212,8 @@ fun BrowserScreen(
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     var barHidden by remember { mutableStateOf(false) }
+    /** 底栏被左右滑动缩小为圆形搜索钮 */
+    var barMinimized by remember { mutableStateOf(false) }
     var favEditing by remember { mutableStateOf(false) }
     var showFavEditor by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -207,11 +222,15 @@ fun BrowserScreen(
     var showDownloads by remember { mutableStateOf(false) }
     var showExtensions by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var libraryTab by remember { mutableIntStateOf(1) }
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var settingsReturn by remember { mutableStateOf(false) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
+    // 离场动画期间保留最近一次打开的弹层内容
+    var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
+    var showClearTabsConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -258,6 +277,7 @@ fun BrowserScreen(
         }
         editing = false
         barHidden = false
+        barMinimized = false
     }
     // URL 发生变化时先清掉上一页标题，避免新页面加载期间地址栏继续显示旧标题。
     // WebChromeClient.onReceivedTitle 更新 tab.title 后，下面的同步逻辑会立即显示新标题。
@@ -286,6 +306,19 @@ fun BrowserScreen(
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
+    LaunchedEffect(
+        tab.id,
+        settings.thirdPartyCookie,
+        settings.sendDnt,
+        settings.webrtcDisabled,
+    ) {
+        tab.applyPrivacy(
+            thirdPartyCookiesAllowed = settings.thirdPartyCookie == 0,
+            sendDnt = settings.sendDnt,
+            webrtcDisabled = settings.webrtcDisabled,
+        )
+    }
+
     // WebView 不会把滚动事件抛给 Compose，这里轻量轮询页面滚动位置：
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.size, tab.id) {
@@ -313,6 +346,8 @@ fun BrowserScreen(
     LaunchedEffect(tab.id) {
         var last = 0
         var lastShow = 0
+        var scrollDownAccum = 0f
+        var scrollUpAccum = 0f
         while (true) {
             runCatching {
                 val webView = tab.webView
@@ -322,11 +357,30 @@ fun BrowserScreen(
                     offset <= 12 -> {
                         barHidden = false
                         lastShow = offset
+                        scrollDownAccum = 0f
+                        scrollUpAccum = 0f
                     }
-                    dy > 10 && offset - lastShow > 48 -> barHidden = true
-                    dy < -10 -> {
-                        barHidden = false
-                        lastShow = offset
+                    dy > 0 -> {
+                        scrollUpAccum = 0f
+                        scrollDownAccum += dy
+                        // 向下累计约 100px 且离开顶部足够远才隐藏，降低误触
+                        if (scrollDownAccum >= 100f && offset - lastShow >= 96f) {
+                            barHidden = true
+                            scrollDownAccum = 0f
+                            scrollUpAccum = 0f
+                        }
+                    }
+                    dy < 0 -> {
+                        scrollDownAccum = 0f
+                        // 隐藏后须向上累计约 120px 才恢复，避免轻微回弹就弹出
+                        scrollUpAccum += -dy
+                        if (barHidden && scrollUpAccum >= 120f) {
+                            barHidden = false
+                            lastShow = offset
+                            scrollUpAccum = 0f
+                        } else if (!barHidden) {
+                            lastShow = offset
+                        }
                     }
                 }
                 last = offset
@@ -352,7 +406,10 @@ fun BrowserScreen(
         label = "bottomBar",
     )
 
-    BackHandler {
+    // 有 NavigationEvent 宿主时，子页由 predictiveBackPage 手势驱动，这里避免双处理
+    val hasNavDispatcher = androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner.current != null
+    val secondaryOpen = showSettings || showAbout || showExtensions || showDownloads || showHistory
+    BackHandler(enabled = !(hasNavDispatcher && secondaryOpen)) {
         when {
             // 子页面：先回设置页（关于 / 脚本 / 下载一致）
             showAbout -> {
@@ -373,7 +430,13 @@ fun BrowserScreen(
                 settingsReturn = false
             }
             showExtensions -> showExtensions = false
-            showHistory -> showHistory = false
+            showHistory -> {
+                showHistory = false
+                if (settingsReturn) {
+                    showSettings = true
+                    settingsReturn = false
+                }
+            }
             showSettings -> showSettings = false
             showDownloads -> showDownloads = false
             showUaPicker -> showUaPicker = false
@@ -413,7 +476,15 @@ fun BrowserScreen(
                         bitmap = wallpaperImage,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (settings.wallpaperBlur) {
+                                    Modifier.blur(28.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                 }
@@ -567,26 +638,107 @@ fun BrowserScreen(
                 label = "dynamicBottomBarWidth",
             )
             var dragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
+            var hDragDistance by remember(tab.id) { mutableFloatStateOf(0f) }
 
             // 退出动画播放期间仍保留底栏；动画结束后直接从组合树移除，
             // 不留下透明/平移后的 Compose 节点拦截 WebView 的触摸事件。
             if (!barHidden || hide < 0.995f) {
+                // 缩小后的圆形搜索钮（弹性缩放入场）
+                if (barMinimized) {
+                    val circleScale by animateFloatAsState(
+                        targetValue = 1f,
+                        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+                        label = "barCircleIn",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 4.dp)
+                            .size(48.dp)
+                            .pointerInput(tab.id) {
+                                detectDragGestures(
+                                    onDrag = { change, dragAmount ->
+                                        hDragDistance += dragAmount.x
+                                        // 再次左右滑或上滑可展开
+                                        if (kotlin.math.abs(hDragDistance) > 72f || dragAmount.y < -40f) {
+                                            barMinimized = false
+                                            hDragDistance = 0f
+                                            change.consume()
+                                        }
+                                    },
+                                    onDragEnd = { hDragDistance = 0f },
+                                    onDragCancel = { hDragDistance = 0f },
+                                )
+                            }
+                            .graphicsLayer {
+                                translationY = hide * 210.dp.toPx()
+                                alpha = (1f - hide) * circleScale
+                                scaleX = circleScale
+                                scaleY = circleScale
+                                transformOrigin = TransformOrigin(0.5f, 1f)
+                            }
+                            .clickable {
+                                barMinimized = false
+                                if (!editing) {
+                                    editing = true
+                                    address = tab.url
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .glassBar(
+                                    backdrop = browserBackdrop,
+                                    corner = 24.dp,
+                                    blurEnabled = settings.blurEnabled,
+                                    textureBlurEnabled = homeBlurAvailable,
+                                ),
+                        )
+                        Icon(
+                            imageVector = MiuixIcons.Search,
+                            contentDescription = "搜索或输入网址",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                } else {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .width(animatedBarWidth)
-                        // 在底栏上向下滑动即可主动收起。
+                        // 在底栏上向下滑动主动收起；左右滑动缩小为搜索圆钮。
                         .pointerInput(tab.id, barHidden) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { change, dragAmount ->
-                                    dragDistance += dragAmount
-                                    if (dragDistance > 26f && !barHidden) {
-                                        barHidden = true
-                                        change.consume()
+                            detectDragGestures(
+                                onDrag = { change, dragAmount ->
+                                    if (kotlin.math.abs(dragAmount.x) > kotlin.math.abs(dragAmount.y)) {
+                                        hDragDistance += dragAmount.x
+                                        if (kotlin.math.abs(hDragDistance) > 72f) {
+                                            barMinimized = true
+                                            hDragDistance = 0f
+                                            change.consume()
+                                        }
+                                    } else {
+                                        dragDistance += dragAmount.y
+                                        // 提高竖向隐藏阈值，降低误触
+                                        if (dragDistance > 56f && !barHidden) {
+                                            barHidden = true
+                                            change.consume()
+                                        } else if (dragDistance < -56f && barHidden) {
+                                            barHidden = false
+                                            change.consume()
+                                        }
                                     }
                                 },
-                                onDragEnd = { dragDistance = 0f },
-                                onDragCancel = { dragDistance = 0f },
+                                onDragEnd = {
+                                    dragDistance = 0f
+                                    hDragDistance = 0f
+                                },
+                                onDragCancel = {
+                                    dragDistance = 0f
+                                    hDragDistance = 0f
+                                },
                             )
                         }
                         .graphicsLayer {
@@ -651,77 +803,159 @@ fun BrowserScreen(
                 onMore = { sheet = Sheet.Menu },
             )
                 }
+                } // end else (!barMinimized)
             }
         }
 
         // 隐藏状态不放置透明热区：底部网页区域完全交给 WebView 处理点击、长按和滚动。
         // 通过 WebView 的 scrollY 方向判断下拉恢复，不通过点击底部区域恢复。
 
-        // ---- 弹层 ----
-        when (sheet) {
-            Sheet.Tabs -> SheetScaffold(
-                title = "",
-                onDismiss = { sheet = Sheet.None },
-                backdrop = browserBackdrop,
-                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
-                blurEnabled = settings.blurEnabled,
+        // ---- 弹层：GlassBottomSheet（保持组合直到离场动画结束）----
+        val activeSheet = sheet
+        if (activeSheet != Sheet.None) {
+            lastActiveSheet = activeSheet
+        }
+        GlassBottomSheet(
+            show = activeSheet != Sheet.None,
+            title = when (lastActiveSheet) {
+                Sheet.Link -> hostOf(linkUrl)
+                Sheet.Image -> "图片"
+                Sheet.Element -> "页面元素"
+                Sheet.Tabs -> "标签页"
+                else -> null
+            },
+            endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
+                {
+                    GlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                        Icon(
+                            imageVector = MiuixIcons.Delete,
+                            contentDescription = "全部删除",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismissRequest = { sheet = Sheet.None },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 8.dp),
             ) {
+            when (lastActiveSheet) {
+            Sheet.Tabs -> {
+                val screenH = LocalConfiguration.current.screenHeightDp.dp
+                // 弹窗自己的采样层：只录制滚动内容，顶部渐进模糊覆盖层放在录制层之外，
+                // 这样即使网页态（browserBackdrop 不可用）也能对滚动到顶部的标签做渐进模糊。
+                val tabsBackdrop = rememberLayerBackdrop()
+                Box(modifier = Modifier.fillMaxWidth().heightIn(max = screenH * 0.7f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .layerBackdrop(tabsBackdrop)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                Spacer(Modifier.height(10.dp))
                 if (settings.tabsStyle == 1) {
-                    // 卡片显示
+                    // 卡片显示：加高、左右对齐
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         val rows = state.tabs.chunked(2)
                         rows.forEachIndexed { rowIndex, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowItems.forEachIndexed { colIndex, item ->
                                     val index = rowIndex * 2 + colIndex
-                                    Column(
+                                    val thumb = item.thumbnail
+                                    Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(84.dp)
+                                            .height(160.dp)
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
                                             .clickable {
                                                 state.select(index)
                                                 sheet = Sheet.None
-                                            }
-                                            .padding(10.dp),
+                                            },
                                     ) {
-                                        Text(
-                                            text = item.title.ifBlank { "新标签页" },
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Spacer(Modifier.weight(1f))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                text = if (item.url.isBlank()) "主页" else hostOf(item.url),
-                                                fontSize = 11.sp,
-                                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f),
+                                        // 网页缩略图铺满卡片，作为底图
+                                        if (thumb != null) {
+                                            Image(
+                                                bitmap = thumb,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .graphicsLayer { alpha = 0.45f },
                                             )
-                                            IconButton(
-                                                onClick = { state.closeTab(index) },
-                                                minWidth = 28.dp,
-                                                minHeight = 28.dp,
+                                        }
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                        ) {
+                                            // 标题行：miuix-glass 模糊底
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .then(
+                                                        if (settings.blurEnabled && homeBlurAvailable) {
+                                                            Modifier.glassPanel(
+                                                                backdrop = browserBackdrop,
+                                                                shape = GlassShape(0.dp),
+                                                                style = GlassDefaults.style(isAppDarkTheme()),
+                                                                material = GlassMaterials.puredThinGlass(isAppDarkTheme()),
+                                                                stroke = GlassStrokes.forTheme(isAppDarkTheme()),
+                                                                shading = false,
+                                                            )
+                                                        } else {
+                                                            Modifier.background(
+                                                                MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                                            )
+                                                        },
+                                                    )
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
                                             ) {
-                                                Icon(
-                                                    imageVector = MiuixIcons.Close,
-                                                    contentDescription = "关闭",
-                                                    modifier = Modifier.size(14.dp),
+                                                Text(
+                                                    text = item.title.ifBlank { "新标签页" },
+                                                    fontSize = 13.sp,
+                                                    color = MiuixTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
                                                 )
+                                            }
+                                            Spacer(Modifier.weight(1f))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    text = if (item.url.isBlank()) "主页" else hostOf(item.url),
+                                                    fontSize = 11.sp,
+                                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                IconButton(
+                                                    onClick = { state.closeTab(index) },
+                                                    minWidth = 28.dp,
+                                                    minHeight = 28.dp,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MiuixIcons.Close,
+                                                        contentDescription = "关闭",
+                                                        modifier = Modifier.size(14.dp),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -752,22 +986,34 @@ fun BrowserScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 TextButton(
-                    text = "新建标签页",
+                    text = if (state.tabs.size >= 99) "已达 99 个标签上限" else "新建标签页",
+                    enabled = state.tabs.size < 99,
                     onClick = {
                         state.newTab()
                         sheet = Sheet.None
                     },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 )
+                Spacer(Modifier.height(8.dp))
+                }
+                if (settings.blurEnabled && isRuntimeShaderSupported()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .progressiveTopBar(
+                                backdrop = tabsBackdrop,
+                                tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.12f),
+                                radius = 36f,
+                                curve = 0.55f,
+                            ),
+                    )
+                }
+                }
             }
 
-            Sheet.Menu -> SheetScaffold(
-                title = "",
-                onDismiss = { sheet = Sheet.None },
-                backdrop = browserBackdrop,
-                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
-                blurEnabled = settings.blurEnabled,
-            ) {
+            Sheet.Menu -> {
                 MenuGrid(
                     labelFor = { action ->
                         if (action == MenuAction.Desktop) {
@@ -817,7 +1063,10 @@ fun BrowserScreen(
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> showDownloads = true
                             MenuAction.Extensions -> showExtensions = true
-                            MenuAction.History -> showHistory = true
+                            MenuAction.History -> {
+                                libraryTab = 1
+                                showHistory = true
+                            }
                             MenuAction.Settings -> showSettings = true
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
                         }
@@ -826,13 +1075,7 @@ fun BrowserScreen(
                 )
             }
 
-            Sheet.Link -> SheetScaffold(
-                title = hostOf(linkUrl),
-                onDismiss = { sheet = Sheet.None },
-                backdrop = browserBackdrop,
-                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
-                blurEnabled = settings.blurEnabled,
-            ) {
+            Sheet.Link -> {
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
                     tab.loadUrl(linkUrl)
@@ -852,13 +1095,7 @@ fun BrowserScreen(
                 }
             }
 
-            Sheet.Image -> SheetScaffold(
-                title = "图片",
-                onDismiss = { sheet = Sheet.None },
-                backdrop = browserBackdrop,
-                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
-                blurEnabled = settings.blurEnabled,
-            ) {
+            Sheet.Image -> {
                 val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
                 SheetRow(
                     title = "保存图片",
@@ -895,13 +1132,7 @@ fun BrowserScreen(
                 }
             }
 
-            Sheet.Element -> SheetScaffold(
-                title = "页面元素",
-                onDismiss = { sheet = Sheet.None },
-                backdrop = browserBackdrop,
-                textureBlurEnabled = homeBlurAvailable && settings.blurEnabled,
-                blurEnabled = settings.blurEnabled,
-            ) {
+            Sheet.Element -> {
                 val hit = elementHit
                 if (hit != null) {
                     if (hit.imageUrl.isNotBlank()) {
@@ -931,109 +1162,138 @@ fun BrowserScreen(
             }
 
             Sheet.None -> Unit
+            }
+            }
         }
 
         if (showSettings) {
-            SettingsScreen(
-                settings = settings,
-                onBack = { showSettings = false },
-                onPickUa = { showUaPicker = true },
-                onOpenDownloads = {
-                    settingsReturn = true
-                    showSettings = false
-                    showDownloads = true
-                },
-                onOpenScripts = {
-                    settingsReturn = true
-                    showSettings = false
-                    showExtensions = true
-                },
-                onOpenAbout = {
-                    settingsReturn = true
-                    showSettings = false
-                    showAbout = true
-                },
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showSettings) { showSettings = false },
+            ) {
+                SettingsScreen(
+                    settings = settings,
+                    onBack = { showSettings = false },
+                    onPickUa = { showUaPicker = true },
+                    onOpenDownloads = {
+                        settingsReturn = true
+                        showSettings = false
+                        showDownloads = true
+                    },
+                    onOpenScripts = {
+                        settingsReturn = true
+                        showSettings = false
+                        showExtensions = true
+                    },
+                    onOpenBookmarks = {
+                        settingsReturn = true
+                        showSettings = false
+                        libraryTab = 0
+                        showHistory = true
+                    },
+                    onOpenAbout = {
+                        settingsReturn = true
+                        showSettings = false
+                        showAbout = true
+                    },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
 
         if (showAbout) {
-            AboutScreen(
-                onBack = {
-                    showAbout = false
-                    if (settingsReturn) {
-                        showSettings = true
-                        settingsReturn = false
-                    }
-                },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showAbout) {
+                        showAbout = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                AboutScreen(
+                    onBack = {
+                        showAbout = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
-        pendingDownload?.let { request ->
-            AppDialog(
-                backdrop = if (homeBlurAvailable) browserBackdrop else null,
-                glass = settings.blurEnabled,
-                show = true,
-                title = "下载文件",
-                summary = request.fileName + "\n保存到 /sdcard/Download/mafari",
-                onDismissRequest = { pendingDownload = null },
-            ) {
+        val downloadRequest = pendingDownload
+        GlassDialog(
+            show = downloadRequest != null,
+            title = "下载文件",
+            summary = downloadRequest?.let { it.fileName + "\n保存到 /sdcard/Download/mafari" },
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismissRequest = { pendingDownload = null },
+        ) {
+            if (downloadRequest != null) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        DialogTextButton(
-                            text = "取消",
+                        GlassDialogButton(
                             onClick = { pendingDownload = null },
                             modifier = Modifier.weight(1f),
-                        )
-                        DialogTextButton(
-                            text = "下载",
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        GlassDialogButton(
                             onClick = {
                                 pendingDownload = null
                                 scope.launch {
                                     Downloader.start(
                                         context = context,
-                                        url = request.url,
-                                        userAgent = request.userAgent,
-                                        fileName = request.fileName,
-                                        mimeType = request.mime,
+                                        url = downloadRequest.url,
+                                        userAgent = downloadRequest.userAgent,
+                                        fileName = downloadRequest.fileName,
+                                        mimeType = downloadRequest.mime,
                                     )
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            primary = true,
-                        )
+                            role = GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "下载", style = MiuixTheme.textStyles.button)
+                        }
                     }
                 }
             }
         }
 
-        pendingScript?.let { scriptUrl ->
-            AppDialog(
-                backdrop = if (homeBlurAvailable) browserBackdrop else null,
-                glass = settings.blurEnabled,
-                show = true,
-                title = "导入脚本？",
-                summary = scriptUrl,
-                onDismissRequest = { pendingScript = null },
-            ) {
+        val scriptImportUrl = pendingScript
+        GlassDialog(
+            show = scriptImportUrl != null,
+            title = "导入脚本？",
+            summary = scriptImportUrl,
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismissRequest = { pendingScript = null },
+        ) {
+            if (scriptImportUrl != null) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        DialogTextButton(
-                            text = "取消",
+                        GlassDialogButton(
                             onClick = { pendingScript = null },
                             modifier = Modifier.weight(1f),
-                        )
-                        DialogTextButton(
-                            text = "导入",
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        GlassDialogButton(
                             onClick = {
-                                val target = scriptUrl
+                                val target = scriptImportUrl
                                 pendingScript = null
                                 scope.launch {
                                     val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1046,41 +1306,89 @@ fun BrowserScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            primary = true,
-                        )
+                            role = GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "导入", style = MiuixTheme.textStyles.button)
+                        }
                     }
                 }
             }
         }
 
         if (showDownloads) {
-            DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showDownloads) {
+                        showDownloads = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
+            }
         }
 
         if (showExtensions) {
-            ExtensionsScreen(
-                store = extensions,
-                onBack = { showExtensions = false },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showExtensions) {
+                        showExtensions = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                ExtensionsScreen(
+                    store = extensions,
+                    onBack = { showExtensions = false },
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
         if (showHistory) {
-            HistoryScreen(
-                store = history,
-                onBack = { showHistory = false },
-                onOpen = { url ->
-                    showHistory = false
-                    tab.loadUrl(url)
-                },
-                blurEnabled = settings.blurEnabled,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackPage(visible = showHistory) {
+                        showHistory = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+            ) {
+                LibraryScreen(
+                    favorites = favorites,
+                    store = history,
+                    onBack = {
+                        showHistory = false
+                        if (settingsReturn) {
+                            showSettings = true
+                            settingsReturn = false
+                        }
+                    },
+                    onOpen = { url ->
+                        showHistory = false
+                        settingsReturn = false
+                        tab.loadUrl(url)
+                    },
+                    initialTab = libraryTab,
+                    blurEnabled = settings.blurEnabled,
+                )
+            }
         }
 
         UaDialog(
-            backdrop = if (settings.blurEnabled && homeBlurAvailable) browserBackdrop else null,
             show = showUaPicker,
             initial = settings.userAgent,
+            // 不采样 browserBackdrop（主页可能含壁纸），用不透明回退色，避免壁纸取色
+            backdrop = null,
             onDismiss = { showUaPicker = false },
             onConfirm = {
                 settings.updateUserAgent(it)
@@ -1089,61 +1397,109 @@ fun BrowserScreen(
             },
         )
 
-        if (showFind) {
-            FindDialog(
-                backdrop = if (homeBlurAvailable) browserBackdrop else null,
-                glass = settings.blurEnabled,
-                onDismiss = {
-                    tab.clearFind()
-                    showFind = false
-                },
-                onQuery = { tab.findAll(it) },
-                onPrev = { tab.findNext(false) },
-                onNext = { tab.findNext(true) },
-            )
+        GlassDialog(
+            show = showClearTabsConfirm,
+            title = "删除全部标签页？",
+            summary = "将关闭除当前外的所有标签，并新建一个空白标签。",
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismissRequest = { showClearTabsConfirm = false },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                GlassDialogButton(
+                    onClick = { showClearTabsConfirm = false },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
+                    onClick = {
+                        state.closeAll()
+                        showClearTabsConfirm = false
+                        sheet = Sheet.None
+                    },
+                    modifier = Modifier.weight(1f),
+                    role = GlassDialogButtonRole.Destructive,
+                ) {
+                    Text(text = "全部删除", style = MiuixTheme.textStyles.button)
+                }
+            }
         }
 
-        if (showFavEditor) {
-            FavoriteEditor(
-                backdrop = if (homeBlurAvailable) browserBackdrop else null,
-                glass = settings.blurEnabled,
-                initial = favorites.items.getOrNull(editingFavIndex),
-                onDismiss = { showFavEditor = false },
-                onConfirm = { name, url ->
-                    if (editingFavIndex >= 0) {
-                        favorites.update(editingFavIndex, name, url)
-                    } else {
-                        favorites.add(name, url)
-                    }
-                    showFavEditor = false
-                },
-            )
-        }
+        FindDialog(
+            show = showFind,
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismiss = {
+                tab.clearFind()
+                showFind = false
+            },
+            onQuery = { tab.findAll(it) },
+            onPrev = { tab.findNext(false) },
+            onNext = { tab.findNext(true) },
+        )
+
+        FavoriteEditor(
+            show = showFavEditor,
+            initial = favorites.items.getOrNull(editingFavIndex),
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismiss = { showFavEditor = false },
+            onConfirm = { name, url ->
+                if (editingFavIndex >= 0) {
+                    favorites.update(editingFavIndex, name, url)
+                } else {
+                    favorites.add(name, url)
+                }
+                showFavEditor = false
+            },
+        )
     }
     }
 }
 
 /* ------------------------------ 玻璃 ------------------------------ */
 
-/** MIUIX 玻璃底板。该 Modifier 只应用在空 Box 上，交互内容作为兄弟层绘制。 */
+/** MIUIX Glass 底板：主页用 glassPanel 真玻璃；无采样/关模糊时回退到渐变底板。 */
 @Composable
 private fun Modifier.glassBar(
-    backdrop: LayerBackdrop,
+    backdrop: LayerBackdrop?,
     corner: Dp,
     blurEnabled: Boolean = true,
     textureBlurEnabled: Boolean = true,
 ): Modifier {
     val dark = isAppDarkTheme()
-    // 只有主页（Compose 内容）能被采样；网页状态下 WebView 不入采集层，退回半透明实色。
-    val sampled = blurEnabled && textureBlurEnabled && isRuntimeShaderSupported()
-    val fallback = when {
-        blurEnabled -> if (dark) Color(0xEB26262B) else Color(0xEBF4F5F8)
-        else -> MiuixTheme.colorScheme.surface.copy(alpha = 0.97f)
+    val glassShape = GlassShape(corner)
+    val rounded = RoundedCornerShape(corner)
+    val canUseGlass = blurEnabled && textureBlurEnabled && backdrop != null &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    // 关闭模糊时使用接近不透明的纯色底板；网页态（无采样）提高不透明度，避免内容透出干扰。
+    val tint = when {
+        !blurEnabled -> Brush.verticalGradient(
+            listOf(
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+            ),
+        )
+        dark -> Brush.verticalGradient(listOf(Color(0xF02B2B31), Color(0xE81A1A20)))
+        else -> Brush.verticalGradient(listOf(Color(0xF0FFFFFF), Color(0xE8E7EAF0)))
     }
-    return glassSurfacePanel(
-        backdrop = if (sampled) backdrop else null,
-        cornerRadius = corner,
-        fallbackColor = fallback,
+
+    return this.glassPanel(
+        backdrop = if (canUseGlass) backdrop else null,
+        shape = glassShape,
+        style = GlassDefaults.style(dark),
+        material = if (canUseGlass) GlassMaterials.puredThinGlass(dark) else null,
+        stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
+        shading = false,
+        fallback = Modifier
+            .clip(rounded)
+            .background(tint, rounded)
+            .border(
+                width = 1.dp,
+                color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
+                shape = rounded,
+            ),
     )
 }
 
@@ -1540,106 +1896,7 @@ private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
     }
 }
 
-/* ------------------------------ 自绘弹层 ------------------------------ */
-
-@Composable
-private fun SheetScaffold(
-    title: String,
-    onDismiss: () -> Unit,
-    backdrop: LayerBackdrop? = null,
-    textureBlurEnabled: Boolean = false,
-    blurEnabled: Boolean = true,
-    content: @Composable () -> Unit,
-) {
-    val darkSheet = isAppDarkTheme()
-    val canBlurSheet = textureBlurEnabled && backdrop != null && isRuntimeShaderSupported()
-    val sheetFallback = when {
-        blurEnabled -> if (darkSheet) Color(0xF01E1E22) else Color(0xF2F6F7F9)
-        else -> MiuixTheme.colorScheme.surface.copy(alpha = 0.97f)
-    }
-    // 弹出后 220ms 内吞掉触摸，避免「打开它的那一次点击」把弹层立刻关掉
-    var armed by remember { mutableStateOf(false) }
-    var entered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        entered = true
-        delay(220)
-        armed = true
-    }
-    val slideIn by animateDpAsState(
-        targetValue = if (entered) 0.dp else 96.dp,
-        animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),
-        label = "sheetSlide",
-    )
-    val fadeIn by animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(220),
-        label = "sheetFade",
-    )
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(
-                if (armed) {
-                    Modifier
-                } else {
-                    Modifier.pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                awaitPointerEvent().changes.forEach { it.consume() }
-                            }
-                        }
-                    }
-                },
-            ),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.25f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    enabled = armed,
-                    onClick = onDismiss,
-                ),
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .graphicsLayer {
-                    translationY = slideIn.toPx()
-                    alpha = fadeIn
-                }
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp)
-                .padding(bottom = 10.dp)
-                .fillMaxWidth()
-                .glassSurfacePanel(
-                    backdrop = if (canBlurSheet) backdrop else null,
-                    cornerRadius = 28.dp,
-                    material = GlassBottomSheetDefaults.material(),
-                    stroke = GlassBottomSheetDefaults.stroke(),
-                    fallbackColor = sheetFallback,
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
-                .padding(vertical = 10.dp),
-        ) {
-            if (title.isNotBlank()) {
-                Text(
-                    text = title,
-                    fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-                )
-            }
-            content()
-        }
-    }
-}
+/* ------------------------------ 弹层行 ------------------------------ */
 
 @Composable
 private fun SheetRow(
@@ -1812,12 +2069,29 @@ private fun FavoriteTile(
     onRemove: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val useBlur = blurEnabled && wallpaper != null && wallpaperBackdrop != null
+    val glassShape = GlassShape(16.dp)
+    val dark = isAppDarkTheme()
+    val useGlass = blurEnabled && wallpaperBackdrop != null
     val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(58.dp)
-            .clip(shape)
+            .glassPanel(
+                backdrop = if (useGlass) wallpaperBackdrop else null,
+                shape = glassShape,
+                style = GlassDefaults.style(dark),
+                material = if (useGlass) GlassMaterials.puredThinGlass(dark) else null,
+                stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
+                shading = false,
+                fallback = Modifier
+                    .clip(shape)
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh, shape)
+                    .border(
+                        width = 1.dp,
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                        shape = shape,
+                    ),
+            )
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1825,26 +2099,6 @@ private fun FavoriteTile(
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongPress()
-                },
-            )
-            .then(
-                if (useBlur) {
-                    Modifier.glassPanel(
-                        backdrop = wallpaperBackdrop,
-                        shape = GlassShape(16.dp),
-                        style = GlassDefaults.Style,
-                        stroke = GlassStrokes.SmallLight,
-                        shadow = null,
-                        shading = true,
-                    )
-                } else {
-                    Modifier
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .border(
-                            width = 1.dp,
-                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                            shape = shape,
-                        )
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -1895,22 +2149,21 @@ private fun FavoriteTile(
     }
 }
 
-/** 新增 / 编辑收藏：MIUIX 规范对话框 */
+/** 新增 / 编辑收藏：GlassDialog */
 @Composable
 private fun FavoriteEditor(
-    backdrop: Backdrop?,
-    glass: Boolean,
+    show: Boolean,
     initial: Favorite?,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String) -> Unit,
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial) { mutableStateOf(initial?.url ?: "") }
-    AppDialog(
-        backdrop = backdrop,
-        glass = glass,
-        show = true,
+    GlassDialog(
+        show = show,
         title = if (initial == null) "添加收藏" else "编辑收藏",
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -1934,48 +2187,70 @@ private fun FavoriteEditor(
             Spacer(Modifier.height(18.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                DialogTextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                DialogTextButton(
-                    text = "保存",
+                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = { if (url.isNotBlank()) onConfirm(name, url) },
                     modifier = Modifier.weight(1f),
-                    primary = true,
-                )
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "保存", style = MiuixTheme.textStyles.button)
+                }
             }
         }
     }
 }
 
-/** UA 选择：预设 + 自定义 */
+/** UA 选择：GlassBottomSheet 预设 + 自定义 */
 @Composable
 private fun UaDialog(
-    backdrop: Backdrop?,
     show: Boolean,
     initial: String,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     var custom by remember(show) { mutableStateOf(initial) }
     GlassBottomSheet(
         show = show,
+        title = "UA 标识管理",
         backdrop = backdrop,
-        title = "自定义 UA",
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             UA_PRESETS.forEach { preset ->
-                Text(
-                    text = preset.name,
-                    fontSize = 15.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
+                val presetIcon = when (preset.name) {
+                    "跟随系统" -> MiuixIcons.Settings
+                    "Android Chrome" -> MiuixIcons.Phone
+                    "桌面 Chrome" -> MiuixIcons.HorizontalSplit
+                    "iPhone Safari" -> MiuixIcons.Phone
+                    else -> MiuixIcons.Info
+                }
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .clickable { onConfirm(preset.value) }
-                        .padding(horizontal = 6.dp, vertical = 10.dp),
-                )
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = presetIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = preset.name,
+                        fontSize = 15.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             TextField(
@@ -1988,36 +2263,38 @@ private fun UaDialog(
             Spacer(Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
-                TextButton(
-                    text = "保存",
+                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(text = "取消", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = { onConfirm(custom) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "保存", style = MiuixTheme.textStyles.button)
+                }
             }
         }
     }
 }
 
-/** 页内查找 */
+/** 页内查找：GlassDialog */
 @Composable
 private fun FindDialog(
-    backdrop: Backdrop?,
-    glass: Boolean,
+    show: Boolean,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onQuery: (String) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
-    AppDialog(
-        backdrop = backdrop,
-        glass = glass,
-        show = true,
+    GlassDialog(
+        show = show,
         title = "查找页内",
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -2035,16 +2312,21 @@ private fun FindDialog(
             Spacer(Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                DialogTextButton(text = "上一个", onClick = onPrev, modifier = Modifier.weight(1f))
-                DialogTextButton(text = "下一个", onClick = onNext, modifier = Modifier.weight(1f))
-                DialogTextButton(
-                    text = "关闭",
+                GlassDialogButton(onClick = onPrev, modifier = Modifier.weight(1f)) {
+                    Text(text = "上一个", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(onClick = onNext, modifier = Modifier.weight(1f)) {
+                    Text(text = "下一个", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    primary = true,
-                )
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "关闭", style = MiuixTheme.textStyles.button)
+                }
             }
         }
     }

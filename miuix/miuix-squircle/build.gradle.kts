@@ -1,12 +1,22 @@
-// Vendored from compose-miuix-ui/miuix (feat/miuix-glass, PR #423), Apache-2.0.
-// Android-only build of the module; see /miuix/README.md.
+// Copyright 2026, compose-miuix-ui contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import kotlin.io.encoding.Base64
 import kotlin.math.sqrt
 
 plugins {
-    id("com.android.kotlin.multiplatform.library")
-    id("org.jetbrains.kotlin.multiplatform")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
+    alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.kotlinMultiplatform)
+    id("module.kotlin-jvm-toolchain")
+    id("module.publication")
+    id("module.spotless")
+}
+
+miuixPublication {
+    description.set("Squircle corner library for Miuix")
 }
 
 /**
@@ -149,25 +159,43 @@ val bakeSquircleSdf =
     }
 
 kotlin {
-    jvmToolchain(17)
+    withSourcesJar(true)
 
     android {
-        namespace = "top.yukonga.miuix.kmp.squircle"
+        buildToolsVersion = BuildConfig.BUILD_TOOLS_VERSION
         compileSdk {
-            version = release(37) {
-                minorApiLevel = 0
-            }
+            version =
+                release(BuildConfig.COMPILE_SDK) {
+                    minorApiLevel = BuildConfig.COMPILE_SDK_MINOR
+                }
         }
-        buildToolsVersion = "36.0.0"
-        minSdk = 24
+        minSdk = BuildConfig.MIN_SDK
+        namespace = "${BuildConfig.LIBRARY_ID}.squircle"
     }
+
+    jvm("desktop")
+
+    iosArm64()
+    iosSimulatorArm64()
+    macosArm64()
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+    }
+
+    js {
+        browser()
+    }
+
+    applyMiuixSourceSetHierarchy()
 
     sourceSets {
         commonMain {
             kotlin.srcDir(bakeSquircleSdf)
             dependencies {
-                api(project(":miuix-shader"))
-                implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
+                api(projects.miuixShader)
+                implementation(libs.jetbrains.compose.foundation)
             }
         }
     }
