@@ -7,9 +7,11 @@ import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -53,6 +55,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDefaults
+import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassShadows
@@ -75,6 +78,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val dark = isAppDarkTheme()
     val surface = MiuixTheme.colorScheme.surface
     val iconShape = RoundedCornerShape(26.dp)
+    var pendingUpdate by remember { mutableStateOf<AppRelease?>(null) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -170,22 +174,25 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                             if (checkingUpdate) return@GlassDialogButton
                             checkingUpdate = true
                             scope.launch {
-                                val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
+                                val result = withContext(Dispatchers.IO) { fetchLatestRelease() }
                                 checkingUpdate = false
                                 if (result == null) {
                                     Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
                                 } else {
                                     val current = BuildConfig.VERSION_NAME.removePrefix("v")
-                                    val latest = result.first.removePrefix("v")
+                                    val latest = result.version.removePrefix("v")
                                     if (latest == current) {
                                         Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
-                                    } else {
+                                    } else if (result.apkUrl.isNullOrBlank()) {
+                                        // 无 APK 资产时仍打开发布页
                                         Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
                                         runCatching {
                                             context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(result.second)),
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(result.pageUrl)),
                                             )
                                         }
+                                    } else {
+                                        pendingUpdate = result
                                     }
                                 }
                             }
@@ -264,14 +271,64 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
             }
+
+            // 应用内下载更新（不再跳浏览器）
+            val update = pendingUpdate
+            top.yukonga.miuix.kmp.glass.GlassDialog(
+                show = update != null,
+                title = "发现新版本",
+                summary = update?.let { "${it.version} · 下载后可在下载页安装" },
+                backdrop = if (glass) pageBackdrop else null,
+                onDismissRequest = { pendingUpdate = null },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                        onClick = { pendingUpdate = null },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(text = "取消", style = MiuixTheme.textStyles.button)
+                    }
+                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                        onClick = {
+                            val rel = update ?: return@GlassDialogButton
+                            val apk = rel.apkUrl
+                            if (apk != null) {
+                                Downloader.start(
+                                    context = context,
+                                    url = apk,
+                                    userAgent = null,
+                                    fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                                    mimeType = "application/vnd.android.package-archive",
+                                )
+                                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+                            }
+                            pendingUpdate = null
+                        },
+                        modifier = Modifier.weight(1f),
+                        role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
+                    ) {
+                        Text(text = "下载", style = MiuixTheme.textStyles.button)
+                    }
+                }
+            }
         }
     }
 }
 
+data class AppRelease(
+    val version: String,
+    val pageUrl: String,
+    val apkUrl: String?,
+)
+
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
 private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
 
-internal fun fetchLatestVersion(): Pair<String, String>? = runCatching {
+/** 拉取最新 release：版本号、页面地址、APK 直链（优先 assets 中的 .apk） */
+internal fun fetchLatestRelease(): AppRelease? = runCatching {
     val connection = (java.net.URL(RELEASE_API).openConnection() as java.net.HttpURLConnection).apply {
         connectTimeout = 8000
         readTimeout = 8000
@@ -283,9 +340,11 @@ internal fun fetchLatestVersion(): Pair<String, String>? = runCatching {
         val text = connection.inputStream.bufferedReader().readText()
         val tag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
             ?: return@runCatching null
-        val url = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
+        val pageUrl = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
             ?: PROJECT_URL + "/releases"
-        tag to url
+        val apkUrl = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"")
+            .find(text)?.groupValues?.get(1)
+        AppRelease(version = tag, pageUrl = pageUrl, apkUrl = apkUrl)
     } finally {
         connection.disconnect()
     }

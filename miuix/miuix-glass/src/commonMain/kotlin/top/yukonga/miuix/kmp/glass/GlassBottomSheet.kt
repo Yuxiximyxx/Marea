@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
+import top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 
 /**
@@ -41,6 +42,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
  * @param stroke Optional bloom stroke, omitted on the overscroll extension.
  * @param containerColor Opaque fallback fill.
  * @param dimColor Scrim color before the host applies animation progress.
+ * @param surface Optional replacement for the default glass surface (e.g. progressive top band).
  * @param onDismissFinished Called after the hide animation completes.
  * @param content Sheet content. Add scrolling, navigation-bar padding and extra spacing as needed.
  */
@@ -67,6 +69,7 @@ fun GlassBottomSheet(
     stroke: GlassStroke? = GlassBottomSheetDefaults.stroke(),
     containerColor: Color = GlassBottomSheetDefaults.containerColor(),
     dimColor: Color = GlassBottomSheetDefaults.ScrimColor,
+    surface: (@Composable BottomSheetSurfaceScope.() -> Modifier)? = null,
     onDismissFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -90,7 +93,7 @@ fun GlassBottomSheet(
         enableNestedScroll = enableNestedScroll,
         renderInRootScaffold = renderInRootScaffold,
         dimColor = dimColor,
-        surface = glassBottomSheetSurface(backdrop, material, stroke, containerColor),
+        surface = surface ?: glassBottomSheetSurface(backdrop, material, stroke, containerColor),
         content = content,
     )
 }

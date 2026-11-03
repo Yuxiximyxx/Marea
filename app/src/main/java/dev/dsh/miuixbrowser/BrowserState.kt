@@ -75,6 +75,22 @@ class BrowserTab(private val appContext: Context) {
     var desktopMode by mutableStateOf(false)
         private set
 
+    /** 无痕浏览标签 */
+    var incognito by mutableStateOf(false)
+        private set
+
+    fun setIncognito(value: Boolean) {
+        if (incognito == value) return
+        incognito = value
+        // 无痕：不持久化 Cookie / 缓存写入偏好简化为关闭第三方 Cookie 接受
+        val cm = CookieManager.getInstance()
+        if (value) {
+            cm.setAcceptCookie(false)
+        } else {
+            cm.setAcceptCookie(true)
+        }
+    }
+
     private val defaultUserAgent: String by lazy { webView.settings.userAgentString }
 
     /** 设置里的自定义 UA（空串 = 跟随系统） */
@@ -630,7 +646,7 @@ class BrowserState(private val context: Context) {
         newTab()
     }
 
-    fun newTab(target: String = "") {
+    fun newTab(target: String = "", incognito: Boolean = false) {
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -642,9 +658,30 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
+        tab.setIncognito(incognito)
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
+    }
+
+    /** 当前标签是否无痕 */
+    val activeIncognito: Boolean
+        get() = activeTab.incognito
+
+    /** 切换当前标签无痕状态（无痕时新开标签，已有无痕则关闭回普通） */
+    fun toggleIncognito() {
+        if (activeTab.incognito) {
+            // 回到普通：关闭当前无痕标签，必要时新建普通标签
+            closeTab(activeIndex)
+            if (tabs.isEmpty() || !tabs.any { !it.incognito }) {
+                newTab(incognito = false)
+            } else {
+                val normal = tabs.indexOfFirst { !it.incognito }
+                if (normal >= 0) select(normal)
+            }
+        } else {
+            newTab(incognito = true)
+        }
     }
 
     fun applyUserAgent(ua: String) {

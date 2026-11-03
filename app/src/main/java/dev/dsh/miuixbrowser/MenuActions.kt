@@ -19,9 +19,11 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.icon.extended.Translate
+import top.yukonga.miuix.kmp.icon.extended.Hide
 
 enum class MenuAction(val id: String, val label: String, val icon: ImageVector) {
     NewTab("new_tab", "新建标签", MiuixIcons.Medium.Add),
+    Incognito("incognito", "无痕浏览", MiuixIcons.Medium.Hide),
     Desktop("desktop", "桌面版", MiuixIcons.Medium.GridView),
     Find("find", "页内查找", MiuixIcons.Medium.Search),
     Translate("translate", "翻译", MiuixIcons.Medium.Translate),
