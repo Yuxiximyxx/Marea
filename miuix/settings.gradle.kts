@@ -54,14 +54,17 @@ include(":miuix-icons")
 include(":miuix-nav")
 include(":miuix-window")
 
-include(":example:shared")
-include(":example:android")
-include(":example:desktop")
-include(":example:desktop-nucleus")
-include(":example:web")
-include(":example:macos")
-
-include(":baselineprofile")
-
-include(":docs:demo")
-include(":docs:iconGen")
+// mafari includeBuild 只需库模块；example/docs/baselineprofile 配置极重，默认跳过。
+// 完整 miuix 开发：./gradlew -Pmiuix.full=true ...
+val miuixFull = providers.gradleProperty("miuix.full").orNull == "true"
+if (miuixFull) {
+    include(":example:shared")
+    include(":example:android")
+    include(":example:desktop")
+    include(":example:desktop-nucleus")
+    include(":example:web")
+    include(":example:macos")
+    include(":baselineprofile")
+    include(":docs:demo")
+    include(":docs:iconGen")
+}
