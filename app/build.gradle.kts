@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 97
-        versionName = "v1.2.1-dev"
+        versionCode = 98
+        versionName = "v1.2.2-dev"
     }
 
     buildFeatures {

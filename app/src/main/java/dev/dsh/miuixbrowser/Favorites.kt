@@ -121,7 +121,10 @@ class FavoritesStore(context: Context) {
         val anchor = Regex("""<A\s[^>]*HREF\s*=\s*"([^"]+)"[^>]*>(.*?)</A>""", RegexOption.IGNORE_CASE)
         val tagStrip = Regex("""<[^>]+>""")
         // 按标签顺序线性扫描，保持分组上下文
-        val token = Regex("""(<H3[^>]*>.*?</H3>)|(<A\s[^>]*HREF\s*=\s*"[^"]+"[^>]*>.*?</A>)""", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL)
+        val token = Regex(
+            """(<H3[^>]*>.*?</H3>)|(<A\s[^>]*HREF\s*=\s*"[^"]+"[^>]*>.*?</A>)""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
         token.findAll(html).forEach { m ->
             val raw = m.value
             if (raw.startsWith("<H3", ignoreCase = true)) {
