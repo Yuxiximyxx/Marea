@@ -79,7 +79,7 @@ class BrowserTab(private val appContext: Context) {
     var incognito by mutableStateOf(false)
         private set
 
-    fun setIncognito(value: Boolean) {
+    fun applyIncognito(value: Boolean) {
         if (incognito == value) return
         incognito = value
         // 无痕：不持久化 Cookie / 缓存写入偏好简化为关闭第三方 Cookie 接受
@@ -658,7 +658,7 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
-        tab.setIncognito(incognito)
+        tab.applyIncognito(incognito)
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
