@@ -63,7 +63,7 @@ jobs:
       # 非 tag：只打 debug（含 miuix includeBuild）
       - name: Build debug
         if: env.IS_RELEASE_TAG != 'true' || env.KEYSTORE_BASE64 == ''
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: bash ./gradlew :app:assembleDebug --stacktrace
 
       # tag 且有签名：只打 release，跳过 debug 双编
       - name: Build release
@@ -73,7 +73,7 @@ jobs:
           MAFARI_STORE_PASS: ${{ secrets.STORE_PASSWORD }}
           MAFARI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           MAFARI_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: bash ./gradlew :app:assembleRelease --stacktrace
 
       - name: Sign APK
         if: env.IS_RELEASE_TAG == 'true' && env.KEYSTORE_BASE64 != ''
