@@ -163,7 +163,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     .padding(horizontal = 12.dp),
                 insideMargin = PaddingValues(0.dp),
             ) {
-                AboutRow("MIUIX", "0.9.4")
+                AboutRow("miuix版本", "0.9.4")
                 AboutRow("内核版本", kernel)
             }
 
@@ -214,7 +214,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
 
             Spacer(Modifier.height(18.dp))
             Text(
-                text = "Mafari · 基于 MIUIX 与系统 WebView",
+                text = "Mafari · 基于系统 WebView & miuix 构建",
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 20.dp),

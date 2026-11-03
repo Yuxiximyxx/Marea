@@ -206,7 +206,7 @@ fun SettingsScreen(
                         onClick = { showSearch = true },
                     )
                     SettingsRow(
-                        title = "自定义 UA",
+                        title = "UA标识",
                         summary = uaSummary(settings.userAgent),
                         onClick = onPickUa,
                     )
@@ -458,7 +458,7 @@ private fun SearchSheet(
             )
             Spacer(Modifier.height(14.dp))
             TextButton(
-                text = "保存自定义",
+                text = "使用自定义",
                 onClick = { onCustom(text) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
