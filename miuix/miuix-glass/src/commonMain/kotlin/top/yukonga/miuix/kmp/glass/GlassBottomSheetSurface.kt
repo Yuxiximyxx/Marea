@@ -12,15 +12,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -153,7 +148,7 @@ fun glassBottomSheetSurface(
     )
     if (topBlur != null && effectiveBackdrop != null && !isOverscroll) {
         val bandPx = with(LocalDensity.current) { topBlur.height.toPx() }
-        // The blur gradient is measured over the whole drawn node, so scale it to the band.
+        // 渐变终点按顶部带高度占 Sheet 总高度的比例计算。
         var surfaceHeight by remember { mutableIntStateOf(0) }
         val endFraction = if (surfaceHeight > 0) (bandPx / surfaceHeight).coerceIn(0.02f, 1f) else 1f
         val bandShape = remember(cornerRadius, topBlur.height) { SheetTopBandShape(topBlur.height, cornerRadius) }
@@ -164,18 +159,8 @@ fun glassBottomSheetSurface(
                 listOf(BlendColorEntry(color = topBlur.tint))
             },
         )
-        val fade = remember(bandPx) {
-            Brush.verticalGradient(
-                0f to Color.Black,
-                0.4f to Color.Black.copy(alpha = 0.85f),
-                1f to Color.Transparent,
-                startY = 0f,
-                endY = bandPx,
-            )
-        }
         base
             .onSizeChanged { surfaceHeight = it.height }
-            // Isolate the band so the fade below masks only the band, never the glass body.
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .progressiveTextureBlur(
                 backdrop = effectiveBackdrop,
@@ -184,15 +169,6 @@ fun glassBottomSheetSurface(
                 blurRadius = topBlur.blurRadius,
                 colors = colors,
             )
-            // Runs after the band is drawn and before the sheet content is drawn.
-            .drawWithContent {
-                drawRect(
-                    brush = fade,
-                    size = Size(size.width, bandPx.coerceAtMost(size.height)),
-                    blendMode = BlendMode.DstIn,
-                )
-                drawContent()
-            }
     } else {
         base
     }

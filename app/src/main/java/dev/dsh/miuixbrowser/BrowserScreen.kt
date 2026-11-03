@@ -208,6 +208,9 @@ fun BrowserScreen(
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
     val homeBlurAvailable = tab.url.isEmpty() && !tab.loading
+    // 标签 Sheet 覆盖在当前网页之上，允许在页面加载完成后采样完整浏览器画面；
+    // 仍避开 WebView 正在切换页面时的瞬态帧。
+    val sheetBlurAvailable = settings.blurEnabled && !tab.loading
     // 新建标签页（首页）的滚动状态：每个标签独立，供顶部渐进模糊带跟随滚动淡入
     val startScroll = remember(tab.id) { ScrollState(0) }
     val clipboard = LocalClipboardManager.current
@@ -242,6 +245,7 @@ fun BrowserScreen(
     var showClearTabsConfirm by remember { mutableStateOf(false) }
     var showTabAddMenu by remember { mutableStateOf(false) }
     var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var tabPopupHostOffset by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -898,15 +902,20 @@ fun BrowserScreen(
             },
             surface = if (lastActiveSheet == Sheet.Tabs) {
                 tabSheetSurface(
-                    backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
-                    progressive = settings.blurEnabled && homeBlurAvailable,
+                    backdrop = if (sheetBlurAvailable) browserBackdrop else null,
+                    progressive = sheetBlurAvailable,
                 )
             } else {
                 null
             },
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            backdrop = if (sheetBlurAvailable) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { tabPopupHostOffset = it.positionInRoot() },
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1229,6 +1238,29 @@ fun BrowserScreen(
             Sheet.None -> Unit
             }
             }
+
+            // 与 Sheet 共用同一个 Dialog/Overlay 根节点，确保长按菜单绘制在 Sheet 内容之上。
+            TabAddMenu(
+                show = showTabAddMenu && lastActiveSheet == Sheet.Tabs,
+                anchorBounds = androidx.compose.ui.geometry.Rect(
+                    left = tabAddAnchor.left - tabPopupHostOffset.x,
+                    top = tabAddAnchor.top - tabPopupHostOffset.y,
+                    right = tabAddAnchor.right - tabPopupHostOffset.x,
+                    bottom = tabAddAnchor.bottom - tabPopupHostOffset.y,
+                ),
+                canAdd = state.tabs.size < 99,
+                backdrop = if (sheetBlurAvailable) browserBackdrop else null,
+                onDismiss = { showTabAddMenu = false },
+                onNormal = {
+                    state.newTab(incognito = false)
+                    sheet = Sheet.None
+                },
+                onIncognito = {
+                    state.newTab(incognito = true)
+                    sheet = Sheet.None
+                },
+            )
+            }
         }
 
         if (showSettings) {
@@ -1513,22 +1545,6 @@ fun BrowserScreen(
                 }
             }
         }
-
-        TabAddMenu(
-            show = showTabAddMenu,
-            anchorBounds = tabAddAnchor,
-            canAdd = state.tabs.size < 99,
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
-            onDismiss = { showTabAddMenu = false },
-            onNormal = {
-                state.newTab(incognito = false)
-                sheet = Sheet.None
-            },
-            onIncognito = {
-                state.newTab(incognito = true)
-                sheet = Sheet.None
-            },
-        )
 
         FindDialog(
             show = showFind,
@@ -2675,8 +2691,8 @@ private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     progressive: Boolean,
 ): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    // 带上的主题色雾化：跟随当前主题的 background，深色模式下是深色而不是白色
-    val tint = MiuixTheme.colorScheme.background.copy(alpha = 0.35f)
+    // 不叠加主题色蒙层，避免顶部渐进带看起来像白色/纯色渐变；只显示真实背景采样模糊。
+    val tint = Color.Unspecified
     val topBlur = remember(progressive, tint) {
         if (progressive) {
             top.yukonga.miuix.kmp.glass.GlassSheetTopBlur(
