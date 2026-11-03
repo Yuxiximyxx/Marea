@@ -178,6 +178,8 @@ object GlassPopupDefaults {
  * @param sizing Panel size limits and window margin.
  * @param visuals Panel surface appearance.
  * @param cornerRadius Expanded panel corner radius.
+ * @param alignStart Align the panel to the anchor's start edge instead of its end edge. Use it for
+ *   an anchor on the start side of the page, so the panel opens inward rather than off-screen.
  * @param secondary Whether to use [GlassSecondaryPopup] geometry. Use that component directly
  *   to share the primary popup's appearance through `materialAnchor`.
  * @param contentPadding Padding around the items.
@@ -193,6 +195,7 @@ fun BoxScope.GlassPopup(
     sizing: GlassPopupSizing = GlassPopupSizing(),
     visuals: GlassPopupVisuals = GlassPopupDefaults.visuals(),
     cornerRadius: Dp = GlassPopupDefaults.CornerRadius,
+    alignStart: Boolean = false,
     secondary: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(vertical = GlassPopupDefaults.ContentPaddingVertical),
     content: @Composable ColumnScope.() -> Unit,
@@ -251,8 +254,8 @@ fun BoxScope.GlassPopup(
         panelLayer = {},
         overlay = {},
         frame = { end, page ->
-            val settled = placeGlassPopup(anchorBounds, end, sizing.safeMargin.toPx(), page, layoutDirection)
-            directionFrame(settled, end, progress.value, startRadius, cornerRadius, layoutDirection)
+            val settled = placeGlassPopup(anchorBounds, end, sizing.safeMargin.toPx(), page, layoutDirection, alignStart)
+            directionFrame(settled, end, progress.value, startRadius, cornerRadius, layoutDirection, alignStart)
         },
         contentLayer = { _, _ ->
             val t = progress.value.coerceIn(0f, 1f)
@@ -277,13 +280,15 @@ private fun directionFrame(
     startRadius: Dp,
     endRadius: Dp,
     layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    alignStart: Boolean = false,
 ): GlassPopupFrame {
     val t = progress.coerceIn(0f, 1f)
     val width = end.width * (GlassMotion.POPUP_START_WIDTH + (1f - GlassMotion.POPUP_START_WIDTH) * t)
     val endRatio = if (end.width > 0f) end.height / end.width else 1f
     val ratio = GlassMotion.POPUP_START_RATIO + (endRatio - GlassMotion.POPUP_START_RATIO) * t
     val height = (width * ratio).coerceAtMost(end.height)
-    val left = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Ltr) {
+    val rightEdgeFixed = (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Ltr) != alignStart
+    val left = if (rightEdgeFixed) {
         placement.rect.right - width
     } else {
         placement.rect.left

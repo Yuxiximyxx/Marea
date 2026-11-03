@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -207,6 +208,8 @@ fun BrowserScreen(
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
     val homeBlurAvailable = tab.url.isEmpty() && !tab.loading
+    // 新建标签页（首页）的滚动状态：每个标签独立，供顶部渐进模糊带跟随滚动淡入
+    val startScroll = remember(tab.id) { ScrollState(0) }
     val clipboard = LocalClipboardManager.current
     val focus = LocalFocusManager.current
 
@@ -571,6 +574,7 @@ fun BrowserScreen(
                         )
                     }
                     StartPage(
+                        scrollState = startScroll,
                         wallpaper = wallpaperBitmap,
                         wallpaperBackdrop = wallpaperBackdrop,
                         blurEnabled = settings.blurEnabled,
@@ -616,6 +620,25 @@ fun BrowserScreen(
             }
         }
         } // backdrop capture layer ends before the floating toolbar
+
+        // ---- 新建标签页：顶部渐进模糊（与子页面顶栏同款 miuix 渐进模糊）----
+        // 放在采集层之外，只采样首页内容；仅在内容滚到状态栏下方时淡入。
+        if (homeBlurAvailable && settings.blurEnabled &&
+            top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()
+        ) {
+            val startFadePx = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
+            Box(modifier = Modifier.fillMaxSize()) {
+                TopProgressiveBlurBand(
+                    backdrop = browserBackdrop,
+                    alpha = { startScroll.value / startFadePx },
+                    modifier = Modifier.matchParentSize(),
+                    barHeight = 8.dp,
+                    // 有壁纸时不叠主题色，避免白雾盖住壁纸；无壁纸时跟随主题 surface
+                    tint = if (wallpaperBitmap != null) Color.Unspecified
+                    else MiuixTheme.colorScheme.surface.copy(alpha = 0.3f),
+                )
+            }
+        }
 
         // ---- 底部：地址栏 + 工具栏 ----
         // 根据地址文本长度动态调整宽度，并使用弹簧动画平滑过渡。
@@ -843,8 +866,10 @@ fun BrowserScreen(
                 {
                     TabAddButton(
                         canAdd = state.tabs.size < 99,
-                        onAnchor = { tabAddAnchor = it },
-                        onShowMenu = { showTabAddMenu = true },
+                        onShowMenu = { bounds ->
+                            tabAddAnchor = bounds
+                            showTabAddMenu = true
+                        },
                         onNormal = {
                             state.newTab(incognito = false)
                             sheet = Sheet.None
@@ -2046,6 +2071,7 @@ private fun removeElementJs(selector: String): String =
 
 @Composable
 private fun StartPage(
+    scrollState: ScrollState,
     wallpaper: ImageBitmap?,
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
@@ -2068,6 +2094,7 @@ private fun StartPage(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
                 .padding(top = 44.dp, bottom = 150.dp),
         ) {
@@ -2549,18 +2576,21 @@ private fun MenuGrid(
 @Composable
 private fun TabAddButton(
     canAdd: Boolean,
-    onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit,
-    onShowMenu: () -> Unit,
+    onShowMenu: (androidx.compose.ui.geometry.Rect) -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    // 只保存坐标引用，长按那一刻再取边界：
+    // onGloballyPositioned 不会在 sheet 滑入动画（图层平移）时重新回调，
+    // 提前缓存的 Rect 会停在动画起点，弹窗位置就偏了。
+    var coords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
             .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
-            .onGloballyPositioned { onAnchor(it.boundsInRoot()) }
+            .onGloballyPositioned { coords = it }
             .combinedClickable(
                 enabled = canAdd,
                 onClick = {
@@ -2572,7 +2602,7 @@ private fun TabAddButton(
                 onLongClick = {
                     if (canAdd) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onShowMenu()
+                        coords?.takeIf { it.isAttached }?.let { onShowMenu(it.boundsInRoot()) }
                     }
                 },
             ),
@@ -2607,6 +2637,8 @@ private fun TabAddMenu(
             anchorBounds = anchorBounds,
             backdrop = backdrop,
             visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
+            // 按钮在左上角：与按钮左边对齐向右展开，而不是按右边对齐向左溢出
+            alignStart = true,
         ) {
             GlassPopupItem(
                 text = "新建普通标签页",
@@ -2631,34 +2663,36 @@ private fun TabAddMenu(
     }
 }
 
-/** 标签 sheet 表面：整页玻璃 + 仅顶部标题带 progressiveTopBar（不铺满整页） */
+/**
+ * 标签 sheet 表面：官方 glassBottomSheetSurface + 顶部渐进模糊带（GlassSheetTopBlur）。
+ *
+ * 渐进模糊带由 miuix-glass 内部完成：与玻璃主体共用同一份带遮罩的采样背景，
+ * 模糊强度自 sheet 顶边起逐步减弱，并与玻璃主体交叉淡出，所以带底部没有接缝；
+ * 过度滚动补出的底边不会画带。
+ */
 @Composable
 private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     progressive: Boolean,
 ): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    val glass = top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(backdrop)
-    return {
-        val base = glass()
-        if (progressive && backdrop != null && top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()) {
-            val bandShape = remember(cornerRadius) {
-                TopBandShape(bandHeight = 112.dp, topCornerRadius = cornerRadius)
-            }
-            // 只在顶部 band 画渐进模糊；下方仍由 glass 承担
-            Modifier
-                .then(base)
-                .progressiveTopBar(
-                    backdrop = backdrop,
-                    shape = bandShape,
-                    radius = 44f,
-                    endFraction = 1f,
-                    curve = 0.55f,
-                    enabled = true,
-                )
+    // 带上的主题色雾化：跟随当前主题的 background，深色模式下是深色而不是白色
+    val tint = MiuixTheme.colorScheme.background.copy(alpha = 0.35f)
+    val topBlur = remember(progressive, tint) {
+        if (progressive) {
+            top.yukonga.miuix.kmp.glass.GlassSheetTopBlur(
+                height = 112.dp,
+                blurRadius = 80f,
+                curve = 0.5f,
+                tint = tint,
+            )
         } else {
-            base
+            null
         }
     }
+    return top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(
+        backdrop = backdrop,
+        topBlur = topBlur,
+    )
 }
 
 private val GoogleColors = listOf(

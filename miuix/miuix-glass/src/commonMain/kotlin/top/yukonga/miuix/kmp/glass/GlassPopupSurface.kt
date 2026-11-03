@@ -110,8 +110,11 @@ internal fun placeGlassPopup(
     margin: Float,
     page: Size,
     direction: LayoutDirection,
+    alignStart: Boolean = false,
 ): GlassPopupPlacement {
-    val endAlignedLeft = if (direction == LayoutDirection.Ltr) {
+    // 默认与锚点的末端对齐；alignStart 用于位于起始侧的锚点（如左上角按钮），与锚点起始边对齐。
+    val rightEdgeFixed = (direction == LayoutDirection.Ltr) != alignStart
+    val endAlignedLeft = if (rightEdgeFixed) {
         anchor.right - size.width
     } else {
         anchor.left

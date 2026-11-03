@@ -5,14 +5,39 @@ package top.yukonga.miuix.kmp.glass
 
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.glass.internal.ScrimBackdrop
 import top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -41,6 +66,52 @@ object GlassBottomSheetDefaults {
 }
 
 /**
+ * Progressive blur band along the top of a glass bottom sheet.
+ *
+ * The band samples the same scrimmed backdrop as the glass body, blurs it from [blurRadius] at
+ * the sheet's top edge down to zero at [height], and cross-fades into the glass body, so no seam
+ * is visible where the band ends.
+ *
+ * @param height Band height measured from the sheet's top edge.
+ * @param blurRadius Blur radius in dp at the top edge.
+ * @param curve Falloff exponent, see [ProgressiveBlur.curve].
+ * @param tint Colour layered over the blurred band. [Color.Unspecified] draws the blur only.
+ */
+@Immutable
+class GlassSheetTopBlur(
+    val height: Dp = 96.dp,
+    val blurRadius: Float = 80f,
+    val curve: Float = 0.5f,
+    val tint: Color = Color.Unspecified,
+)
+
+/** Covers the top [bandHeight] of the surface with rounded top corners. */
+private class SheetTopBandShape(
+    private val bandHeight: Dp,
+    private val topCornerRadius: Dp,
+) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val band = with(density) { bandHeight.toPx() }.coerceAtMost(size.height)
+        val r = with(density) { topCornerRadius.toPx() }
+            .coerceAtMost(size.width / 2f)
+            .coerceAtMost(band / 2f)
+        return Outline.Generic(
+            Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        rect = Rect(0f, 0f, size.width, band),
+                        topLeft = CornerRadius(r),
+                        topRight = CornerRadius(r),
+                        bottomRight = CornerRadius(0f),
+                        bottomLeft = CornerRadius(0f),
+                    ),
+                )
+            },
+        )
+    }
+}
+
+/**
  * A glass surface for OverlayBottomSheet's `surface` slot, with rounded top corners.
  *
  * The backdrop is dimmed before blur and sampled in the sheet's translated screen coordinates.
@@ -52,6 +123,8 @@ object GlassBottomSheetDefaults {
  * @param material Shared dialog/sheet blur and ordered blend layers.
  * @param stroke Optional bloom stroke, omitted on the overscroll extension.
  * @param containerColor Opaque fallback fill.
+ * @param topBlur Optional progressive blur band along the top edge. It is skipped on the
+ *   overscroll extension and whenever glass sampling is unavailable.
  */
 @Composable
 fun glassBottomSheetSurface(
@@ -59,6 +132,7 @@ fun glassBottomSheetSurface(
     material: GlassMaterial = GlassBottomSheetDefaults.material(),
     stroke: GlassStroke? = GlassBottomSheetDefaults.stroke(),
     containerColor: Color = GlassBottomSheetDefaults.containerColor(),
+    topBlur: GlassSheetTopBlur? = null,
 ): @Composable BottomSheetSurfaceScope.() -> Modifier = {
     val effectiveBackdrop = if (backdrop != null && isRuntimeShaderSupported()) {
         remember(backdrop, scrimColor) { ScrimBackdrop(backdrop, scrimColor) }
@@ -68,7 +142,7 @@ fun glassBottomSheetSurface(
     val shape = remember(cornerRadius) {
         GlassShape(topStart = cornerRadius, topEnd = cornerRadius, bottomEnd = 0.dp, bottomStart = 0.dp)
     }
-    Modifier.glassPanel(
+    val base = Modifier.glassPanel(
         backdrop = effectiveBackdrop,
         shape = shape,
         material = material,
@@ -77,4 +151,49 @@ fun glassBottomSheetSurface(
         shading = false,
         fallback = Modifier.clip(shape).background(containerColor),
     )
+    if (topBlur != null && effectiveBackdrop != null && !isOverscroll) {
+        val bandPx = with(LocalDensity.current) { topBlur.height.toPx() }
+        // The blur gradient is measured over the whole drawn node, so scale it to the band.
+        var surfaceHeight by remember { mutableIntStateOf(0) }
+        val endFraction = if (surfaceHeight > 0) (bandPx / surfaceHeight).coerceIn(0.02f, 1f) else 1f
+        val bandShape = remember(cornerRadius, topBlur.height) { SheetTopBandShape(topBlur.height, cornerRadius) }
+        val colors = BlurDefaults.blurColors(
+            blendColors = if (topBlur.tint == Color.Unspecified) {
+                emptyList()
+            } else {
+                listOf(BlendColorEntry(color = topBlur.tint))
+            },
+        )
+        val fade = remember(bandPx) {
+            Brush.verticalGradient(
+                0f to Color.Black,
+                0.4f to Color.Black.copy(alpha = 0.85f),
+                1f to Color.Transparent,
+                startY = 0f,
+                endY = bandPx,
+            )
+        }
+        base
+            .onSizeChanged { surfaceHeight = it.height }
+            // Isolate the band so the fade below masks only the band, never the glass body.
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .progressiveTextureBlur(
+                backdrop = effectiveBackdrop,
+                shape = bandShape,
+                gradient = ProgressiveBlur(90f, 0f, endFraction, topBlur.curve),
+                blurRadius = topBlur.blurRadius,
+                colors = colors,
+            )
+            // Runs after the band is drawn and before the sheet content is drawn.
+            .drawWithContent {
+                drawRect(
+                    brush = fade,
+                    size = Size(size.width, bandPx.coerceAtMost(size.height)),
+                    blendMode = BlendMode.DstIn,
+                )
+                drawContent()
+            }
+    } else {
+        base
+    }
 }

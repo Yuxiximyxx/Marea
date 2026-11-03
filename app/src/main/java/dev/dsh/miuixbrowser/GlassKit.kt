@@ -1,6 +1,7 @@
 package dev.dsh.miuixbrowser
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,8 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -29,6 +32,7 @@ import top.yukonga.miuix.kmp.glass.GlassShadows
 import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassStroke
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
+import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
 import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
@@ -118,14 +122,35 @@ fun PageGlassTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     bottomContent: @Composable () -> Unit = {},
 ) {
-    GlassTopAppBar(
-        title = title,
-        backdrop = if (glass) backdrop else null,
-        scrollBehavior = scrollBehavior,
-        navigationIcon = { GlassBackButton(onClick = onBack) },
-        actions = actions,
-        bottomContent = bottomContent,
-    )
+    val blurActive = glass && isRuntimeShaderSupported()
+    val fadeDistancePx = with(LocalDensity.current) { 48.dp.toPx() }
+    Box {
+        // 渐进模糊带：真正对页面内容做自上而下的模糊，色彩取当前主题 surface，
+        // 随滚动淡入。顶栏在录制层之外，不会采样到自己。
+        if (blurActive) {
+            TopProgressiveBlurBand(
+                backdrop = backdrop,
+                alpha = { -scrollBehavior.state.contentOffset / fadeDistancePx },
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        GlassTopAppBar(
+            title = title,
+            backdrop = if (glass) backdrop else null,
+            scrollBehavior = scrollBehavior,
+            // 之前沿用默认 bandBrush：一条不透明的 surface 渐变，看起来就是"一直白色渐变"，
+            // 且根本没有模糊。模糊生效时让位给上面的渐进模糊带；
+            // 关闭模糊时才退回主题色渐变遮罩。
+            bandBrush = if (blurActive) {
+                SolidColor(Color.Transparent)
+            } else {
+                GlassTopAppBarDefaults.bandBrush(MiuixTheme.colorScheme.surface)
+            },
+            navigationIcon = { GlassBackButton(onClick = onBack) },
+            actions = actions,
+            bottomContent = bottomContent,
+        )
+    }
 }
 
 /**
