@@ -473,69 +473,6 @@ internal fun webViewVersion(): String? {
     }
 }
 
-private const val PROJECT_URL = "https://github.com/rosenii/mafari"
-private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
-
-@Composable
-private fun CheckUpdateButton() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        TextButton(
-            text = if (checking) "检查中…" else "检查更新",
-            onClick = {
-                if (checking) return@TextButton
-                checking = true
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
-                    checking = false
-                    if (result == null) {
-                        Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
-                    } else {
-                        val current = BuildConfig.VERSION_NAME.removePrefix("v")
-                        val latest = result.first.removePrefix("v")
-                        if (latest == current) {
-                            Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(result.second)))
-                            }
-                        }
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-private fun fetchLatestVersion(): Pair<String, String>? = runCatching {
-    val connection = (java.net.URL(RELEASE_API).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 8000
-        readTimeout = 8000
-        setRequestProperty("User-Agent", "mafari")
-        setRequestProperty("Accept", "application/vnd.github+json")
-    }
-    try {
-        if (connection.responseCode !in 200..299) return@runCatching null
-        val text = connection.inputStream.bufferedReader().readText()
-        val tag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            ?: return@runCatching null
-        val url = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            ?: PROJECT_URL + "/releases"
-        tag to url
-    } finally {
-        connection.disconnect()
-    }
-}.getOrNull()
-
 private fun uaSummary(ua: String): String = when {
     ua.isBlank() -> "跟随系统"
     ua == DESKTOP_UA -> "桌面 Chrome"
