@@ -1,13 +1,13 @@
 package dev.dsh.miuixbrowser
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.dp
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -17,8 +17,9 @@ import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.foundation.layout.RowScope
 
 /**
  * 统一的玻璃顶栏：可选 progressive blur 背景带 + GlassTopAppBar。
@@ -71,8 +72,8 @@ fun GlassPageTopBar(
             navigationIcon = onBack?.let { back ->
                 {
                     GlassIconButton(onClick = back) {
-                        top.yukonga.miuix.kmp.basic.Icon(
-                            imageVector = top.yukonga.miuix.kmp.icon.MiuixIcons.Back,
+                        Icon(
+                            imageVector = MiuixIcons.Back,
                             contentDescription = "返回",
                         )
                     }
