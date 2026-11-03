@@ -155,5 +155,9 @@ tasks.matching { it.name == "generateBaselineProfile" }.configureEach {
 }
 
 dependencies {
-    baselineProfile(projects.baselineprofile)
+    // mafari includeBuild 默认不含 baselineprofile/example；完整 miuix 开发时再挂上
+    val bp = rootProject.findProject(":baselineprofile")
+    if (bp != null) {
+        "baselineProfile"(bp)
+    }
 }
