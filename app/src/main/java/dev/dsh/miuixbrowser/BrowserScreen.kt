@@ -859,7 +859,10 @@ fun BrowserScreen(
             },
             endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
                 {
-                    HapticGlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                    GlassIconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        showClearTabsConfirm = true
+                    }) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Delete,
                             contentDescription = "全部删除",
