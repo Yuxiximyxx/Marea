@@ -45,6 +45,7 @@ fun parseUserScript(code: String): Triple<String, String, String> {
 
 class ExtensionStore(context: Context) {
 
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("mafari_ext", Context.MODE_PRIVATE)
 
     val items = mutableStateListOf<UserScript>().apply { addAll(load()) }
@@ -94,6 +95,7 @@ class ExtensionStore(context: Context) {
             ),
         )
         persist()
+        prefetchResources(code)
     }
 
     fun update(id: String, name: String, code: String, enabled: Boolean, match: String = "") {
@@ -109,6 +111,12 @@ class ExtensionStore(context: Context) {
             icon = UserscriptEngine.parse(code).icon.ifBlank { items[index].icon },
         )
         persist()
+        prefetchResources(code)
+    }
+
+    /** 后台把 @require / @resource 拉到本地缓存，注入时只读缓存 */
+    private fun prefetchResources(code: String) {
+        Thread { runCatching { ScriptResources.prefetch(appContext, code) } }.start()
     }
 
     fun setEnabled(id: String, enabled: Boolean) {

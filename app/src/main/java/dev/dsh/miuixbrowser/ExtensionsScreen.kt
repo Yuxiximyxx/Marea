@@ -50,13 +50,11 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.File
+import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.icon.glass.File
+import top.yukonga.miuix.kmp.icon.glass.Download
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -97,12 +95,12 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 onBack = onBack,
                 actions = {
                     IconTextAction(
-                        icon = MiuixIcons.Download,
+                        icon = MiuixIcons.Glass.Download,
                         label = "导入",
                         modifier = Modifier.padding(end = 6.dp),
                     ) { importing = true }
                     IconTextAction(
-                        icon = MiuixIcons.Refresh,
+                        icon = MiuixIcons.Glass.Refresh,
                         label = if (updatingAll) "更新中" else "全部更新",
                         modifier = Modifier.padding(end = 10.dp),
                     ) {
@@ -330,11 +328,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                                 }
                                             }
                                         }) {
-                                            Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新")
+                                            Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新")
                                         }
                                     }
                                     IconButton(onClick = { deleting = script }) {
-                                        Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
+                                        Icon(imageVector = MiuixIcons.Glass.Delete, contentDescription = "删除")
                                     }
                                 }
                             }
@@ -356,7 +354,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = MiuixIcons.Add,
+                    imageVector = MiuixIcons.Glass.Add,
                     contentDescription = "新建脚本",
                     tint = Color.White,
                     modifier = Modifier.size(26.dp),
@@ -594,7 +592,7 @@ private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> U
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = MiuixIcons.File,
+                    imageVector = MiuixIcons.Glass.File,
                     contentDescription = null,
                     tint = MiuixTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp),
@@ -641,7 +639,7 @@ private fun ScriptIcon(url: String) {
             )
         } else {
             Icon(
-                imageVector = MiuixIcons.File,
+                imageVector = MiuixIcons.Glass.File,
                 contentDescription = null,
                 tint = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -674,7 +672,7 @@ private fun SubscriptionCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = MiuixIcons.File,
+                        imageVector = MiuixIcons.Glass.File,
                         contentDescription = null,
                         tint = MiuixTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp),
@@ -693,10 +691,10 @@ private fun SubscriptionCard(
                 }
                 Switch(checked = script.enabled, onCheckedChange = onToggle)
                 IconButton(onClick = onUpdate) {
-                    Icon(imageVector = MiuixIcons.Refresh, contentDescription = "更新订阅")
+                    Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新订阅")
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(imageVector = MiuixIcons.Delete, contentDescription = "删除")
+                    Icon(imageVector = MiuixIcons.Glass.Delete, contentDescription = "删除")
                 }
             }
         }

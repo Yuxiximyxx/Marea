@@ -1,8 +1,10 @@
 package dev.dsh.miuixbrowser
 
+import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** 油猴脚本元数据（覆盖常用键） */
+/** 油猴脚本元数据 */
 data class UserscriptMeta(
     val name: String = "",
     val version: String = "",
@@ -15,182 +17,171 @@ data class UserscriptMeta(
     val grants: List<String> = emptyList(),
     val requires: List<String> = emptyList(),
     val icon: String = "",
+    val namespace: String = "",
+    val author: String = "",
+    val homepage: String = "",
+    val excludeMatches: List<String> = emptyList(),
+    /** @resource name url */
+    val resources: Map<String, String> = emptyMap(),
+    val topLevelAwait: Boolean = false,
+    /** 全部元数据键（小写）→ 值列表，原样提供给 GM_info.script.metadata */
+    val raw: Map<String, List<String>> = emptyMap(),
+    /** ==UserScript== 区块原文 */
+    val metaBlock: String = "",
 )
 
 /**
- * Userscript 引擎：元数据解析 + URL 匹配 + 沙箱包装 + GM API。
- * document-start 脚本由 AndroidX WebKit 的 addDocumentStartJavaScript 注入，
- * 其余脚本在页面加载完成后注入。
+ * Userscript 引擎：元数据解析 + 运行时拼装。
+ * URL 匹配、run-at 调度与全部 GM API 都在 assets/mafari_gm_runtime.js 里完成，
+ * 这样同一份脚本既能在主框架、也能在 iframe 里按各自的 URL 独立匹配。
  */
 object UserscriptEngine {
 
+    private const val ASSET = "mafari_gm_runtime.js"
+    private const val M_META = "__MAFARI_META__"
+    private const val M_FN = "__MAFARI_FN__"
+    private const val M_CODE = "__MAFARI_CODE__"
+
+    private val BLOCK = Regex("==UserScript==([\\s\\S]*?)==/UserScript==")
+    private val LINE = Regex("^@([\\w:.-]+)(?:\\s+(.*))?$")
+
+    @Volatile
+    private var templateCache: String? = null
+
     /** 解析 ==UserScript== 区块 */
     fun parse(code: String): UserscriptMeta {
-        val block = Regex("==UserScript==([\\s\\S]*?)==/UserScript==").find(code)?.groupValues?.get(1)
-            ?: code.take(4000)
-        val values = mutableMapOf<String, MutableList<String>>()
-        block.lineSequence().forEach { raw ->
-            val line = raw.trim().removePrefix("//").trim().removePrefix("/*").trim()
-            val m = Regex("^@([\\w:-]+)\\s+(.+)$").find(line) ?: return@forEach
+        val block = BLOCK.find(code)?.groupValues?.get(1).orEmpty()
+        val values = LinkedHashMap<String, MutableList<String>>()
+        block.lineSequence().forEach { rawLine ->
+            val line = rawLine.trim().removePrefix("//").trim().removePrefix("/*").trim().removePrefix("*").trim()
+            val m = LINE.find(line) ?: return@forEach
             values.getOrPut(m.groupValues[1].lowercase()) { mutableListOf() }
                 .add(m.groupValues[2].trim())
         }
         fun first(key: String) = values[key]?.firstOrNull()?.trim().orEmpty()
+        fun all(key: String) = values[key].orEmpty().filter { it.isNotBlank() }
+
+        val resources = LinkedHashMap<String, String>()
+        all("resource").forEach { entry ->
+            val parts = entry.split(Regex("\\s+"), limit = 2)
+            if (parts.size == 2) resources[parts[0]] = normalizeUrl(parts[1])
+        }
+        val grants = all("grant").flatMap { it.split(Regex("\\s+")) }.filter { it.isNotBlank() }
         return UserscriptMeta(
             name = first("name"),
             version = first("version"),
             description = first("description"),
-            runAt = first("run-at").ifBlank { "document-idle" }.substringBefore(" "),
-            noFrames = values["noframes"] != null,
-            matches = values["match"].orEmpty(),
-            includes = values["include"].orEmpty(),
-            excludes = values["exclude"].orEmpty(),
-            grants = values["grant"].orEmpty(),
-            requires = values["require"].orEmpty(),
-            icon = first("icon"),
+            runAt = first("run-at").ifBlank { first("run_at") }
+                .ifBlank { "document-idle" }.substringBefore(" ").replace('_', '-'),
+            noFrames = values.containsKey("noframes"),
+            matches = all("match"),
+            includes = all("include"),
+            excludes = all("exclude"),
+            grants = grants,
+            requires = all("require").map { normalizeUrl(it) },
+            icon = first("icon").ifBlank { first("iconurl") }.ifBlank { first("defaulticon") },
+            namespace = first("namespace"),
+            author = first("author"),
+            homepage = first("homepage").ifBlank { first("homepageurl") }.ifBlank { first("website") },
+            excludeMatches = all("exclude-match"),
+            resources = resources,
+            topLevelAwait = values.containsKey("top-level-await"),
+            raw = values,
+            metaBlock = BLOCK.find(code)?.value.orEmpty(),
         )
     }
 
-    /** 通配符转正则：只有 * 是通配，其余字符全部转义 */
-    private fun globToRegex(pattern: String): Regex {
-        val sb = StringBuilder("^")
-        pattern.forEach { c ->
-            if (c == '*') sb.append(".*") else sb.append(Regex.escape(c.toString()))
-        }
-        sb.append("$")
-        return Regex(sb.toString())
+    /** 协议相对地址补全，并去掉 #sha256=… 之类的片段 */
+    fun normalizeUrl(url: String): String {
+        val u = url.trim().substringBefore('#')
+        return if (u.startsWith("//")) "https:$u" else u
     }
 
-    fun matchesUrl(meta: UserscriptMeta, url: String): Boolean {
-        if (url.isBlank()) return false
-        if (meta.excludes.any { globToRegex(it).matches(url) }) return false
-        if (meta.matches.isEmpty() && meta.includes.isEmpty()) return true
-        if (meta.matches.any { globToRegex(it).matches(url) }) return true
-        return meta.includes.any { globToRegex(it).matches(url) }
+    /** 用户在界面上手动填写、且与脚本头不同的匹配规则（逗号分隔）→ 覆盖脚本自带规则 */
+    private fun userMatchOverride(script: UserScript): List<String> {
+        val manual = script.match.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        if (manual.isEmpty()) return emptyList()
+        val derived = parseUserScript(script.code).second
+        return if (script.match == derived) emptyList() else manual
     }
 
-    /** 生成注入用的完整源码：运行时再判断 URL，命中才执行 */
-    fun buildSource(script: UserScript, requireCode: Map<String, String> = emptyMap()): String {
+    private fun template(context: Context): String {
+        templateCache?.let { return it }
+        val text = context.applicationContext.assets.open(ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        templateCache = text
+        return text
+    }
+
+    private fun jsonArray(list: List<String>) = JSONArray().apply { list.forEach { put(it) } }
+
+    /** 生成注入用的完整源码；URL 与 run-at 由运行时在各自框架内判断 */
+    fun buildSource(context: Context, script: UserScript): String {
         val meta = parse(script.code)
+        val rawJson = JSONObject().apply {
+            meta.raw.forEach { (k, v) -> put(k, jsonArray(v)) }
+        }
+        val resourcesJson = JSONObject().apply {
+            meta.resources.forEach { (name, url) ->
+                val entry = JSONObject().put("url", url)
+                ScriptResources.bytes(context, url)?.let { bytes ->
+                    if (bytes.size <= 3 * 1024 * 1024) {
+                        entry.put("data", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+                        entry.put("mime", ScriptResources.mime(context, url))
+                    }
+                }
+                put(name, entry)
+            }
+        }
+        val runAt = meta.runAt.takeIf {
+            it in setOf("document-start", "document-body", "document-end", "document-idle", "context-menu")
+        } ?: "document-idle"
         val metaJson = JSONObject().apply {
             put("id", script.id)
-            put("name", script.name.ifBlank { meta.name })
-            put("runAt", script.runAt)
-            put("match", meta.matches.joinToString("\n"))
-            put("include", meta.includes.joinToString("\n"))
-            put("exclude", meta.excludes.joinToString("\n"))
-            put("grant", meta.grants.joinToString("\n"))
+            put("name", script.name.ifBlank { meta.name }.ifBlank { "userscript" })
+            put("namespace", meta.namespace)
+            put("version", meta.version)
+            put("description", meta.description)
+            put("author", meta.author)
+            put("homepage", meta.homepage)
+            put("icon", meta.icon)
+            put("runAt", runAt)
+            put("noframes", meta.noFrames)
+            put("match", jsonArray(meta.matches))
+            put("include", jsonArray(meta.includes))
+            put("exclude", jsonArray(meta.excludes))
+            put("excludeMatch", jsonArray(meta.excludeMatches))
+            put("userMatch", jsonArray(userMatchOverride(script)))
+            put("grant", jsonArray(meta.grants))
+            put("require", jsonArray(meta.requires))
+            put("resources", resourcesJson)
+            put("meta", rawJson)
+            put("metaBlock", meta.metaBlock)
         }.toString()
 
-        val requires = meta.requires.mapNotNull { requireCode[it] }.joinToString("\n")
-        val body = script.code.replace("</script", "<\\/script")
-
-        return """
-(function(){
-  "use strict";
-  var META = $metaJson;
-
-  // ---------- URL 匹配（* 任意字符） ----------
-  function globToRe(p){
-    var out = '^';
-    for (var i = 0; i < p.length; i++){
-      var c = p.charAt(i);
-      if (c === '*') { out += '.*'; }
-      else { out += c.replace(/[.*+?^${'$'}(){}|\[\]\\]/g, '\\${'$'}&'); }
+        val requireCode = meta.requires.joinToString("\n;\n") { url ->
+            ScriptResources.text(context, url)
+                ?: "console.warn(" + JSONObject.quote("[Mafari] @require 未能加载: $url") + ");"
+        }
+        val code = buildString {
+            append(requireCode)
+            if (requireCode.isNotEmpty()) append("\n;\n")
+            append(script.code)
+            append("\n")
+        }
+        return fill(template(context), metaJson, if (meta.topLevelAwait) "async function" else "function", code)
     }
-    return new RegExp(out + '${'$'}');
-  }
-  function matchUrl(url, matches, includes, excludes){
-    var i;
-    for (i = 0; i < excludes.length; i++){ if (globToRe(excludes[i]).test(url)) return false; }
-    if (!matches.length && !includes.length) return true; // 没有声明匹配规则：全站执行
-    for (i = 0; i < matches.length; i++){ if (globToRe(matches[i]).test(url)) return true; }
-    for (i = 0; i < includes.length; i++){ if (globToRe(includes[i]).test(url)) return true; }
-    return false;
-  }
-  function split(s){ return s ? s.split('\n').filter(Boolean) : []; }
-  if (!matchUrl(location.href, split(META.match), split(META.include), split(META.exclude))) return;
 
-  var RAN = window.__mafariRan || (window.__mafariRan = {});
-  if (RAN[META.id]) return;
-  RAN[META.id] = 1;
-
-  // ---------- GM API ----------
-  var bridge = window.MafariGM || null;
-  var xhrCbs = window.__mafariXhrCallbacks || (window.__mafariXhrCallbacks = {});
-  window.__mafariXhrDone = function(reqId, status, text, finalUrl){
-    var cb = xhrCbs[reqId];
-    if (!cb) return;
-    delete xhrCbs[reqId];
-    var resp = { status: status, responseText: text, response: text, finalUrl: finalUrl || '', readyState: 4 };
-    try { if (cb.onload) cb.onload(resp); if (cb.onreadystatechange) cb.onreadystatechange(resp); } catch(e){}
-  };
-  var GM = {
-    info: { scriptHandler: 'Mafari', version: '3.5.0', script: { name: META.name, id: META.id } },
-    setValue: function(k, v){ try { if (bridge) bridge.setValue(META.id, k, JSON.stringify(v)); } catch(e){} },
-    getValue: function(k, d){
-      try {
-        var raw = bridge ? bridge.getValue(META.id, k) : null;
-        return (raw === null || raw === undefined) ? d : JSON.parse(raw);
-      } catch(e){ return d; }
-    },
-    deleteValue: function(k){ try { if (bridge) bridge.deleteValue(META.id, k); } catch(e){} },
-    listValues: function(){ try { return bridge ? JSON.parse(bridge.listValues(META.id)) : []; } catch(e){ return []; } },
-    addStyle: function(css){
-      var st = document.createElement('style');
-      st.textContent = css;
-      (document.head || document.documentElement).appendChild(st);
-      return st;
-    },
-    xmlHttpRequest: function(details){
-      if (!bridge || !bridge.xhr) throw new Error('GM_xmlhttpRequest unavailable');
-      var reqId = META.id + ':' + Math.random().toString(36).slice(2);
-      xhrCbs[reqId] = details;
-      bridge.xhr(reqId, META.id, details.url, (details.method || 'GET'),
-                 JSON.stringify(details.headers || {}),
-                 details.data == null ? '' : String(details.data));
-    },
-    notification: function(text, title){ try { if (bridge) bridge.toast(String(title || '') + ' ' + String(text || '')); } catch(e){} },
-    openInTab: function(url){ try { if (bridge) bridge.openTab(url); } catch(e){} },
-    registerMenuCommand: function(){ return 0; },
-    log: function(){ try { console.log.apply(console, arguments); } catch(e){} },
-    getResourceText: function(){ return null; }
-  };
-  var unsafeWindow = window;
-  // 兼容直接调用全局函数的脚本
-  window.unsafeWindow = window;
-  window.GM_info = GM.info;
-  window.GM_setValue = GM.setValue;
-  window.GM_getValue = GM.getValue;
-  window.GM_deleteValue = GM.deleteValue;
-  window.GM_listValues = GM.listValues;
-  window.GM_addStyle = GM.addStyle;
-  window.GM_xmlhttpRequest = GM.xmlHttpRequest;
-  window.GM_notification = GM.notification;
-  window.GM_openInTab = GM.openInTab;
-  window.GM_registerMenuCommand = GM.registerMenuCommand;
-  window.GM_log = GM.log;
-  window.GM_getResourceText = GM.getResourceText;
-  window.GM_getResourceURL = function(){ return ''; };
-  window.GM_download = function(o){ try { if (bridge) bridge.openTab(o && o.url ? o.url : String(o)); } catch(e){} };
-  window.GM_setClipboard = function(t){ try { navigator.clipboard.writeText(String(t)); } catch(e){} };
-  window.GM_unregisterMenuCommand = function(){};
-  window.GM_addValueChangeListener = function(){ return 0; };
-  window.GM_removeValueChangeListener = function(){};
-  window.GM_getTab = function(cb){ try { cb && cb({}); } catch(e){} };
-  window.GM_saveTab = function(){};
-  window.GM_getTabs = function(cb){ try { cb && cb([]); } catch(e){} };
-  window.GM_cookie = { list: function(){ return {}; }, set: function(){}, delete: function(){} };
-
-  try {
-    (function(GM, unsafeWindow, window){
-$requires
-$body
-    })(GM, unsafeWindow, window);
-  } catch (err) {
-    try { console.error('[Mafari userscript] ' + META.name + ': ' + (err && err.message)); } catch(e){}
-  }
-})();
-""".trimIndent()
+    /** 依次替换三个占位符各一次，不会二次扫描已填入的脚本内容 */
+    private fun fill(template: String, meta: String, fn: String, code: String): String {
+        val sb = StringBuilder(template.length + meta.length + code.length + 64)
+        var cursor = 0
+        for ((marker, value) in listOf(M_META to meta, M_FN to fn, M_CODE to code)) {
+            val idx = template.indexOf(marker, cursor)
+            if (idx < 0) return template
+            sb.append(template, cursor, idx).append(value)
+            cursor = idx + marker.length
+        }
+        sb.append(template, cursor, template.length)
+        return sb.toString()
     }
 }

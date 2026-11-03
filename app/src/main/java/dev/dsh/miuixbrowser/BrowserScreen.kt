@@ -15,7 +15,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.blur
 
 import androidx.compose.foundation.layout.widthIn
-import top.yukonga.miuix.kmp.icon.extended.Layers
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -81,6 +80,8 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -93,6 +94,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -124,24 +126,25 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.glass.Settings
+import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.icon.glass.Phone
+import top.yukonga.miuix.kmp.icon.glass.More
+import top.yukonga.miuix.kmp.icon.glass.Layers
+import top.yukonga.miuix.kmp.icon.glass.Info
+import top.yukonga.miuix.kmp.icon.glass.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.glass.Hide
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.icon.glass.Back
+import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.More
-import top.yukonga.miuix.kmp.icon.extended.Phone
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Search
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDefaults
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -149,6 +152,8 @@ import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassMaterials
+import top.yukonga.miuix.kmp.glass.GlassPopup
+import top.yukonga.miuix.kmp.glass.GlassPopupItem
 import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassStrokes
 import top.yukonga.miuix.kmp.glass.glassPanel
@@ -224,6 +229,7 @@ fun BrowserScreen(
     var showHistory by remember { mutableStateOf(false) }
     var libraryTab by remember { mutableIntStateOf(1) }
     var pendingScript by remember { mutableStateOf<String?>(null) }
+    var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>?>(null) }
     var settingsReturn by remember { mutableStateOf(false) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
     var showFind by remember { mutableStateOf(false) }
@@ -231,6 +237,8 @@ fun BrowserScreen(
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
+    var showTabAddMenu by remember { mutableStateOf(false) }
+    var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -240,7 +248,7 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(tab.id, extensions.items.size, tab.id) {
+    LaunchedEffect(tab.id, extensions.items.toList()) {
         tab.userScripts = extensions.items.toList()
         tab.onVisited = { url, title -> history.record(url, title) }
     }
@@ -300,9 +308,22 @@ fun BrowserScreen(
         }
     }
 
-    // 回到主页时把 WebView 隐藏掉，否则网页会从主页底下透出来
+    // 回到主页时隐藏 WebView：alpha=0 仍会吃触摸，必须 INVISIBLE + 禁用，
+    // 否则主页看起来是首页，点击却落到下层网页。
     LaunchedEffect(tab.id, tab.url) {
-        tab.webView.alpha = if (tab.url.isEmpty()) 0f else 1f
+        val onHome = tab.url.isEmpty()
+        tab.webView.apply {
+            alpha = if (onHome) 0f else 1f
+            visibility = if (onHome) {
+                android.view.View.INVISIBLE
+            } else {
+                android.view.View.VISIBLE
+            }
+            isEnabled = !onHome
+            isClickable = !onHome
+            isFocusable = !onHome
+            isFocusableInTouchMode = !onHome
+        }
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
@@ -321,7 +342,7 @@ fun BrowserScreen(
 
     // WebView 不会把滚动事件抛给 Compose，这里轻量轮询页面滚动位置：
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
-    LaunchedEffect(tab.id, extensions.items.size, tab.id) {
+    LaunchedEffect(tab.id, extensions.items.toList()) {
         tab.userScripts = extensions.items.toList()
         tab.onVisited = { url, title -> history.record(url, title) }
     }
@@ -409,36 +430,26 @@ fun BrowserScreen(
     // 有 NavigationEvent 宿主时，子页由 predictiveBackPage 手势驱动，这里避免双处理
     val hasNavDispatcher = androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner.current != null
     val secondaryOpen = showSettings || showAbout || showExtensions || showDownloads || showHistory
+
+    /** 关闭二级页：若来自设置则回设置，否则回浏览主页 */
+    fun closeSecondaryPage(close: () -> Unit) {
+        close()
+        if (settingsReturn) {
+            showSettings = true
+            settingsReturn = false
+        }
+    }
+
     BackHandler(enabled = !(hasNavDispatcher && secondaryOpen)) {
         when {
-            // 子页面：先回设置页（关于 / 脚本 / 下载一致）
-            showAbout -> {
-                showAbout = false
-                if (settingsReturn) {
-                    showSettings = true
-                    settingsReturn = false
-                }
-            }
-            showExtensions && settingsReturn -> {
-                showExtensions = false
-                showSettings = true
+            showAbout -> closeSecondaryPage { showAbout = false }
+            showExtensions -> closeSecondaryPage { showExtensions = false }
+            showDownloads -> closeSecondaryPage { showDownloads = false }
+            showHistory -> closeSecondaryPage { showHistory = false }
+            showSettings -> {
+                showSettings = false
                 settingsReturn = false
             }
-            showDownloads && settingsReturn -> {
-                showDownloads = false
-                showSettings = true
-                settingsReturn = false
-            }
-            showExtensions -> showExtensions = false
-            showHistory -> {
-                showHistory = false
-                if (settingsReturn) {
-                    showSettings = true
-                    settingsReturn = false
-                }
-            }
-            showSettings -> showSettings = false
-            showDownloads -> showDownloads = false
             showUaPicker -> showUaPicker = false
             showFind -> {
                 tab.clearFind()
@@ -663,6 +674,7 @@ fun BrowserScreen(
                                         if (kotlin.math.abs(hDragDistance) > 72f || dragAmount.y < -40f) {
                                             barMinimized = false
                                             hDragDistance = 0f
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             change.consume()
                                         }
                                     },
@@ -697,7 +709,7 @@ fun BrowserScreen(
                                 ),
                         )
                         Icon(
-                            imageVector = MiuixIcons.Search,
+                            imageVector = MiuixIcons.Glass.Search,
                             contentDescription = "搜索或输入网址",
                             tint = MiuixTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
@@ -717,6 +729,7 @@ fun BrowserScreen(
                                         if (kotlin.math.abs(hDragDistance) > 72f) {
                                             barMinimized = true
                                             hDragDistance = 0f
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             change.consume()
                                         }
                                     } else {
@@ -724,9 +737,11 @@ fun BrowserScreen(
                                         // 提高竖向隐藏阈值，降低误触
                                         if (dragDistance > 56f && !barHidden) {
                                             barHidden = true
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             change.consume()
                                         } else if (dragDistance < -56f && barHidden) {
                                             barHidden = false
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             change.consume()
                                         }
                                     }
@@ -821,19 +836,46 @@ fun BrowserScreen(
                 Sheet.Link -> hostOf(linkUrl)
                 Sheet.Image -> "图片"
                 Sheet.Element -> "页面元素"
-                Sheet.Tabs -> "标签页"
+                Sheet.Tabs -> null // 标签页自定义头部（渐进模糊 + 添加/删除）
                 else -> null
+            },
+            startAction = if (lastActiveSheet == Sheet.Tabs) {
+                {
+                    TabAddButton(
+                        canAdd = state.tabs.size < 99,
+                        onAnchor = { tabAddAnchor = it },
+                        onShowMenu = { showTabAddMenu = true },
+                        onNormal = {
+                            state.newTab(incognito = false)
+                            sheet = Sheet.None
+                        },
+                        onIncognito = {
+                            state.newTab(incognito = true)
+                            sheet = Sheet.None
+                        },
+                    )
+                }
+            } else {
+                null
             },
             endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
                 {
-                    GlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                    HapticGlassIconButton(onClick = { showClearTabsConfirm = true }) {
                         Icon(
-                            imageVector = MiuixIcons.Delete,
+                            imageVector = MiuixIcons.Glass.Delete,
                             contentDescription = "全部删除",
                             modifier = Modifier.size(22.dp),
                         )
                     }
                 }
+            } else {
+                null
+            },
+            surface = if (lastActiveSheet == Sheet.Tabs) {
+                tabSheetSurface(
+                    backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+                    progressive = settings.blurEnabled && homeBlurAvailable,
+                )
             } else {
                 null
             },
@@ -849,17 +891,14 @@ fun BrowserScreen(
             when (lastActiveSheet) {
             Sheet.Tabs -> {
                 val screenH = LocalConfiguration.current.screenHeightDp.dp
-                // 弹窗自己的采样层：只录制滚动内容，顶部渐进模糊覆盖层放在录制层之外，
-                // 这样即使网页态（browserBackdrop 不可用）也能对滚动到顶部的标签做渐进模糊。
-                val tabsBackdrop = rememberLayerBackdrop()
-                Box(modifier = Modifier.fillMaxWidth().heightIn(max = screenH * 0.7f)) {
+                // 标签列表（不再在底部放矩形新建按钮；添加入口在左上角圆形钮）
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .layerBackdrop(tabsBackdrop)
-                        .verticalScroll(rememberScrollState()),
+                        .heightIn(max = screenH * 0.68f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = 4.dp),
                 ) {
-                Spacer(Modifier.height(10.dp))
                 if (settings.tabsStyle == 1) {
                     // 卡片显示：加高、左右对齐
                     Column(
@@ -880,8 +919,15 @@ fun BrowserScreen(
                                             .weight(1f)
                                             .height(160.dp)
                                             .clip(RoundedCornerShape(16.dp))
-                                            .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                                            .background(
+                                                if (item.incognito) {
+                                                    Color(0xFF3D2B4F)
+                                                } else {
+                                                    MiuixTheme.colorScheme.surfaceContainerHigh
+                                                },
+                                            )
                                             .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 state.select(index)
                                                 sheet = Sheet.None
                                             },
@@ -923,7 +969,10 @@ fun BrowserScreen(
                                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                                             ) {
                                                 Text(
-                                                    text = item.title.ifBlank { "新标签页" },
+                                                    text = buildString {
+                                                        if (item.incognito) append("无痕 · ")
+                                                        append(item.title.ifBlank { "新标签页" })
+                                                    },
                                                     fontSize = 13.sp,
                                                     color = MiuixTheme.colorScheme.onSurface,
                                                     maxLines = 1,
@@ -951,7 +1000,7 @@ fun BrowserScreen(
                                                     minHeight = 28.dp,
                                                 ) {
                                                     Icon(
-                                                        imageVector = MiuixIcons.Close,
+                                                        imageVector = MiuixIcons.Glass.Close,
                                                         contentDescription = "关闭",
                                                         modifier = Modifier.size(14.dp),
                                                     )
@@ -967,11 +1016,14 @@ fun BrowserScreen(
                 } else {
                     state.tabs.forEachIndexed { index, item ->
                         SheetRow(
-                            title = item.title.ifBlank { "新标签页" },
+                            title = buildString {
+                                if (item.incognito) append("无痕 · ")
+                                append(item.title.ifBlank { "新标签页" })
+                            },
                             subtitle = item.url.ifBlank { null },
                             trailing = {
                                 BarButton(
-                                    icon = MiuixIcons.Close,
+                                    icon = MiuixIcons.Glass.Close,
                                     description = "关闭",
                                     enabled = state.tabs.size > 1,
                                     onClick = { state.closeTab(index) },
@@ -984,32 +1036,7 @@ fun BrowserScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                TextButton(
-                    text = if (state.tabs.size >= 99) "已达 99 个标签上限" else "新建标签页",
-                    enabled = state.tabs.size < 99,
-                    onClick = {
-                        state.newTab()
-                        sheet = Sheet.None
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                )
                 Spacer(Modifier.height(8.dp))
-                }
-                if (settings.blurEnabled && isRuntimeShaderSupported()) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .progressiveTopBar(
-                                backdrop = tabsBackdrop,
-                                tint = MiuixTheme.colorScheme.surface.copy(alpha = 0.12f),
-                                radius = 36f,
-                                curve = 0.55f,
-                            ),
-                    )
-                }
                 }
             }
 
@@ -1026,7 +1053,8 @@ fun BrowserScreen(
                     onAction = { action ->
                         sheet = Sheet.None
                         when (action) {
-                            MenuAction.NewTab -> state.newTab()
+                            MenuAction.NewTab -> state.newTab(incognito = false)
+                            MenuAction.Incognito -> state.toggleIncognito()
                             MenuAction.Desktop -> tab.toggleDesktopMode(!tab.desktopMode)
                             MenuAction.Find -> showFind = true
                             MenuAction.Translate -> if (tab.url.isNotBlank()) {
@@ -1061,17 +1089,29 @@ fun BrowserScreen(
                                 }
                             }
                             MenuAction.Home -> tab.goHome()
-                            MenuAction.Downloads -> showDownloads = true
-                            MenuAction.Extensions -> showExtensions = true
+                            MenuAction.Downloads -> {
+                                settingsReturn = false
+                                showDownloads = true
+                            }
+                            MenuAction.Extensions -> {
+                                settingsReturn = false
+                                showExtensions = true
+                            }
+                            MenuAction.ScriptMenu -> tab.queryMenuCommands { scriptMenuItems = it }
                             MenuAction.History -> {
+                                settingsReturn = false
                                 libraryTab = 1
                                 showHistory = true
                             }
-                            MenuAction.Settings -> showSettings = true
+                            MenuAction.Settings -> {
+                                settingsReturn = false
+                                showSettings = true
+                            }
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
                         }
                     },
                     onMove = { from, to -> menuOrder.move(from, to) },
+                    incognitoActive = tab.incognito,
                 )
             }
 
@@ -1170,11 +1210,17 @@ fun BrowserScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .predictiveBackPage(visible = showSettings) { showSettings = false },
+                    .predictiveBackPage(visible = showSettings) {
+                        showSettings = false
+                        settingsReturn = false
+                    },
             ) {
                 SettingsScreen(
                     settings = settings,
-                    onBack = { showSettings = false },
+                    onBack = {
+                        showSettings = false
+                        settingsReturn = false
+                    },
                     onPickUa = { showUaPicker = true },
                     onOpenDownloads = {
                         settingsReturn = true
@@ -1208,21 +1254,11 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .predictiveBackPage(visible = showAbout) {
-                        showAbout = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
+                        closeSecondaryPage { showAbout = false }
                     },
             ) {
                 AboutScreen(
-                    onBack = {
-                        showAbout = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
-                    },
+                    onBack = { closeSecondaryPage { showAbout = false } },
                     blurEnabled = settings.blurEnabled,
                 )
             }
@@ -1266,6 +1302,46 @@ fun BrowserScreen(
                         ) {
                             Text(text = "下载", style = MiuixTheme.textStyles.button)
                         }
+                    }
+                }
+            }
+        }
+
+        val menuItems = scriptMenuItems
+        GlassDialog(
+            show = menuItems != null,
+            title = "脚本命令",
+            summary = if (menuItems.isNullOrEmpty()) "当前页面没有脚本注册菜单命令" else null,
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismissRequest = { scriptMenuItems = null },
+        ) {
+            if (menuItems != null) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    menuItems.forEach { cmd ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    scriptMenuItems = null
+                                    tab.runMenuCommand(cmd.id)
+                                }
+                                .padding(vertical = 10.dp),
+                        ) {
+                            Text(cmd.title, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                            Text(
+                                text = cmd.script,
+                                fontSize = 11.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    GlassDialogButton(
+                        onClick = { scriptMenuItems = null },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(text = "关闭", style = MiuixTheme.textStyles.button)
                     }
                 }
             }
@@ -1320,14 +1396,13 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .predictiveBackPage(visible = showDownloads) {
-                        showDownloads = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
+                        closeSecondaryPage { showDownloads = false }
                     },
             ) {
-                DownloadsScreen(onBack = { showDownloads = false }, blurEnabled = settings.blurEnabled)
+                DownloadsScreen(
+                    onBack = { closeSecondaryPage { showDownloads = false } },
+                    blurEnabled = settings.blurEnabled,
+                )
             }
         }
 
@@ -1336,16 +1411,12 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .predictiveBackPage(visible = showExtensions) {
-                        showExtensions = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
+                        closeSecondaryPage { showExtensions = false }
                     },
             ) {
                 ExtensionsScreen(
                     store = extensions,
-                    onBack = { showExtensions = false },
+                    onBack = { closeSecondaryPage { showExtensions = false } },
                     blurEnabled = settings.blurEnabled,
                 )
             }
@@ -1356,23 +1427,13 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .predictiveBackPage(visible = showHistory) {
-                        showHistory = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
+                        closeSecondaryPage { showHistory = false }
                     },
             ) {
                 LibraryScreen(
                     favorites = favorites,
                     store = history,
-                    onBack = {
-                        showHistory = false
-                        if (settingsReturn) {
-                            showSettings = true
-                            settingsReturn = false
-                        }
-                    },
+                    onBack = { closeSecondaryPage { showHistory = false } },
                     onOpen = { url ->
                         showHistory = false
                         settingsReturn = false
@@ -1427,6 +1488,22 @@ fun BrowserScreen(
                 }
             }
         }
+
+        TabAddMenu(
+            show = showTabAddMenu,
+            anchorBounds = tabAddAnchor,
+            canAdd = state.tabs.size < 99,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismiss = { showTabAddMenu = false },
+            onNormal = {
+                state.newTab(incognito = false)
+                sheet = Sheet.None
+            },
+            onIncognito = {
+                state.newTab(incognito = true)
+                sheet = Sheet.None
+            },
+        )
 
         FindDialog(
             show = showFind,
@@ -1550,10 +1627,10 @@ private fun BottomBar(
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PressIcon(icon = MiuixIcons.Back, description = "后退", enabled = canGoBack, onClick = onBack)
+            PressIcon(icon = MiuixIcons.Glass.Back, description = "后退", enabled = canGoBack, onClick = onBack)
             if (canGoForward) {
                 PressIcon(
-                    icon = MiuixIcons.Back,
+                    icon = MiuixIcons.Glass.Back,
                     description = "前进",
                     enabled = true,
                     flip = true,
@@ -1561,7 +1638,7 @@ private fun BottomBar(
                 )
             } else {
                 PressIcon(
-                    icon = MiuixIcons.Home,
+                    icon = MiuixIcons.Glass.Sidebar,
                     description = "主页",
                     enabled = true,
                     onClick = onHome,
@@ -1577,7 +1654,10 @@ private fun BottomBar(
                     .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { onAddressTap() },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAddressTap()
+                        },
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onCopyAddress()
@@ -1601,7 +1681,7 @@ private fun BottomBar(
             }
 
             TabIcon(count = tabCount, onClick = onTabs, onLongClick = onMore)
-            PressIcon(icon = MiuixIcons.More, description = "更多", onClick = onMore)
+            PressIcon(icon = MiuixIcons.Glass.More, description = "更多", onClick = onMore)
         }
     }
 }
@@ -1668,6 +1748,7 @@ private fun IconWithContourShadow(
 
 @Composable
 private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1683,14 +1764,20 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
         Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
             IconWithContourShadow(
-                imageVector = MiuixIcons.Layers,
+                imageVector = MiuixIcons.Glass.Layers,
                 description = "标签页",
                 tint = color,
                 scale = scale,
@@ -1726,6 +1813,7 @@ private fun PressIcon(
     flip: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1746,7 +1834,12 @@ private fun PressIcon(
                 interactionSource = interaction,
                 indication = null,
                 enabled = enabled,
-                onClick = onClick,
+                onClick = {
+                    if (enabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    }
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -1834,6 +1927,7 @@ private fun BarButton(
     flip: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val color = if (enabled) {
         MiuixTheme.colorScheme.onSurface
     } else {
@@ -1843,7 +1937,15 @@ private fun BarButton(
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(
+                enabled = enabled,
+                onClick = {
+                    if (enabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1955,7 +2057,14 @@ private fun StartPage(
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 根 Box 吸收空白区点击，避免穿透到下层 WebView（子项仍优先命中）
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { /* absorb empty-area taps on home */ }
+            },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -2223,11 +2332,11 @@ private fun UaDialog(
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             UA_PRESETS.forEach { preset ->
                 val presetIcon = when (preset.name) {
-                    "跟随系统" -> MiuixIcons.Settings
-                    "Android Chrome" -> MiuixIcons.Phone
-                    "桌面 Chrome" -> MiuixIcons.HorizontalSplit
-                    "iPhone Safari" -> MiuixIcons.Phone
-                    else -> MiuixIcons.Info
+                    "跟随系统" -> MiuixIcons.Glass.Settings
+                    "Android Chrome" -> MiuixIcons.Glass.Phone
+                    "桌面 Chrome" -> MiuixIcons.Glass.HorizontalSplit
+                    "iPhone Safari" -> MiuixIcons.Glass.Phone
+                    else -> MiuixIcons.Glass.Info
                 }
                 Row(
                     modifier = Modifier
@@ -2340,12 +2449,15 @@ private fun MenuGrid(
     order: List<MenuAction>,
     onAction: (MenuAction) -> Unit,
     onMove: (Int, Int) -> Unit,
+    incognitoActive: Boolean = false,
 ) {
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
     val cellHeight = 88.dp
     var dragIndex by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     val columns = 4
+    val purple = Color(0xFF9C27B0)
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val cellWidth = maxWidth / columns
@@ -2375,6 +2487,7 @@ private fun MenuGrid(
                                         onDragStart = {
                                             dragIndex = index
                                             dragOffset = Offset.Zero
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
                                         onDrag = { change, delta ->
                                             change.consume()
@@ -2386,6 +2499,7 @@ private fun MenuGrid(
                                             val target = (row + dRow) * columns + (col + dCol)
                                             if (target != index) {
                                                 onMove(index, target.coerceIn(0, order.lastIndex))
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             }
                                             dragIndex = -1
                                             dragOffset = Offset.Zero
@@ -2403,14 +2517,20 @@ private fun MenuGrid(
                                 Icon(
                                     imageVector = action.icon,
                                     contentDescription = labelFor(action),
-                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    tint = when {
+                                        action == MenuAction.Incognito && incognitoActive -> purple
+                                        else -> MiuixTheme.colorScheme.onSurface
+                                    },
                                     modifier = Modifier.size(26.dp),
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
                                     text = labelFor(action),
                                     fontSize = 11.sp,
-                                    color = MiuixTheme.colorScheme.onSurface,
+                                    color = when {
+                                        action == MenuAction.Incognito && incognitoActive -> purple
+                                        else -> MiuixTheme.colorScheme.onSurface
+                                    },
                                     maxLines = 1,
                                 )
                             }
@@ -2421,6 +2541,122 @@ private fun MenuGrid(
                     }
                 }
             }
+        }
+    }
+}
+
+/** 标签页 sheet 左上角圆形新建按钮（长按菜单挂在全屏层，避免撑大 sheet） */
+@Composable
+private fun TabAddButton(
+    canAdd: Boolean,
+    onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit,
+    onShowMenu: () -> Unit,
+    onNormal: () -> Unit,
+    onIncognito: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+            .onGloballyPositioned { onAnchor(it.boundsInRoot()) }
+            .combinedClickable(
+                enabled = canAdd,
+                onClick = {
+                    if (canAdd) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNormal()
+                    }
+                },
+                onLongClick = {
+                    if (canAdd) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onShowMenu()
+                    }
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = MiuixIcons.Glass.Add,
+            contentDescription = "新建标签页",
+            tint = MiuixTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+/** 全屏层：标签新建长按菜单（glass popup，不参与 sheet 测量） */
+@Composable
+private fun TabAddMenu(
+    show: Boolean,
+    anchorBounds: androidx.compose.ui.geometry.Rect,
+    canAdd: Boolean,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    onDismiss: () -> Unit,
+    onNormal: () -> Unit,
+    onIncognito: () -> Unit,
+) {
+    if (!show) return
+    // GlassPopup 是 BoxScope 扩展，需包在 Box 内
+    Box {
+        GlassPopup(
+            show = show,
+            onDismissRequest = onDismiss,
+            anchorBounds = anchorBounds,
+            backdrop = backdrop,
+            visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
+        ) {
+            GlassPopupItem(
+                text = "新建普通标签页",
+                enabled = canAdd,
+                onClick = {
+                    onDismiss()
+                    onNormal()
+                },
+                icon = MiuixIcons.Glass.Add,
+            )
+            GlassPopupItem(
+                text = "新建无痕标签页",
+                summary = "不保存浏览记录",
+                enabled = canAdd,
+                onClick = {
+                    onDismiss()
+                    onIncognito()
+                },
+                icon = MiuixIcons.Glass.Hide,
+            )
+        }
+    }
+}
+
+/** 标签 sheet 表面：整页玻璃 + 仅顶部标题带 progressiveTopBar（不铺满整页） */
+@Composable
+private fun tabSheetSurface(
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    progressive: Boolean,
+): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
+    val glass = top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(backdrop)
+    return {
+        val base = glass()
+        if (progressive && backdrop != null && top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()) {
+            val bandShape = remember(cornerRadius) {
+                TopBandShape(bandHeight = 112.dp, topCornerRadius = cornerRadius)
+            }
+            // 只在顶部 band 画渐进模糊；下方仍由 glass 承担
+            Modifier
+                .then(base)
+                .progressiveTopBar(
+                    backdrop = backdrop,
+                    shape = bandShape,
+                    radius = 44f,
+                    endFraction = 1f,
+                    curve = 0.55f,
+                    enabled = true,
+                )
+        } else {
+            base
         }
     }
 }
@@ -2564,7 +2800,7 @@ private fun RefreshSpinner(progress: Float, refreshing: Boolean, modifier: Modif
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = MiuixIcons.Refresh,
+            imageVector = MiuixIcons.Glass.Refresh,
             contentDescription = "刷新",
             tint = MiuixTheme.colorScheme.primary.copy(alpha = if (refreshing) 1f else 0.4f + 0.6f * progress),
             modifier = Modifier

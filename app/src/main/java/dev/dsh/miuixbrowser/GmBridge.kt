@@ -1,26 +1,43 @@
 package dev.dsh.miuixbrowser
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * 用户脚本的原始能力桥：GM_setValue / GM_xmlhttpRequest / GM_notification / GM_openInTab。
+ * 用户脚本的原始能力桥：GM_setValue / GM_xmlhttpRequest / GM_notification / GM_openInTab 等。
  * 跨域请求由原生发起，绕开网页的 CORS 限制（与油猴一致）。
+ *
+ * 注意：addJavascriptInterface 会注入到所有框架，因此 xhr 采用「发起 + 轮询」两步，
+ * 结果由发起请求的那个框架自己取走，而不是用 evaluateJavascript 往主框架推。
  */
 class GmBridge(
     private val context: Context,
-    private val webViewProvider: () -> WebView?,
+    @Suppress("unused") private val webViewProvider: () -> WebView?,
     private val onOpenTab: (String) -> Unit,
+    private val onDownload: (url: String, name: String) -> Unit = { _, _ -> },
 ) {
 
     private val prefs = context.getSharedPreferences("userscript_gm", Context.MODE_PRIVATE)
-    private val pool = Executors.newFixedThreadPool(3)
+    private val pool = Executors.newCachedThreadPool()
+    private val mainHandler = android.os.Handler(context.mainLooper)
+
+    private val results = ConcurrentHashMap<String, String>()
+    private val connections = ConcurrentHashMap<String, HttpURLConnection>()
+    private val aborted = ConcurrentHashMap.newKeySet<String>()
+
+    // ------------------------------------------------------------------ values
 
     @JavascriptInterface
     fun getValue(scriptId: String, key: String): String? = prefs.getString("$scriptId::$key", null)
@@ -42,51 +59,143 @@ class GmBridge(
         return JSONArray(keys).toString()
     }
 
+    // ------------------------------------------------------------------ GM_xmlhttpRequest
+
     @JavascriptInterface
-    fun xhr(reqId: String, scriptId: String, url: String, method: String, headers: String, body: String) {
+    fun xhrStart(reqId: String, optionsJson: String, bodyBase64: String) {
         pool.execute {
-            var status = 0
-            var text = ""
-            var finalUrl = url
-            try {
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = method.ifBlank { "GET" }.uppercase()
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                    instanceFollowRedirects = true
-                    setRequestProperty("Accept-Encoding", "identity")
-                    runCatching {
-                        val json = JSONObject(headers.ifBlank { "{}" })
-                        json.keys().forEach { key -> setRequestProperty(key, json.optString(key)) }
-                    }
-                }
-                if (body.isNotBlank() && connection.requestMethod !in listOf("GET", "HEAD")) {
-                    connection.doOutput = true
-                    connection.outputStream.use { it.write(body.toByteArray()) }
-                }
-                status = connection.responseCode
-                finalUrl = connection.url.toString()
-                text = runCatching {
-                    (if (status in 200..299) connection.inputStream else connection.errorStream)
-                        ?.bufferedReader()?.readText().orEmpty()
-                }.getOrDefault("")
-                connection.disconnect()
-            } catch (e: Exception) {
-                status = -1
-                text = e.message ?: "request failed"
+            val result = runCatching { runXhr(reqId, optionsJson, bodyBase64) }.getOrElse { e ->
+                JSONObject().put("state", "error").put("error", e.message ?: "request failed").toString()
             }
-            val payload = JSONObject.quote(text)
-            val js = "window.__mafariXhrDone && window.__mafariXhrDone(" +
-                "${JSONObject.quote(reqId)}, $status, $payload, ${JSONObject.quote(finalUrl)})"
-            webViewProvider()?.post {
-                runCatching { webViewProvider()?.evaluateJavascript(js, null) }
+            connections.remove(reqId)
+            if (aborted.remove(reqId)) {
+                results[reqId] = JSONObject().put("state", "abort").toString()
+            } else {
+                results[reqId] = result
             }
         }
     }
 
+    /** 还没好返回 null；好了返回 JSON 并清掉 */
+    @JavascriptInterface
+    fun xhrPoll(reqId: String): String? = results.remove(reqId)
+
+    @JavascriptInterface
+    fun xhrAbort(reqId: String) {
+        aborted.add(reqId)
+        connections[reqId]?.let { conn -> pool.execute { runCatching { conn.disconnect() } } }
+    }
+
+    private fun hasHeader(headers: JSONObject, name: String): Boolean =
+        headers.keys().asSequence().any { it.equals(name, ignoreCase = true) }
+
+    private fun runXhr(reqId: String, optionsJson: String, bodyBase64: String): String {
+        val opt = JSONObject(optionsJson)
+        var method = opt.optString("method", "GET").ifBlank { "GET" }.uppercase()
+        val headers = opt.optJSONObject("headers") ?: JSONObject()
+        val timeoutMs = opt.optInt("timeout", 0).takeIf { it > 0 } ?: 30_000
+        val anonymous = opt.optBoolean("anonymous", false)
+        var body: ByteArray? = if (bodyBase64.isNotEmpty()) android.util.Base64.decode(bodyBase64, android.util.Base64.DEFAULT) else null
+        var currentUrl = opt.getString("url")
+        val cookieManager = CookieManager.getInstance()
+
+        try {
+            var redirects = 0
+            while (true) {
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = timeoutMs
+                    readTimeout = timeoutMs
+                    instanceFollowRedirects = false // 手动跟随，才能处理 http→https 与 Cookie
+                    useCaches = false
+                }
+                connections[reqId] = conn
+                if (aborted.contains(reqId)) {
+                    conn.disconnect()
+                    return JSONObject().put("state", "abort").toString()
+                }
+                // 让系统自己处理压缩，不接受用户指定的 Accept-Encoding
+                headers.keys().forEach { name ->
+                    if (!name.equals("Accept-Encoding", true)) conn.setRequestProperty(name, headers.optString(name))
+                }
+                if (!hasHeader(headers, "User-Agent")) {
+                    conn.setRequestProperty("User-Agent", opt.optString("ua", "Mozilla/5.0 Mafari"))
+                }
+                if (!hasHeader(headers, "Accept")) conn.setRequestProperty("Accept", "*/*")
+                if (!hasHeader(headers, "Accept-Language")) {
+                    conn.setRequestProperty("Accept-Language", opt.optString("lang", "en-US").ifBlank { "en-US" })
+                }
+                if (!anonymous && !hasHeader(headers, "Cookie")) {
+                    cookieManager.getCookie(currentUrl)?.takeIf { it.isNotBlank() }?.let {
+                        conn.setRequestProperty("Cookie", it)
+                    }
+                }
+                val payload = body
+                if (payload != null && payload.isNotEmpty() && method != "GET" && method != "HEAD") {
+                    conn.doOutput = true
+                    conn.setFixedLengthStreamingMode(payload.size)
+                    conn.outputStream.use { it.write(payload) }
+                }
+
+                val status = conn.responseCode
+                if (!anonymous) {
+                    conn.headerFields?.forEach { (name, values) ->
+                        if (name != null && name.equals("Set-Cookie", true)) {
+                            values.forEach { cookieManager.setCookie(currentUrl, it) }
+                        }
+                    }
+                }
+                if (status in intArrayOf(301, 302, 303, 307, 308) && redirects < 10 &&
+                    opt.optString("redirect", "follow") != "manual"
+                ) {
+                    val location = conn.getHeaderField("Location")
+                    if (!location.isNullOrBlank()) {
+                        redirects++
+                        currentUrl = URL(URL(currentUrl), location).toString()
+                        if (status == 303 || ((status == 301 || status == 302) && method == "POST")) {
+                            method = "GET"
+                            body = null
+                        }
+                        conn.disconnect()
+                        continue
+                    }
+                }
+
+                val stream = if (status in 200..399) conn.inputStream else conn.errorStream
+                val bytes = ByteArrayOutputStream()
+                stream?.use { input ->
+                    val buf = ByteArray(32 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        bytes.write(buf, 0, n)
+                    }
+                }
+                val rawHeaders = StringBuilder()
+                conn.headerFields?.forEach { (name, values) ->
+                    if (name != null) values.forEach { rawHeaders.append(name).append(": ").append(it).append("\r\n") }
+                }
+                val out = JSONObject()
+                    .put("state", "load")
+                    .put("status", status)
+                    .put("statusText", conn.responseMessage ?: "")
+                    .put("finalUrl", currentUrl)
+                    .put("headers", rawHeaders.toString())
+                    .put("body", android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP))
+                    .toString()
+                conn.disconnect()
+                return out
+            }
+        } catch (e: SocketTimeoutException) {
+            return JSONObject().put("state", "timeout").put("error", "timeout").toString()
+        }
+    }
+
+    // ------------------------------------------------------------------ misc
+
     @JavascriptInterface
     fun toast(message: String) {
-        android.os.Handler(context.mainLooper).post {
+        mainHandler.post {
             runCatching {
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
             }
@@ -95,6 +204,30 @@ class GmBridge(
 
     @JavascriptInterface
     fun openTab(url: String) {
-        android.os.Handler(context.mainLooper).post { onOpenTab(url) }
+        mainHandler.post { onOpenTab(url) }
+    }
+
+    @JavascriptInterface
+    fun download(url: String, name: String) {
+        mainHandler.post { onDownload(url, name) }
+    }
+
+    @JavascriptInterface
+    fun copy(text: String) {
+        mainHandler.post {
+            runCatching {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("Mafari", text))
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun cookies(url: String): String =
+        runCatching { CookieManager.getInstance().getCookie(url).orEmpty() }.getOrDefault("")
+
+    @JavascriptInterface
+    fun setCookie(url: String, cookie: String) {
+        runCatching { CookieManager.getInstance().setCookie(url, cookie) }
     }
 }

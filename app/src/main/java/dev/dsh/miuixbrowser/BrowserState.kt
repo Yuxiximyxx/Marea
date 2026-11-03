@@ -48,6 +48,15 @@ fun hostOf(url: String): String {
     return if (!host.isNullOrBlank()) host else trimmed.take(48)
 }
 
+/** 脚本菜单命令（GM_registerMenuCommand） */
+data class ScriptMenuCommand(val id: String, val title: String, val script: String)
+
+/** 链接是否指向 .user.js（忽略查询串与片段） */
+fun isUserScriptUrl(url: String): Boolean {
+    val path = runCatching { Uri.parse(url).path }.getOrNull().orEmpty()
+    return path.endsWith(".user.js", ignoreCase = true)
+}
+
 /** 一个标签页：持有自己的 WebView 和页面状态。 */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserTab(private val appContext: Context) {
@@ -75,6 +84,22 @@ class BrowserTab(private val appContext: Context) {
     var desktopMode by mutableStateOf(false)
         private set
 
+    /** 无痕浏览标签 */
+    var incognito by mutableStateOf(false)
+        private set
+
+    fun applyIncognito(value: Boolean) {
+        if (incognito == value) return
+        incognito = value
+        // 无痕：不持久化 Cookie / 缓存写入偏好简化为关闭第三方 Cookie 接受
+        val cm = CookieManager.getInstance()
+        if (value) {
+            cm.setAcceptCookie(false)
+        } else {
+            cm.setAcceptCookie(true)
+        }
+    }
+
     private val defaultUserAgent: String by lazy { webView.settings.userAgentString }
 
     /** 设置里的自定义 UA（空串 = 跟随系统） */
@@ -89,8 +114,12 @@ class BrowserTab(private val appContext: Context) {
     /** 长按普通元素：由页面内 JS 判定为广告浮层后回调 */
     var onElementLongPress: ((ElementHit) -> Unit)? = null
 
-    /** 用户脚本扩展（页面加载完后注入） */
+    /** 用户脚本扩展：通过 document-start 注入，由运行时按各框架 URL 与 run-at 自行调度 */
     var userScripts: List<UserScript> = emptyList()
+        set(value) {
+            field = value
+            syncUserScripts()
+        }
 
     /** 页面增强总开关：关闭后不再注入任何脚本 / 规则 / 长按逻辑，用于排查 */
     var pageEnhancements: Boolean = true
@@ -130,11 +159,24 @@ class BrowserTab(private val appContext: Context) {
 
     private val scriptHandlers = mutableListOf<androidx.webkit.ScriptHandler>()
     private var installedScriptsSignature = ""
+    private var prefetchingScripts = false
 
     init {
         runCatching {
             webView.addJavascriptInterface(
-                GmBridge(appContext, { webView }, { target -> onOpenNewTab?.invoke(target) }),
+                GmBridge(
+                    appContext,
+                    { webView },
+                    { target -> onOpenNewTab?.invoke(target) },
+                    { link, name ->
+                        onDownload?.invoke(
+                            link,
+                            null,
+                            if (name.isBlank()) null else "attachment; filename=\"$name\"",
+                            null,
+                        )
+                    },
+                ),
                 "MafariGM",
             )
         }
@@ -173,7 +215,7 @@ class BrowserTab(private val appContext: Context) {
                 loading = true
                 errorText = null
                 syncNav()
-                installDocumentStartScripts()
+                syncUserScripts()
             }
 
             override fun onPageFinished(view: WebView, pageUrl: String?) {
@@ -183,7 +225,7 @@ class BrowserTab(private val appContext: Context) {
                 syncNav()
                 onVisited?.invoke(url, title)
 
-                injectDocumentEndScripts(view)
+                injectMissingUserScripts(view)
                 injectUserAdRules(view, pageUrl)
                 installElementInspector(view)
                 // 稍等布局稳定再截标签缩略图
@@ -201,7 +243,7 @@ class BrowserTab(private val appContext: Context) {
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val target = request.url.toString()
-                if (target.endsWith(".user.js") || target.contains("greasyfork") && target.contains(".user.js")) {
+                if (isUserScriptUrl(target)) {
                     onUserScriptLink?.invoke(target)
                     return true
                 }
@@ -235,7 +277,12 @@ class BrowserTab(private val appContext: Context) {
         }
 
         webView.setDownloadListener { link, userAgent, contentDisposition, mimeType, _ ->
-            onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            // 一些站点把 .user.js 以附件形式返回，会走到下载回调；这里改成「导入脚本」
+            if (isUserScriptUrl(link)) {
+                onUserScriptLink?.invoke(link)
+            } else {
+                onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            }
         }
 
         // 约 2.5cm 的拉动距离，避免误触
@@ -365,57 +412,98 @@ class BrowserTab(private val appContext: Context) {
         view.evaluateJavascript(js, null)
     }
 
-    /** 用 AndroidX WebKit 的 addDocumentStartJavaScript 注入 @run-at document-start 脚本 */
-    private fun installDocumentStartScripts() {
+    /**
+     * 所有启用的脚本都用 addDocumentStartJavaScript 注入（覆盖 iframe、真正的 document-start），
+     * 具体的 URL 匹配与 run-at 等待在运行时（assets/mafari_gm_runtime.js）里按各框架处理。
+     * 脚本列表 / 缓存资源变化时重建；系统不支持该特性时由 injectMissingUserScripts 兜底。
+     */
+    private fun syncUserScripts() {
+        if (destroyed) return
         if (!pageEnhancements) {
             scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
             scriptHandlers.clear()
             installedScriptsSignature = ""
             return
         }
+        val enabled = userScripts.filter { it.enabled }
+        val signature = enabled.joinToString("|") {
+            "${it.id}:${it.code.hashCode()}:${it.match.hashCode()}:${ScriptResources.cachedCount(appContext, it.code)}"
+        }
+
+        // @require / @resource 还没缓存的先在后台取回来，取到后自动重建（失败的 60 秒后才会重试）
+        val needFetch = enabled.filter { ScriptResources.missing(appContext, it.code).isNotEmpty() }
+        if (needFetch.isNotEmpty() && !prefetchingScripts) {
+            prefetchingScripts = true
+            Thread {
+                val changed = needFetch.map { ScriptResources.prefetch(appContext, it.code) }.any { it }
+                webView.post {
+                    prefetchingScripts = false
+                    if (changed) syncUserScripts()
+                }
+            }.start()
+        }
+        if (signature == installedScriptsSignature) return
+
+        scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
+        scriptHandlers.clear()
+        installedScriptsSignature = signature
         if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
             return
         }
-        val startScripts = userScripts.filter { it.enabled && it.runAt == "document-start" }
-        val signature = startScripts.joinToString("|") { "${it.id}:${it.code.hashCode()}" }
-        if (signature == installedScriptsSignature) return
-        scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
-        scriptHandlers.clear()
-        startScripts.forEach { script ->
+        enabled.forEach { script ->
             runCatching {
-                val source = UserscriptEngine.buildSource(script)
+                val source = UserscriptEngine.buildSource(appContext, script)
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, source, setOf("*"))
                     ?.let { scriptHandlers.add(it) }
-            }
+            }.onFailure { Diag.log("userscript: install failed ${script.name}: ${it.message}") }
         }
-        installedScriptsSignature = signature
-        Diag.log("userscript: document-start handlers=${scriptHandlers.size}")
+        Diag.log("userscript: document-start handlers=${scriptHandlers.size}/${enabled.size}")
     }
 
-    /** 页面加载完成后注入 document-end / document-idle 脚本 */
-    private fun injectDocumentEndScripts(view: WebView) {
+    /**
+     * 兜底：页面加载完后问一下页面里已经「见过」哪些脚本（运行时一进来就登记），
+     * 没见过的（特性不支持、或 handler 安装晚于本次导航）再用 evaluateJavascript 补注入主框架。
+     */
+    private fun injectMissingUserScripts(view: WebView) {
         if (!pageEnhancements) return
-        val pageUrl = url
-        userScripts.filter { script ->
-            if (!script.enabled) return@filter false
-            if (script.runAt == "document-start") return@filter false
-            val meta = UserscriptEngine.parse(script.code)
-            if (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) {
-                UserscriptEngine.matchesUrl(meta, pageUrl)
-            } else {
-                // 没有元数据匹配规则时：脚本自带 match 为空则全站执行
-                if (script.match.isBlank()) true else script.matches(pageUrl)
+        val enabled = userScripts.filter { it.enabled }
+        if (enabled.isEmpty()) return
+        val query = "(function(){try{return JSON.stringify(Object.keys(window.__mafariSeen||{}))}catch(e){return '[]'}})()"
+        view.evaluateJavascript(query) { raw ->
+            val seen = runCatching {
+                val text = org.json.JSONTokener(raw ?: "null").nextValue() as? String ?: "[]"
+                val array = org.json.JSONArray(text)
+                (0 until array.length()).map { array.getString(it) }.toSet()
+            }.getOrDefault(emptySet())
+            val pending = enabled.filter { it.id !in seen }
+            pending.forEach { script ->
+                runCatching { view.evaluateJavascript(UserscriptEngine.buildSource(appContext, script), null) }
             }
-        }.forEach { script ->
-            runCatching {
-                view.evaluateJavascript(UserscriptEngine.buildSource(script), null)
-            }
+            Diag.log("userscript: page=$url injected-late=${pending.size}/${enabled.size}")
         }
-        val matched = userScripts.filter { script ->
-            script.enabled && script.runAt != "document-start" &&
-                UserscriptEngine.matchesUrl(UserscriptEngine.parse(script.code), pageUrl)
+    }
+
+    /** 当前页面里脚本通过 GM_registerMenuCommand 注册的命令（仅主框架） */
+    fun queryMenuCommands(onResult: (List<ScriptMenuCommand>) -> Unit) {
+        val js = "(function(){try{return window.__mafariMenuList?window.__mafariMenuList():'[]'}catch(e){return '[]'}})()"
+        webView.evaluateJavascript(js) { raw ->
+            val list = runCatching {
+                val text = org.json.JSONTokener(raw ?: "null").nextValue() as? String ?: "[]"
+                val array = org.json.JSONArray(text)
+                (0 until array.length()).map { i ->
+                    val o = array.getJSONObject(i)
+                    ScriptMenuCommand(o.optString("id"), o.optString("title"), o.optString("script"))
+                }
+            }.getOrDefault(emptyList())
+            onResult(list)
         }
-        Diag.log("userscript: page=$pageUrl matched=${matched.size}/${userScripts.size}")
+    }
+
+    fun runMenuCommand(id: String) {
+        webView.evaluateJavascript(
+            "(function(){try{window.__mafariMenuRun&&window.__mafariMenuRun(" + org.json.JSONObject.quote(id) + ")}catch(e){}})()",
+            null,
+        )
     }
 
     private fun syncNav() {
@@ -630,7 +718,7 @@ class BrowserState(private val context: Context) {
         newTab()
     }
 
-    fun newTab(target: String = "") {
+    fun newTab(target: String = "", incognito: Boolean = false) {
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -642,9 +730,30 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
+        tab.applyIncognito(incognito)
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
+    }
+
+    /** 当前标签是否无痕 */
+    val activeIncognito: Boolean
+        get() = activeTab.incognito
+
+    /** 切换当前标签无痕状态（无痕时新开标签，已有无痕则关闭回普通） */
+    fun toggleIncognito() {
+        if (activeTab.incognito) {
+            // 回到普通：关闭当前无痕标签，必要时新建普通标签
+            closeTab(activeIndex)
+            if (tabs.isEmpty() || !tabs.any { !it.incognito }) {
+                newTab(incognito = false)
+            } else {
+                val normal = tabs.indexOfFirst { !it.incognito }
+                if (normal >= 0) select(normal)
+            }
+        } else {
+            newTab(incognito = true)
+        }
     }
 
     fun applyUserAgent(ua: String) {

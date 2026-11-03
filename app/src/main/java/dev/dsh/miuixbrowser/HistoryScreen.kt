@@ -66,11 +66,10 @@ import top.yukonga.miuix.kmp.glass.GlassPopupItem
 import top.yukonga.miuix.kmp.glass.GlassTabRow
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.File
+import top.yukonga.miuix.kmp.icon.glass.File
+import top.yukonga.miuix.kmp.icon.glass.Download
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -142,7 +141,7 @@ fun LibraryScreen(
                 actions = {
                     if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
                         IconTextAction(
-                            icon = MiuixIcons.Delete,
+                            icon = MiuixIcons.Glass.Delete,
                             label = "清空",
                             modifier = Modifier.padding(end = 8.dp),
                         ) { store.clear() }
@@ -219,7 +218,7 @@ fun LibraryScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Add,
+                            imageVector = MiuixIcons.Glass.Add,
                             contentDescription = "书签操作",
                             tint = Color.White,
                             modifier = Modifier.size(26.dp),
@@ -239,7 +238,7 @@ fun LibraryScreen(
                             showMenu = false
                             creatingFav = true
                         },
-                        icon = MiuixIcons.Add,
+                        icon = MiuixIcons.Glass.Add,
                     )
                     GlassPopupItem(
                         text = "导入",
@@ -248,7 +247,7 @@ fun LibraryScreen(
                             showMenu = false
                             importLauncher.launch(arrayOf("text/html", "text/plain", "*/*"))
                         },
-                        icon = MiuixIcons.Download,
+                        icon = MiuixIcons.Glass.Download,
                     )
                     GlassPopupItem(
                         text = "导出",
@@ -257,7 +256,7 @@ fun LibraryScreen(
                             showMenu = false
                             exportBookmarks(context, favorites.exportNetscapeHtml())
                         },
-                        icon = MiuixIcons.File,
+                        icon = MiuixIcons.Glass.File,
                     )
                 }
             }
@@ -356,7 +355,7 @@ private fun BookmarksPage(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                imageVector = MiuixIcons.File,
+                                imageVector = MiuixIcons.Glass.File,
                                 contentDescription = null,
                                 tint = MiuixTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp),
