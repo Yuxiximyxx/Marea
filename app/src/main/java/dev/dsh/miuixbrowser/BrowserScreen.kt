@@ -42,6 +42,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -78,6 +81,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.SolidColor
@@ -122,6 +126,10 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
@@ -812,6 +820,32 @@ fun BrowserScreen(
             ) {
             when (lastActiveSheet) {
             Sheet.Tabs -> {
+                val screenH = LocalConfiguration.current.screenHeightDp.dp
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = screenH * 0.65f)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    // 弹窗顶部渐进模糊
+                    if (settings.blurEnabled && homeBlurAvailable) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(72.dp)
+                                .progressiveTextureBlur(
+                                    backdrop = browserBackdrop,
+                                    shape = RectangleShape,
+                                    gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                                    blurRadius = 60f,
+                                    colors = BlurDefaults.blurColors(
+                                        blendColors = listOf(
+                                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.35f)),
+                                        ),
+                                    ),
+                                ),
+                        )
+                    }
                 if (settings.tabsStyle == 1) {
                     // 卡片显示
                     Column(
@@ -830,7 +864,7 @@ fun BrowserScreen(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(84.dp)
+                                            .height(120.dp)
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
                                             .clickable {
@@ -850,20 +884,43 @@ fun BrowserScreen(
                                             )
                                         }
                                         Column(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .padding(10.dp),
+                                            modifier = Modifier.fillMaxSize(),
                                         ) {
-                                            Text(
-                                                text = item.title.ifBlank { "新标签页" },
-                                                fontSize = 13.sp,
-                                                color = MiuixTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                            // 标题行：miuix-glass 模糊底
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .then(
+                                                        if (settings.blurEnabled && homeBlurAvailable) {
+                                                            Modifier.glassPanel(
+                                                                backdrop = browserBackdrop,
+                                                                shape = GlassShape(0.dp),
+                                                                style = GlassDefaults.style(isAppDarkTheme()),
+                                                                material = GlassMaterials.puredThinGlass(isAppDarkTheme()),
+                                                                stroke = GlassStrokes.forTheme(isAppDarkTheme()),
+                                                                shading = false,
+                                                            )
+                                                        } else {
+                                                            Modifier.background(
+                                                                MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                                            )
+                                                        },
+                                                    )
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            ) {
+                                                Text(
+                                                    text = item.title.ifBlank { "新标签页" },
+                                                    fontSize = 13.sp,
+                                                    color = MiuixTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
                                             Spacer(Modifier.weight(1f))
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 Text(
@@ -915,13 +972,16 @@ fun BrowserScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 TextButton(
-                    text = "新建标签页",
+                    text = if (state.tabs.size >= 99) "已达 99 个标签上限" else "新建标签页",
+                    enabled = state.tabs.size < 99,
                     onClick = {
                         state.newTab()
                         sheet = Sheet.None
                     },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 )
+                Spacer(Modifier.height(8.dp))
+                }
             }
 
             Sheet.Menu -> {

@@ -69,6 +69,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
 
 @Composable
 fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
@@ -105,8 +106,15 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     }
 
     Box(modifier = Modifier.fillMaxSize().background(surface)) {
-        // ---- 全屏背景采样：主题色渐变，供 foreground blur / 玻璃顶栏取样 ----
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
+        var topBarHeight by remember { mutableStateOf(statusTop + 56.dp) }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+
+        // ---- 全屏采样：渐变背景 + 可滚动内容一并入 layerBackdrop，顶栏覆盖其上 ----
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .layerBackdrop(pageBackdrop),
+        ) {
             Box(modifier = Modifier.fillMaxSize().background(surface))
             Box(
                 modifier = Modifier
@@ -119,20 +127,19 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         ),
                     ),
             )
-        }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .verticalScroll(scrollState)
-                .padding(top = statusTop + 56.dp)
-                .padding(bottom = 24.dp),
-        ) {
-            // ---- 头部：大图标 + 检查更新 + 全屏采样上的 foreground blur 标题 ----
             Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 22.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .verticalScroll(scrollState)
+                    .padding(top = topBarHeight)
+                    .padding(bottom = 24.dp),
+            ) {
+            // ---- 头部：大图标下移避开顶栏标题 + 版本号下检查更新 ----
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 56.dp, bottom = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
@@ -146,43 +153,6 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         contentDescription = null,
                         colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
                         modifier = Modifier.size(58.dp),
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // miuix-glass 风格检查更新（大图标下方）
-                GlassDialogButton(
-                    onClick = {
-                        if (checkingUpdate) return@GlassDialogButton
-                        checkingUpdate = true
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
-                            checkingUpdate = false
-                            if (result == null) {
-                                Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
-                            } else {
-                                val current = BuildConfig.VERSION_NAME.removePrefix("v")
-                                val latest = result.first.removePrefix("v")
-                                if (latest == current) {
-                                    Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(result.second)),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    role = GlassDialogButtonRole.Primary,
-                    modifier = Modifier.width(200.dp),
-                ) {
-                    Text(
-                        text = if (checkingUpdate) "检查中…" else "检查更新",
-                        style = MiuixTheme.textStyles.button,
                     )
                 }
 
@@ -217,6 +187,43 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
+
+                Spacer(Modifier.height(16.dp))
+
+                // glass 材质检查更新（版本号之下）
+                GlassDialogButton(
+                    onClick = {
+                        if (checkingUpdate) return@GlassDialogButton
+                        checkingUpdate = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
+                            checkingUpdate = false
+                            if (result == null) {
+                                Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val current = BuildConfig.VERSION_NAME.removePrefix("v")
+                                val latest = result.first.removePrefix("v")
+                                if (latest == current) {
+                                    Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(result.second)),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    role = GlassDialogButtonRole.Primary,
+                    modifier = Modifier.width(200.dp),
+                ) {
+                    Text(
+                        text = if (checkingUpdate) "检查中…" else "检查更新",
+                        style = MiuixTheme.textStyles.button,
+                    )
+                }
             }
 
             SmallTitle(text = "版本")
@@ -282,6 +289,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
+            }
         }
 
         GlassPageTopBar(
@@ -291,7 +299,11 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             progressiveBlur = blurEnabled,
             scrollBehavior = scrollBehavior,
             isContentScrolled = isScrolled,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .onGloballyPositioned { coords ->
+                    topBarHeight = with(density) { coords.size.height.toDp() }
+                },
         )
     }
 }

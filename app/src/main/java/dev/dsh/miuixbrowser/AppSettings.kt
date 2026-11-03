@@ -159,6 +159,24 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_LOC, locationPermission).apply()
     }
 
+    /** 网页权限：剪贴板读写 0=询问 1=允许 2=拒绝 */
+    var clipboardPermission by mutableStateOf(prefs.getInt(KEY_CLIP, 0))
+        private set
+
+    fun updateClipboardPermission(mode: Int) {
+        clipboardPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_CLIP, clipboardPermission).apply()
+    }
+
+    /** 网页权限：网站媒体发声/自动播放 0=询问 1=允许 2=拒绝 */
+    var mediaAutoplay by mutableStateOf(prefs.getInt(KEY_MEDIA, 0))
+        private set
+
+    fun updateMediaAutoplay(mode: Int) {
+        mediaAutoplay = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_MEDIA, mediaAutoplay).apply()
+    }
+
     /** 启用「请勿追踪」类隐私增强：合并 DNT + 禁第三方跟踪脚本提示 */
     var blockTrackingScripts by mutableStateOf(prefs.getBoolean(KEY_TRACK, true))
         private set
@@ -185,6 +203,8 @@ class AppSettings(context: Context) {
         const val KEY_CAM = "perm_camera"
         const val KEY_MIC = "perm_mic"
         const val KEY_LOC = "perm_location"
+        const val KEY_CLIP = "perm_clipboard"
+        const val KEY_MEDIA = "perm_media_autoplay"
         const val KEY_TRACK = "block_tracking"
     }
 }

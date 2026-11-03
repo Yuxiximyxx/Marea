@@ -631,6 +631,14 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTab(target: String = "") {
+        if (tabs.size >= MAX_TABS) {
+            android.widget.Toast.makeText(
+                context,
+                "最多同时打开 $MAX_TABS 个标签页",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
@@ -663,6 +671,14 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTabInBackground(target: String) {
+        if (tabs.size >= MAX_TABS) {
+            android.widget.Toast.makeText(
+                context,
+                "最多同时打开 $MAX_TABS 个标签页",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         val tab = BrowserTab(context)
         tabs.add(tab)
         tab.load(target)
@@ -672,5 +688,9 @@ class BrowserState(private val context: Context) {
         tabs.forEach { it.close() }
         tabs.clear()
         newTab()
+    }
+
+    companion object {
+        const val MAX_TABS = 99
     }
 }

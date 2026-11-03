@@ -135,44 +135,17 @@ fun LibraryScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            GlassPageTopBar(
-                title = if (pagerState.currentPage == TAB_BOOKMARKS) "书签" else "历史",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-                actions = {
-                    if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
-                        IconTextAction(
-                            icon = MiuixIcons.Delete,
-                            label = "清空",
-                            modifier = Modifier.padding(end = 8.dp),
-                        ) { store.clear() }
-                    }
-                },
-                bottomContent = {
-                    GlassTabRow(
-                        tabs = listOf("书签", "历史"),
-                        selectedIndex = pagerState.currentPage,
-                        onSelect = { index ->
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        backdrop = backdrop,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                },
-            )
-        },
-    ) { padding ->
+    ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
+            var topBarHeight by remember { mutableStateOf(96.dp) }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
                     .background(MiuixTheme.colorScheme.surface)
-                    .padding(top = padding.calculateTopPadding()),
+                    .padding(top = topBarHeight),
             ) {
                 HorizontalPager(
                     state = pagerState,
@@ -198,7 +171,41 @@ fun LibraryScreen(
                 }
             }
 
-            // 书签栏右下角 FAB（放在 layerBackdrop 之外，避免 GlassPopup 自采样）
+            GlassPageTopBar(
+                title = if (pagerState.currentPage == TAB_BOOKMARKS) "书签" else "历史",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .onGloballyPositioned { coords ->
+                        topBarHeight = with(density) { coords.size.height.toDp() }
+                    },
+                actions = {
+                    if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
+                        IconTextAction(
+                            icon = MiuixIcons.Delete,
+                            label = "清空",
+                            modifier = Modifier.padding(end = 8.dp),
+                        ) { store.clear() }
+                    }
+                },
+                bottomContent = {
+                    GlassTabRow(
+                        tabs = listOf("书签", "历史"),
+                        selectedIndex = pagerState.currentPage,
+                        onSelect = { index ->
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                        backdrop = backdrop,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                },
+            )
+
+            // 书签栏右下角 FAB：GlassPopup 放在全屏 Box 根坐标系，锚点用 boundsInRoot
             if (pagerState.currentPage == TAB_BOOKMARKS) {
                 Box(
                     modifier = Modifier
@@ -222,39 +229,40 @@ fun LibraryScreen(
                             modifier = Modifier.size(26.dp),
                         )
                     }
-                    GlassPopup(
-                        show = showMenu,
-                        onDismissRequest = { showMenu = false },
-                        anchorBounds = menuAnchor,
-                        backdrop = backdrop,
-                    ) {
-                        GlassPopupItem(
-                            text = "新建书签",
-                            onClick = {
-                                showMenu = false
-                                creatingFav = true
-                            },
-                            icon = MiuixIcons.Add,
-                        )
-                        GlassPopupItem(
-                            text = "导入",
-                            summary = "Chrome / Firefox 书签 HTML",
-                            onClick = {
-                                showMenu = false
-                                importLauncher.launch(arrayOf("text/html", "text/plain", "*/*"))
-                            },
-                            icon = MiuixIcons.Download,
-                        )
-                        GlassPopupItem(
-                            text = "导出",
-                            summary = "保存到 Download/mafari",
-                            onClick = {
-                                showMenu = false
-                                exportBookmarks(context, favorites.exportNetscapeHtml())
-                            },
-                            icon = MiuixIcons.File,
-                        )
-                    }
+                }
+                // popup 与 FAB 同级、同在全屏 Box 内，坐标一致
+                GlassPopup(
+                    show = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    anchorBounds = menuAnchor,
+                    backdrop = backdrop,
+                ) {
+                    GlassPopupItem(
+                        text = "新建书签",
+                        onClick = {
+                            showMenu = false
+                            creatingFav = true
+                        },
+                        icon = MiuixIcons.Add,
+                    )
+                    GlassPopupItem(
+                        text = "导入",
+                        summary = "Chrome / Firefox 书签 HTML",
+                        onClick = {
+                            showMenu = false
+                            importLauncher.launch(arrayOf("text/html", "text/plain", "*/*"))
+                        },
+                        icon = MiuixIcons.Download,
+                    )
+                    GlassPopupItem(
+                        text = "导出",
+                        summary = "保存到 Download/mafari",
+                        onClick = {
+                            showMenu = false
+                            exportBookmarks(context, favorites.exportNetscapeHtml())
+                        },
+                        icon = MiuixIcons.File,
+                    )
                 }
             }
         }

@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -173,26 +174,19 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            GlassPageTopBar(
-                title = "下载",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-                .background(MiuixTheme.colorScheme.surface)
-                .padding(top = padding.calculateTopPadding())
-                .navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-        ) {
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            var topBarHeight by remember { mutableStateOf(56.dp) }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .background(MiuixTheme.colorScheme.surface)
+                    .padding(top = topBarHeight)
+                    .navigationBarsPadding()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+            ) {
             if (tasks.isEmpty()) {
                 Text(
                     text = "还没有下载任务。网页里的下载会先弹确认框，再保存到 /sdcard/Download/mafari。",
@@ -289,6 +283,21 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     }
                 }
             }
+            }
+
+            GlassPageTopBar(
+                title = "下载",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .onGloballyPositioned { coords ->
+                        topBarHeight = with(density) { coords.size.height.toDp() }
+                    },
+            )
         }
 
         GlassDialog(

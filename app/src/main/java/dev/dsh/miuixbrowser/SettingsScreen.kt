@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -108,31 +110,30 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val scrollBehavior = MiuixScrollBehavior()
     val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
+    var topBarHeight by remember { mutableStateOf(56.dp) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            GlassPageTopBar(
-                title = "设置",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-                .background(MiuixTheme.colorScheme.surface)
-                .padding(top = padding.calculateTopPadding())
-                .navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .verticalScroll(scrollState)
-                .padding(bottom = 24.dp),
-        ) {
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 全屏 backdrop：顶栏覆盖其上，内容可滚入栏下，渐进模糊才有采样
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .background(MiuixTheme.colorScheme.surface),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = topBarHeight)
+                        .navigationBarsPadding()
+                        .nestedScroll(scrollBehavior.nestedScrollConnection)
+                        .verticalScroll(scrollState)
+                        .padding(bottom = 24.dp),
+                ) {
             SmallTitle(text = "外观")
             Card(
                 modifier = Modifier
@@ -293,6 +294,22 @@ fun SettingsScreen(
                     onClick = onOpenAbout,
                 )
             }
+            }
+        }
+
+            GlassPageTopBar(
+                title = "设置",
+                backdrop = backdrop,
+                onBack = onBack,
+                progressiveBlur = blurEnabled,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isScrolled,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .onGloballyPositioned { coords ->
+                        topBarHeight = with(density) { coords.size.height.toDp() }
+                    },
+            )
         }
 
         SearchSheet(
@@ -359,42 +376,15 @@ fun SettingsScreen(
             onDismissRequest = { showCookieSheet = false },
         ) {
             Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
-                listOf(
-                    "允许第三方 Cookie" to 0,
-                    "拒绝第三方 Cookie" to 1,
-                ).forEach { (label, mode) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                settings.updateThirdPartyCookie(mode)
-                                showCookieSheet = false
-                            }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 16.sp,
-                            color = if (settings.thirdPartyCookie == mode) {
-                                MiuixTheme.colorScheme.primary
-                            } else {
-                                MiuixTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (settings.thirdPartyCookie == mode) {
-                            Icon(
-                                imageVector = MiuixIcons.Back,
-                                contentDescription = null,
-                                tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .graphicsLayer { rotationZ = 180f },
-                            )
-                        }
-                    }
-                }
+                GlassDropdownPreference(
+                    title = "第三方 Cookie",
+                    items = listOf("允许", "拒绝"),
+                    selectedIndex = settings.thirdPartyCookie.coerceIn(0, 1),
+                    onSelectedIndexChange = { settings.updateThirdPartyCookie(it) },
+                    backdrop = backdrop,
+                    visuals = popupVisuals,
+                    insideMargin = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "拒绝后部分站点登录态可能失效，可在系统设置中为单站点例外。",
@@ -412,44 +402,23 @@ fun SettingsScreen(
             onDismissRequest = { showPermSheet = false },
         ) {
             Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
+                val permOptions = listOf("询问", "允许", "拒绝")
                 listOf(
                     Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
                     Triple("麦克风", settings.micPermission, settings::updateMicPermission),
                     Triple("定位", settings.locationPermission, settings::updateLocationPermission),
+                    Triple("剪贴板读写", settings.clipboardPermission, settings::updateClipboardPermission),
+                    Triple("网站媒体发声", settings.mediaAutoplay, settings::updateMediaAutoplay),
                 ).forEach { (label, current, update) ->
-                    SmallTitle(text = label)
-                    listOf("询问" to 0, "允许" to 1, "拒绝" to 2).forEach { (opt, mode) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    update(mode)
-                                }
-                                .padding(horizontal = 20.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = opt,
-                                fontSize = 15.sp,
-                                color = if (current == mode) {
-                                    MiuixTheme.colorScheme.primary
-                                } else {
-                                    MiuixTheme.colorScheme.onSurface
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (current == mode) {
-                                Icon(
-                                    imageVector = MiuixIcons.Back,
-                                    contentDescription = null,
-                                    tint = MiuixTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .size(14.dp)
-                                        .graphicsLayer { rotationZ = 180f },
-                                )
-                            }
-                        }
-                    }
+                    GlassDropdownPreference(
+                        title = label,
+                        items = permOptions,
+                        selectedIndex = current.coerceIn(0, 2),
+                        onSelectedIndexChange = { update(it) },
+                        backdrop = backdrop,
+                        visuals = popupVisuals,
+                        insideMargin = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    )
                 }
             }
         }
