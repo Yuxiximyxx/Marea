@@ -237,7 +237,6 @@ fun BrowserScreen(
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
     var showTabAddMenu by remember { mutableStateOf(false) }
-    var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -307,23 +306,37 @@ fun BrowserScreen(
         }
     }
 
-    // 回到主页时隐藏 WebView：alpha=0 仍会吃触摸，必须 INVISIBLE + 禁用，
-    // 否则主页看起来是首页，点击却落到下层网页。
-    LaunchedEffect(tab.id, tab.url) {
-        val onHome = tab.url.isEmpty()
+    // 回到主页时隐藏 WebView：先淡出再 INVISIBLE，避免闪烁/穿透触摸
+    val onHome = tab.url.isEmpty()
+    val webAlpha by animateFloatAsState(
+        targetValue = if (onHome) 0f else 1f,
+        animationSpec = tween(durationMillis = 180),
+        label = "webAlpha",
+    )
+    val homeAlpha by animateFloatAsState(
+        targetValue = if (onHome) 1f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "homeAlpha",
+    )
+    LaunchedEffect(tab.id, onHome, webAlpha) {
         tab.webView.apply {
-            alpha = if (onHome) 0f else 1f
-            visibility = if (onHome) {
+            alpha = webAlpha
+            val hidden = onHome && webAlpha < 0.05f
+            visibility = if (hidden || onHome && webAlpha <= 0f) {
                 android.view.View.INVISIBLE
             } else {
                 android.view.View.VISIBLE
             }
-            isEnabled = !onHome
-            isClickable = !onHome
-            isFocusable = !onHome
-            isFocusableInTouchMode = !onHome
+            // 淡出完成前仍禁用触摸，避免点到下层网页
+            val blockTouch = onHome && webAlpha < 0.5f
+            isEnabled = !blockTouch
+            isClickable = !blockTouch
+            isFocusable = !blockTouch
+            isFocusableInTouchMode = !blockTouch
         }
     }
+    // 主页完全隐藏后再从组合树移除，避免与 WebView 抢触摸
+    val showHomeUi = homeAlpha > 0.01f
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
     LaunchedEffect(
@@ -430,7 +443,7 @@ fun BrowserScreen(
     val hasNavDispatcher = androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner.current != null
     val secondaryOpen = showSettings || showAbout || showExtensions || showDownloads || showHistory
 
-    /** 关闭二级页：若来自设置则回设置，否则回浏览主页 */
+    /** 关闭二级页：子页关掉；若来自设置则确保设置仍在下层可见 */
     fun closeSecondaryPage(close: () -> Unit) {
         close()
         if (settingsReturn) {
@@ -478,10 +491,15 @@ fun BrowserScreen(
         ) {
 
         // ---- 首页壁纸：铺满全屏，盖住状态栏 ----
-        if (tab.url.isEmpty() && wallpaperBitmap != null) {
+        if (showHomeUi && wallpaperBitmap != null) {
             val wallpaperImage = wallpaperBitmap
             if (wallpaperImage != null) {
-                Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = homeAlpha }
+                        .layerBackdrop(wallpaperBackdrop),
+                ) {
                     Image(
                         bitmap = wallpaperImage,
                         contentDescription = null,
@@ -534,6 +552,7 @@ fun BrowserScreen(
                         },
                         modifier = Modifier
                             .fillMaxSize()
+                            .graphicsLayer { alpha = webAlpha }
                             .onSizeChanged { size ->
                                 // Compose 的尺寸才是当前沉浸式内容区域的真实可用尺寸。
                                 // 尺寸有效后让 WebView 重新布局，再通知页面重新计算响应式布局。
@@ -553,7 +572,7 @@ fun BrowserScreen(
                                                     } catch (_) {}
                                                 })();
                                                 """.trimIndent(),
-                                                null
+                                                null,
                                             )
                                         }
                                     }
@@ -561,22 +580,33 @@ fun BrowserScreen(
                             },
                     )
                 }
-                if (tab.url.isEmpty()) {
-                    if (wallpaperBitmap == null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MiuixTheme.colorScheme.surface),
-                        )
-                    }
-                    StartPage(
-                        wallpaper = wallpaperBitmap,
-                        wallpaperBackdrop = wallpaperBackdrop,
-                        blurEnabled = settings.blurEnabled,
-                        favorites = favorites.items,
-                        editing = favEditing,
-                        onOpen = { tab.load(it) },
-                        onToggleEdit = { favEditing = !favEditing },
+                if (showHomeUi) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = homeAlpha }
+                            // 淡出过程中吞掉点击，避免穿透到 WebView
+                            .pointerInput(onHome) {
+                                if (onHome) {
+                                    detectTapGestures { }
+                                }
+                            },
+                    ) {
+                        if (wallpaperBitmap == null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MiuixTheme.colorScheme.surface),
+                            )
+                        }
+                        StartPage(
+                            wallpaper = wallpaperBitmap,
+                            wallpaperBackdrop = wallpaperBackdrop,
+                            blurEnabled = settings.blurEnabled,
+                            favorites = favorites.items,
+                            editing = favEditing,
+                            onOpen = { tab.load(it) },
+                            onToggleEdit = { favEditing = !favEditing },
                         onRemove = { favorites.remove(it) },
                         onEdit = { index ->
                             editingFavIndex = index
@@ -842,7 +872,6 @@ fun BrowserScreen(
                 {
                     TabAddButton(
                         canAdd = state.tabs.size < 99,
-                        onAnchor = { tabAddAnchor = it },
                         onShowMenu = { showTabAddMenu = true },
                         onNormal = {
                             state.newTab(incognito = false)
@@ -874,10 +903,8 @@ fun BrowserScreen(
                 null
             },
             surface = if (lastActiveSheet == Sheet.Tabs) {
-                tabSheetSurface(
-                    backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
-                    progressive = settings.blurEnabled && homeBlurAvailable,
-                )
+                // 仅 glass，不做整页/标题渐进模糊
+                null
             } else {
                 null
             },
@@ -1093,14 +1120,17 @@ fun BrowserScreen(
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> {
                                 settingsReturn = false
+                                showSettings = false
                                 showDownloads = true
                             }
                             MenuAction.Extensions -> {
                                 settingsReturn = false
+                                showSettings = false
                                 showExtensions = true
                             }
                             MenuAction.History -> {
                                 settingsReturn = false
+                                showSettings = false
                                 libraryTab = 1
                                 showHistory = true
                             }
@@ -1225,23 +1255,24 @@ fun BrowserScreen(
                     onPickUa = { showUaPicker = true },
                     onOpenDownloads = {
                         settingsReturn = true
-                        showSettings = false
+                        // 保持设置页在下层，预测性返回才能露出上一级
+                        showSettings = true
                         showDownloads = true
                     },
                     onOpenScripts = {
                         settingsReturn = true
-                        showSettings = false
+                        showSettings = true
                         showExtensions = true
                     },
                     onOpenBookmarks = {
                         settingsReturn = true
-                        showSettings = false
+                        showSettings = true
                         libraryTab = 0
                         showHistory = true
                     },
                     onOpenAbout = {
                         settingsReturn = true
-                        showSettings = false
+                        showSettings = true
                         showAbout = true
                     },
                     blurEnabled = settings.blurEnabled,
@@ -1452,7 +1483,6 @@ fun BrowserScreen(
 
         TabAddMenu(
             show = showTabAddMenu,
-            anchorBounds = tabAddAnchor,
             canAdd = state.tabs.size < 99,
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismiss = { showTabAddMenu = false },
@@ -1492,6 +1522,7 @@ fun BrowserScreen(
                 showFavEditor = false
             },
         )
+    }
     }
     }
 }
@@ -1968,11 +1999,15 @@ private fun SheetRow(
     trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2471,7 +2506,10 @@ private fun MenuGrid(
                                         },
                                     )
                                 }
-                                .clickable { onAction(action) },
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onAction(action)
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2506,11 +2544,10 @@ private fun MenuGrid(
     }
 }
 
-/** 标签页 sheet 左上角圆形新建按钮（长按菜单挂在全屏层，避免撑大 sheet） */
+/** 标签页 sheet 左上角圆形新建按钮（长按弹出底部菜单） */
 @Composable
 private fun TabAddButton(
     canAdd: Boolean,
-    onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit,
     onShowMenu: () -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
@@ -2521,7 +2558,6 @@ private fun TabAddButton(
             .size(40.dp)
             .clip(CircleShape)
             .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
-            .onGloballyPositioned { onAnchor(it.boundsInRoot()) }
             .combinedClickable(
                 enabled = canAdd,
                 onClick = {
@@ -2548,76 +2584,62 @@ private fun TabAddButton(
     }
 }
 
-/** 全屏层：标签新建长按菜单（glass popup，不参与 sheet 测量） */
+/** 底部：标签新建菜单（普通 / 无痕），避免锚定在 sheet 头部造成跳动 */
 @Composable
 private fun TabAddMenu(
     show: Boolean,
-    anchorBounds: androidx.compose.ui.geometry.Rect,
     canAdd: Boolean,
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
 ) {
-    if (!show) return
-    // GlassPopup 是 BoxScope 扩展，需包在 Box 内
-    Box {
-        GlassPopup(
-            show = show,
-            onDismissRequest = onDismiss,
-            anchorBounds = anchorBounds,
-            backdrop = backdrop,
-            visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
+    GlassBottomSheet(
+        show = show,
+        title = "新建标签页",
+        backdrop = backdrop,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
         ) {
-            GlassPopupItem(
-                text = "新建普通标签页",
-                enabled = canAdd,
-                onClick = {
+            SheetRow(
+                title = "普通标签页",
+                subtitle = "正常浏览，保存历史",
+                trailing = {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                },
+            ) {
+                if (canAdd) {
                     onDismiss()
                     onNormal()
+                }
+            }
+            SheetRow(
+                title = "无痕标签页",
+                subtitle = "不保存浏览记录",
+                trailing = {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Hide,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
                 },
-                icon = MiuixIcons.Glass.Add,
-            )
-            GlassPopupItem(
-                text = "新建无痕标签页",
-                summary = "不保存浏览记录",
-                enabled = canAdd,
-                onClick = {
+            ) {
+                if (canAdd) {
                     onDismiss()
                     onIncognito()
-                },
-                icon = MiuixIcons.Glass.Hide,
-            )
-        }
-    }
-}
-
-/** 标签 sheet 表面：整页玻璃 + 仅顶部标题带 progressiveTopBar（不铺满整页） */
-@Composable
-private fun tabSheetSurface(
-    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
-    progressive: Boolean,
-): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    val glass = top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(backdrop)
-    return {
-        val base = glass()
-        if (progressive && backdrop != null && top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()) {
-            val bandShape = remember(cornerRadius) {
-                TopBandShape(bandHeight = 112.dp, topCornerRadius = cornerRadius)
+                }
             }
-            // 只在顶部 band 画渐进模糊；下方仍由 glass 承担
-            Modifier
-                .then(base)
-                .progressiveTopBar(
-                    backdrop = backdrop,
-                    shape = bandShape,
-                    radius = 44f,
-                    endFraction = 1f,
-                    curve = 0.55f,
-                    enabled = true,
-                )
-        } else {
-            base
         }
     }
 }

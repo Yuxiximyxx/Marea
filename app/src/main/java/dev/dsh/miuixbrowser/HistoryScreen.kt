@@ -334,6 +334,7 @@ private fun BookmarksPage(
             }
             items(list.size, key = { i -> "$group-${list[i].url}-$i" }) { i ->
                 val fav = list[i]
+                val haptic = LocalHapticFeedback.current
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -344,7 +345,10 @@ private fun BookmarksPage(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpen(fav.url) },
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onOpen(fav.url)
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
@@ -421,6 +425,7 @@ private fun HistoryPage(
         item { SmallTitle(text = "最近访问") }
         items(store.items.size) { index ->
             val entry = store.items[index]
+            val haptic = LocalHapticFeedback.current
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -431,7 +436,10 @@ private fun HistoryPage(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpen(entry.url) },
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onOpen(entry.url)
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {

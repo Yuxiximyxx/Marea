@@ -29,7 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -292,10 +294,14 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     ScriptIcon(script.icon)
                                     Spacer(Modifier.width(10.dp))
+                                    val rowHaptic = LocalHapticFeedback.current
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .clickable { editing = script },
+                                            .clickable {
+                                                rowHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                editing = script
+                                            },
                                     ) {
                                         Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
                                         Spacer(Modifier.height(2.dp))
@@ -342,6 +348,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             }
 
             // 右下圆形添加按钮
+            val fabHaptic = LocalHapticFeedback.current
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -350,7 +357,10 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(MiuixTheme.colorScheme.primary)
-                    .clickable { creating = true },
+                    .clickable {
+                        fabHaptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        creating = true
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

@@ -38,7 +38,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,10 +217,12 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     FilePreview(task)
                                     Spacer(Modifier.width(10.dp))
+                                    val openHaptic = LocalHapticFeedback.current
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable(enabled = task.state == DownloadState.DONE && task.uri != null) {
+                                                openHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 runCatching {
                                                     context.startActivity(
                                                         Intent(Intent.ACTION_VIEW).apply {

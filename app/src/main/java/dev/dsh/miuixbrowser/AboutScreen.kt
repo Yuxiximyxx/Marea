@@ -38,7 +38,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -233,6 +235,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 }
 
                 SmallTitle(text = "项目")
+                val projectHaptic = LocalHapticFeedback.current
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -243,6 +246,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                projectHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 runCatching {
                                     context.startActivity(
                                         Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)),
