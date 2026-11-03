@@ -63,16 +63,15 @@ import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.AppRecording
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.File
-import top.yukonga.miuix.kmp.icon.extended.Folder
-import top.yukonga.miuix.kmp.icon.extended.Music
-import top.yukonga.miuix.kmp.icon.extended.Pause
-import top.yukonga.miuix.kmp.icon.extended.Photos
-import top.yukonga.miuix.kmp.icon.extended.Play
-import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.icon.glass.Play
+import top.yukonga.miuix.kmp.icon.glass.Photos
+import top.yukonga.miuix.kmp.icon.glass.Pause
+import top.yukonga.miuix.kmp.icon.glass.Music
+import top.yukonga.miuix.kmp.icon.glass.Folder
+import top.yukonga.miuix.kmp.icon.glass.File
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.icon.glass.AppRecording
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -89,12 +88,12 @@ private fun fileKindOf(name: String): FileKind = when (name.substringAfterLast('
 }
 
 private fun iconOf(kind: FileKind): ImageVector = when (kind) {
-    FileKind.IMAGE -> MiuixIcons.Photos
-    FileKind.VIDEO -> MiuixIcons.Play
-    FileKind.AUDIO -> MiuixIcons.Music
-    FileKind.ARCHIVE -> MiuixIcons.Folder
-    FileKind.APK -> MiuixIcons.AppRecording
-    FileKind.OTHER -> MiuixIcons.File
+    FileKind.IMAGE -> MiuixIcons.Glass.Photos
+    FileKind.VIDEO -> MiuixIcons.Glass.Play
+    FileKind.AUDIO -> MiuixIcons.Glass.Music
+    FileKind.ARCHIVE -> MiuixIcons.Glass.Folder
+    FileKind.APK -> MiuixIcons.Glass.AppRecording
+    FileKind.OTHER -> MiuixIcons.Glass.File
 }
 
 private fun loadThumbnail(context: Context, uri: Uri, video: Boolean): ImageBitmap? = runCatching {
@@ -258,18 +257,18 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                                     }
                                     when (task.state) {
                                         DownloadState.RUNNING -> IconButton(onClick = { Downloader.pause(task.id) }) {
-                                            Icon(imageVector = MiuixIcons.Pause, contentDescription = "暂停")
+                                            Icon(imageVector = MiuixIcons.Glass.Pause, contentDescription = "暂停")
                                         }
                                         DownloadState.PAUSED -> IconButton(onClick = { Downloader.resume(context, task.id) }) {
-                                            Icon(imageVector = MiuixIcons.Play, contentDescription = "继续")
+                                            Icon(imageVector = MiuixIcons.Glass.Play, contentDescription = "继续")
                                         }
                                         DownloadState.FAILED -> IconButton(onClick = { Downloader.retry(context, task.id) }) {
-                                            Icon(imageVector = MiuixIcons.Refresh, contentDescription = "重试")
+                                            Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "重试")
                                         }
                                         DownloadState.DONE -> Unit
                                     }
                                     IconButton(onClick = { pendingDelete = task }) {
-                                        Icon(imageVector = MiuixIcons.Close, contentDescription = "删除")
+                                        Icon(imageVector = MiuixIcons.Glass.Close, contentDescription = "删除")
                                     }
                                 }
                                 if (task.state == DownloadState.RUNNING || task.state == DownloadState.PAUSED) {

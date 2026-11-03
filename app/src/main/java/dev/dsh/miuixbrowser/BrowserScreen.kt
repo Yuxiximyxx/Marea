@@ -15,7 +15,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.blur
 
 import androidx.compose.foundation.layout.widthIn
-import top.yukonga.miuix.kmp.icon.extended.Layers
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -127,25 +126,25 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.glass.Settings
+import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.icon.glass.Phone
+import top.yukonga.miuix.kmp.icon.glass.More
+import top.yukonga.miuix.kmp.icon.glass.Layers
+import top.yukonga.miuix.kmp.icon.glass.Info
+import top.yukonga.miuix.kmp.icon.glass.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.glass.Hide
+import top.yukonga.miuix.kmp.icon.glass.Delete
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.icon.glass.Back
+import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.Hide
-import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.More
-import top.yukonga.miuix.kmp.icon.extended.Phone
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Search
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDefaults
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -237,6 +236,8 @@ fun BrowserScreen(
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
+    var showTabAddMenu by remember { mutableStateOf(false) }
+    var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
@@ -707,7 +708,7 @@ fun BrowserScreen(
                                 ),
                         )
                         Icon(
-                            imageVector = MiuixIcons.Search,
+                            imageVector = MiuixIcons.Glass.Search,
                             contentDescription = "搜索或输入网址",
                             tint = MiuixTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
@@ -841,6 +842,8 @@ fun BrowserScreen(
                 {
                     TabAddButton(
                         canAdd = state.tabs.size < 99,
+                        onAnchor = { tabAddAnchor = it },
+                        onShowMenu = { showTabAddMenu = true },
                         onNormal = {
                             state.newTab(incognito = false)
                             sheet = Sheet.None
@@ -856,9 +859,9 @@ fun BrowserScreen(
             },
             endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
                 {
-                    GlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                    HapticGlassIconButton(onClick = { showClearTabsConfirm = true }) {
                         Icon(
-                            imageVector = MiuixIcons.Delete,
+                            imageVector = MiuixIcons.Glass.Delete,
                             contentDescription = "全部删除",
                             modifier = Modifier.size(22.dp),
                         )
@@ -923,6 +926,7 @@ fun BrowserScreen(
                                                 },
                                             )
                                             .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 state.select(index)
                                                 sheet = Sheet.None
                                             },
@@ -995,7 +999,7 @@ fun BrowserScreen(
                                                     minHeight = 28.dp,
                                                 ) {
                                                     Icon(
-                                                        imageVector = MiuixIcons.Close,
+                                                        imageVector = MiuixIcons.Glass.Close,
                                                         contentDescription = "关闭",
                                                         modifier = Modifier.size(14.dp),
                                                     )
@@ -1018,7 +1022,7 @@ fun BrowserScreen(
                             subtitle = item.url.ifBlank { null },
                             trailing = {
                                 BarButton(
-                                    icon = MiuixIcons.Close,
+                                    icon = MiuixIcons.Glass.Close,
                                     description = "关闭",
                                     enabled = state.tabs.size > 1,
                                     onClick = { state.closeTab(index) },
@@ -1443,6 +1447,22 @@ fun BrowserScreen(
             }
         }
 
+        TabAddMenu(
+            show = showTabAddMenu,
+            anchorBounds = tabAddAnchor,
+            canAdd = state.tabs.size < 99,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismiss = { showTabAddMenu = false },
+            onNormal = {
+                state.newTab(incognito = false)
+                sheet = Sheet.None
+            },
+            onIncognito = {
+                state.newTab(incognito = true)
+                sheet = Sheet.None
+            },
+        )
+
         FindDialog(
             show = showFind,
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
@@ -1565,10 +1585,10 @@ private fun BottomBar(
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PressIcon(icon = MiuixIcons.Back, description = "后退", enabled = canGoBack, onClick = onBack)
+            PressIcon(icon = MiuixIcons.Glass.Back, description = "后退", enabled = canGoBack, onClick = onBack)
             if (canGoForward) {
                 PressIcon(
-                    icon = MiuixIcons.Back,
+                    icon = MiuixIcons.Glass.Back,
                     description = "前进",
                     enabled = true,
                     flip = true,
@@ -1576,7 +1596,7 @@ private fun BottomBar(
                 )
             } else {
                 PressIcon(
-                    icon = MiuixIcons.Home,
+                    icon = MiuixIcons.Glass.Sidebar,
                     description = "主页",
                     enabled = true,
                     onClick = onHome,
@@ -1592,7 +1612,10 @@ private fun BottomBar(
                     .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { onAddressTap() },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAddressTap()
+                        },
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onCopyAddress()
@@ -1616,7 +1639,7 @@ private fun BottomBar(
             }
 
             TabIcon(count = tabCount, onClick = onTabs, onLongClick = onMore)
-            PressIcon(icon = MiuixIcons.More, description = "更多", onClick = onMore)
+            PressIcon(icon = MiuixIcons.Glass.More, description = "更多", onClick = onMore)
         }
     }
 }
@@ -1683,6 +1706,7 @@ private fun IconWithContourShadow(
 
 @Composable
 private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1698,14 +1722,20 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
         Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
             IconWithContourShadow(
-                imageVector = MiuixIcons.Layers,
+                imageVector = MiuixIcons.Glass.Layers,
                 description = "标签页",
                 tint = color,
                 scale = scale,
@@ -1741,6 +1771,7 @@ private fun PressIcon(
     flip: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1761,7 +1792,12 @@ private fun PressIcon(
                 interactionSource = interaction,
                 indication = null,
                 enabled = enabled,
-                onClick = onClick,
+                onClick = {
+                    if (enabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    }
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -1849,6 +1885,7 @@ private fun BarButton(
     flip: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val color = if (enabled) {
         MiuixTheme.colorScheme.onSurface
     } else {
@@ -1858,7 +1895,15 @@ private fun BarButton(
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(
+                enabled = enabled,
+                onClick = {
+                    if (enabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -2245,11 +2290,11 @@ private fun UaDialog(
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
             UA_PRESETS.forEach { preset ->
                 val presetIcon = when (preset.name) {
-                    "跟随系统" -> MiuixIcons.Settings
-                    "Android Chrome" -> MiuixIcons.Phone
-                    "桌面 Chrome" -> MiuixIcons.HorizontalSplit
-                    "iPhone Safari" -> MiuixIcons.Phone
-                    else -> MiuixIcons.Info
+                    "跟随系统" -> MiuixIcons.Glass.Settings
+                    "Android Chrome" -> MiuixIcons.Glass.Phone
+                    "桌面 Chrome" -> MiuixIcons.Glass.HorizontalSplit
+                    "iPhone Safari" -> MiuixIcons.Glass.Phone
+                    else -> MiuixIcons.Glass.Info
                 }
                 Row(
                     modifier = Modifier
@@ -2458,78 +2503,90 @@ private fun MenuGrid(
     }
 }
 
-/** 标签页 sheet：圆形新建按钮，长按可选普通 / 无痕 */
+/** 标签页 sheet 左上角圆形新建按钮（长按菜单挂在全屏层，避免撑大 sheet） */
 @Composable
 private fun TabAddButton(
     canAdd: Boolean,
+    onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit,
+    onShowMenu: () -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
-    var showMenu by remember { mutableStateOf(false) }
-    var anchorBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-
-    Box {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
-                .onGloballyPositioned { anchorBounds = it.boundsInRoot() }
-                .combinedClickable(
-                    enabled = canAdd,
-                    onClick = {
-                        if (canAdd) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onNormal()
-                        }
-                    },
-                    onLongClick = {
-                        if (canAdd) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showMenu = true
-                        }
-                    },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Add,
-                contentDescription = "新建标签页",
-                tint = MiuixTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        GlassPopup(
-            show = showMenu,
-            onDismissRequest = { showMenu = false },
-            anchorBounds = anchorBounds,
-            backdrop = null,
-        ) {
-            GlassPopupItem(
-                text = "新建普通标签页",
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+            .onGloballyPositioned { onAnchor(it.boundsInRoot()) }
+            .combinedClickable(
                 enabled = canAdd,
                 onClick = {
-                    showMenu = false
-                    onNormal()
+                    if (canAdd) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNormal()
+                    }
                 },
-                icon = MiuixIcons.Add,
-            )
-            GlassPopupItem(
-                text = "新建无痕标签页",
-                summary = "不保存浏览记录",
-                enabled = canAdd,
-                onClick = {
-                    showMenu = false
-                    onIncognito()
+                onLongClick = {
+                    if (canAdd) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onShowMenu()
+                    }
                 },
-                icon = MiuixIcons.Hide,
-            )
-        }
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = MiuixIcons.Glass.Add,
+            contentDescription = "新建标签页",
+            tint = MiuixTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 
-/** 标签 sheet 表面：整页玻璃 + 顶部标题区 progressiveTopBar 渐进模糊（不钉在内容里） */
+/** 全屏层：标签新建长按菜单（glass popup，不参与 sheet 测量） */
+@Composable
+private fun TabAddMenu(
+    show: Boolean,
+    anchorBounds: androidx.compose.ui.geometry.Rect,
+    canAdd: Boolean,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    onDismiss: () -> Unit,
+    onNormal: () -> Unit,
+    onIncognito: () -> Unit,
+) {
+    if (!show) return
+    GlassPopup(
+        show = show,
+        onDismissRequest = onDismiss,
+        anchorBounds = anchorBounds,
+        backdrop = backdrop,
+        visuals = top.yukonga.miuix.kmp.glass.GlassPopupDefaults.visuals(),
+    ) {
+        GlassPopupItem(
+            text = "新建普通标签页",
+            enabled = canAdd,
+            onClick = {
+                onDismiss()
+                onNormal()
+            },
+            icon = MiuixIcons.Glass.Add,
+        )
+        GlassPopupItem(
+            text = "新建无痕标签页",
+            summary = "不保存浏览记录",
+            enabled = canAdd,
+            onClick = {
+                onDismiss()
+                onIncognito()
+            },
+            icon = MiuixIcons.Glass.Hide,
+        )
+    }
+}
+
+/** 标签 sheet 表面：整页玻璃 + 仅顶部标题带 progressiveTopBar（不铺满整页） */
 @Composable
 private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
@@ -2539,13 +2596,18 @@ private fun tabSheetSurface(
     return {
         val base = glass()
         if (progressive && backdrop != null && top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported()) {
-            // ProgressiveBlur.Top：顶部（拖拽条 + 标题行）最强，向下渐隐到内容区
+            val bandShape = remember(cornerRadius) {
+                TopBandShape(bandHeight = 112.dp, topCornerRadius = cornerRadius)
+            }
+            // 只在顶部 band 画渐进模糊；下方仍由 glass 承担
             Modifier
                 .then(base)
                 .progressiveTopBar(
                     backdrop = backdrop,
-                    radius = 52f,
-                    curve = 0.5f,
+                    shape = bandShape,
+                    radius = 44f,
+                    endFraction = 1f,
+                    curve = 0.55f,
                     enabled = true,
                 )
         } else {
@@ -2693,7 +2755,7 @@ private fun RefreshSpinner(progress: Float, refreshing: Boolean, modifier: Modif
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = MiuixIcons.Refresh,
+            imageVector = MiuixIcons.Glass.Refresh,
             contentDescription = "刷新",
             tint = MiuixTheme.colorScheme.primary.copy(alpha = if (refreshing) 1f else 0.4f + 0.6f * progress),
             modifier = Modifier

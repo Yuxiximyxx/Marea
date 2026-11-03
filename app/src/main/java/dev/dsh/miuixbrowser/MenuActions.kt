@@ -4,40 +4,40 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Edit
-import top.yukonga.miuix.kmp.icon.extended.Sidebar
-import top.yukonga.miuix.kmp.icon.extended.WorldClock
-import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Copy
-import top.yukonga.miuix.kmp.icon.extended.Favorites
-import top.yukonga.miuix.kmp.icon.extended.GridView
-import top.yukonga.miuix.kmp.icon.extended.Search
-import top.yukonga.miuix.kmp.icon.extended.Link
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.Share
-import top.yukonga.miuix.kmp.icon.extended.Translate
-import top.yukonga.miuix.kmp.icon.extended.Hide
+import top.yukonga.miuix.kmp.icon.glass.WorldClock
+import top.yukonga.miuix.kmp.icon.glass.Translate
+import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.glass.Share
+import top.yukonga.miuix.kmp.icon.glass.Settings
+import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.icon.glass.Link
+import top.yukonga.miuix.kmp.icon.glass.Hide
+import top.yukonga.miuix.kmp.icon.glass.GridView
+import top.yukonga.miuix.kmp.icon.glass.Favorites
+import top.yukonga.miuix.kmp.icon.glass.Edit
+import top.yukonga.miuix.kmp.icon.glass.Download
+import top.yukonga.miuix.kmp.icon.glass.Copy
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.icon.glass.Add
 
 enum class MenuAction(val id: String, val label: String, val icon: ImageVector) {
-    NewTab("new_tab", "新建标签", MiuixIcons.Medium.Add),
-    Incognito("incognito", "无痕浏览", MiuixIcons.Medium.Hide),
-    Desktop("desktop", "桌面版", MiuixIcons.Medium.GridView),
-    Find("find", "页内查找", MiuixIcons.Medium.Search),
-    Translate("translate", "翻译", MiuixIcons.Medium.Translate),
-    Favorite("favorite", "收藏", MiuixIcons.Medium.Favorites),
-    Share("share", "分享", MiuixIcons.Medium.Share),
-    Refresh("refresh", "刷新", MiuixIcons.Medium.Refresh),
-    CopyLink("copy", "复制链接", MiuixIcons.Medium.Copy),
-    External("external", "外部打开", MiuixIcons.Medium.Link),
-    Settings("settings", "设置", MiuixIcons.Medium.Settings),
-    Home("home", "主页", MiuixIcons.Medium.Sidebar),
-    Downloads("downloads", "下载", MiuixIcons.Medium.Download),
-    Extensions("extensions", "脚本", MiuixIcons.Medium.Edit),
-    History("history", "历史", MiuixIcons.Medium.WorldClock),
-    CloseTab("close", "关闭标签", MiuixIcons.Medium.Close),
+    NewTab("new_tab", "新建标签", MiuixIcons.Glass.Add),
+    Incognito("incognito", "无痕浏览", MiuixIcons.Glass.Hide),
+    Desktop("desktop", "桌面版", MiuixIcons.Glass.GridView),
+    Find("find", "页内查找", MiuixIcons.Glass.Search),
+    Translate("translate", "翻译", MiuixIcons.Glass.Translate),
+    Favorite("favorite", "收藏", MiuixIcons.Glass.Favorites),
+    Share("share", "分享", MiuixIcons.Glass.Share),
+    Refresh("refresh", "刷新", MiuixIcons.Glass.Refresh),
+    CopyLink("copy", "复制链接", MiuixIcons.Glass.Copy),
+    External("external", "外部打开", MiuixIcons.Glass.Link),
+    Settings("settings", "设置", MiuixIcons.Glass.Settings),
+    Home("home", "主页", MiuixIcons.Glass.Sidebar),
+    Downloads("downloads", "下载", MiuixIcons.Glass.Download),
+    Extensions("extensions", "脚本", MiuixIcons.Glass.Edit),
+    History("history", "历史", MiuixIcons.Glass.WorldClock),
+    CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),
 }
 
 /** 更多面板的图标顺序，可拖动排序并持久化 */

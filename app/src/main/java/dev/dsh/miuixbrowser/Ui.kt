@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
@@ -33,6 +35,7 @@ fun IconTextAction(
     primary: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val contentColor = if (primary) Color.White else MiuixTheme.colorScheme.onSurface
     val background = if (primary) {
         MiuixTheme.colorScheme.primary
@@ -44,7 +47,10 @@ fun IconTextAction(
             .height(32.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(background)
-            .clickable(onClick = onClick)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,

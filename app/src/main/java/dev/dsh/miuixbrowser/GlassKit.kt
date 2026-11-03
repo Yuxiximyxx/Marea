@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Icon
@@ -39,10 +41,21 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun rememberGlassActive(userEnabled: Boolean): Boolean = userEnabled && isRuntimeShaderSupported()
 
+/** 统一点击震动 */
+@Composable
+fun rememberHaptic(): androidx.compose.ui.hapticfeedback.HapticFeedback =
+    LocalHapticFeedback.current
+
 /** 顶栏里的玻璃返回键。必须放在 GlassTopAppBar 的 navigationIcon 里，才会继承顶栏材质。 */
 @Composable
 fun GlassBackButton(onClick: () -> Unit) {
-    GlassIconButton(onClick = onClick) {
+    val haptic = LocalHapticFeedback.current
+    GlassIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+    ) {
         Icon(
             imageVector = MiuixIcons.Glass.ChevronBackward,
             contentDescription = "返回",
@@ -50,6 +63,24 @@ fun GlassBackButton(onClick: () -> Unit) {
             tint = MiuixTheme.colorScheme.onSurface,
         )
     }
+}
+
+/** 玻璃图标按钮 + 点击震动 */
+@Composable
+fun HapticGlassIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    GlassIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        modifier = modifier,
+        content = content,
+    )
 }
 
 /** 顶栏里的玻璃图标按钮（actions 槽）。 */
@@ -60,7 +91,7 @@ fun GlassBarAction(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    GlassIconButton(onClick = onClick, modifier = modifier) {
+    HapticGlassIconButton(onClick = onClick, modifier = modifier) {
         Icon(
             imageVector = icon,
             contentDescription = description,
