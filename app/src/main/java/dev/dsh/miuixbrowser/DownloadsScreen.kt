@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,11 +54,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -78,8 +74,6 @@ import top.yukonga.miuix.kmp.icon.extended.Photos
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
@@ -165,39 +159,46 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val context = LocalContext.current
     val tasks = Downloader.tasks
     val backdrop = rememberLayerBackdrop()
+    val glass = rememberGlassActive(blurEnabled)
     var pendingDelete by remember { mutableStateOf<DownloadTask?>(null) }
     val deleteTask = pendingDelete
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
-    val isScrolled by remember { derivedStateOf { listState.canScrollBackward } }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = "下载",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
-            var topBarHeight by remember { mutableStateOf(56.dp) }
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
-                    .padding(top = topBarHeight)
-                    .navigationBarsPadding()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                    .navigationBarsPadding(),
             ) {
             if (tasks.isEmpty()) {
                 Text(
                     text = "还没有下载任务。网页里的下载会先弹确认框，再保存到 /sdcard/Download/mafari。",
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(top = topInset).padding(24.dp),
                 )
             } else {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(top = topInset, bottom = 24.dp),
                 ) {
                     item {
                         SmallTitle(text = "本应用下载")
@@ -284,27 +285,13 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 }
             }
             }
-
-            GlassPageTopBar(
-                title = "下载",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .onGloballyPositioned { coords ->
-                        topBarHeight = with(density) { coords.size.height.toDp() }
-                    },
-            )
         }
 
         GlassDialog(
             show = deleteTask != null,
             title = "删除文件",
             summary = deleteTask?.let { it.name + "\n\n会同时删除本地文件" },
-            backdrop = backdrop,
+            backdrop = if (glass) backdrop else null,
             onDismissRequest = { pendingDelete = null },
         ) {
             Row(

@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -58,11 +57,8 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.File
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -70,8 +66,6 @@ import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
@@ -87,26 +81,82 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val scope = rememberCoroutineScope()
 
     val backdrop = rememberLayerBackdrop()
+    val glass = rememberGlassActive(blurEnabled)
     val deleteTarget = deleting
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
-    val isScrolled by remember { derivedStateOf { listState.canScrollBackward } }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = "脚本",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+                actions = {
+                    IconTextAction(
+                        icon = MiuixIcons.Download,
+                        label = "导入",
+                        modifier = Modifier.padding(end = 6.dp),
+                    ) { importing = true }
+                    IconTextAction(
+                        icon = MiuixIcons.Refresh,
+                        label = if (updatingAll) "更新中" else "全部更新",
+                        modifier = Modifier.padding(end = 10.dp),
+                    ) {
+                        if (!updatingAll) {
+                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
+                            if (targets.isEmpty()) {
+                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                updatingAll = true
+                                busy = true
+                                scope.launch {
+                                    var ok = 0
+                                    targets.forEach { target ->
+                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            fetchScript(target.sourceUrl)
+                                        }
+                                        if (fresh != null) {
+                                            if (target.subscriptionUrl.isNotBlank()) {
+                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
+                                                if (converted != null) {
+                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
+                                                    ok++
+                                                }
+                                            } else {
+                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
+                                                ok++
+                                            }
+                                        }
+                                    }
+                                    busy = false
+                                    updatingAll = false
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "已更新 $ok/${targets.size} 个脚本",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
-        var topBarHeight by remember { mutableStateOf(56.dp) }
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-                .background(MiuixTheme.colorScheme.surface)
-                .padding(top = topBarHeight)
-                .navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .background(MiuixTheme.colorScheme.surface)
+                    .navigationBarsPadding(),
+            ) {
             val subscriptions = store.items.filter { it.subscriptionUrl.isNotBlank() }
                 val normalScripts = store.items.filter { it.subscriptionUrl.isBlank() }
                 val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
@@ -118,7 +168,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp),
                 ) {
                     if (missingBuiltins.isNotEmpty() || subscriptions.isNotEmpty()) {
                         item {
@@ -312,69 +362,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     modifier = Modifier.size(26.dp),
                 )
             }
-
-            GlassPageTopBar(
-                title = "脚本",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .onGloballyPositioned { coords ->
-                        topBarHeight = with(density) { coords.size.height.toDp() }
-                    },
-                actions = {
-                    IconTextAction(
-                        icon = MiuixIcons.Download,
-                        label = "导入",
-                        modifier = Modifier.padding(end = 6.dp),
-                    ) { importing = true }
-                    IconTextAction(
-                        icon = MiuixIcons.Refresh,
-                        label = if (updatingAll) "更新中" else "全部更新",
-                        modifier = Modifier.padding(end = 10.dp),
-                    ) {
-                        if (!updatingAll) {
-                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
-                            if (targets.isEmpty()) {
-                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                updatingAll = true
-                                busy = true
-                                scope.launch {
-                                    var ok = 0
-                                    targets.forEach { target ->
-                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            fetchScript(target.sourceUrl)
-                                        }
-                                        if (fresh != null) {
-                                            if (target.subscriptionUrl.isNotBlank()) {
-                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
-                                                if (converted != null) {
-                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
-                                                    ok++
-                                                }
-                                            } else {
-                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
-                                                ok++
-                                            }
-                                        }
-                                    }
-                                    busy = false
-                                    updatingAll = false
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "已更新 $ok/${targets.size} 个脚本",
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
-                        }
-                    }
-                },
-            )
         } // end outer Box
 
         GlassDialog(

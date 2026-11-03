@@ -95,6 +95,7 @@ fun LibraryScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val backdrop = rememberLayerBackdrop()
+    val glass = rememberGlassActive(blurEnabled)
     val pagerState = rememberPagerState(
         initialPage = initialTab.coerceIn(0, 1),
         pageCount = { 2 },
@@ -103,10 +104,6 @@ fun LibraryScreen(
     // 分页内容各自的滚动状态，避免两栏互相干扰
     val bookmarkListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val historyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    val activeListState = if (pagerState.currentPage == TAB_BOOKMARKS) bookmarkListState else historyListState
-    val isScrolled by remember {
-        androidx.compose.runtime.derivedStateOf { activeListState.canScrollBackward }
-    }
 
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     var showMenu by remember { mutableStateOf(false) }
@@ -135,22 +132,49 @@ fun LibraryScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { _ ->
+        topBar = {
+            PageGlassTopBar(
+                title = if (pagerState.currentPage == TAB_BOOKMARKS) "书签" else "历史",
+                backdrop = backdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
+                actions = {
+                    if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
+                        IconTextAction(
+                            icon = MiuixIcons.Delete,
+                            label = "清空",
+                            modifier = Modifier.padding(end = 8.dp),
+                        ) { store.clear() }
+                    }
+                },
+                bottomContent = {
+                    GlassTabRow(
+                        tabs = listOf("书签", "历史"),
+                        selectedIndex = pagerState.currentPage,
+                        onSelect = { index ->
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                        backdrop = if (glass) backdrop else null,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                },
+            )
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize()) {
-            var topBarHeight by remember { mutableStateOf(96.dp) }
-            val density = androidx.compose.ui.platform.LocalDensity.current
-
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
-                    .background(MiuixTheme.colorScheme.surface)
-                    .padding(top = topBarHeight),
+                    .background(MiuixTheme.colorScheme.surface),
             ) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
                     userScrollEnabled = true,
+                    contentPadding = PaddingValues(top = topInset),
                 ) { page ->
                     when (page) {
                         TAB_BOOKMARKS -> BookmarksPage(
@@ -170,40 +194,6 @@ fun LibraryScreen(
                     }
                 }
             }
-
-            GlassPageTopBar(
-                title = if (pagerState.currentPage == TAB_BOOKMARKS) "书签" else "历史",
-                backdrop = backdrop,
-                onBack = onBack,
-                progressiveBlur = blurEnabled,
-                scrollBehavior = scrollBehavior,
-                isContentScrolled = isScrolled,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .onGloballyPositioned { coords ->
-                        topBarHeight = with(density) { coords.size.height.toDp() }
-                    },
-                actions = {
-                    if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
-                        IconTextAction(
-                            icon = MiuixIcons.Delete,
-                            label = "清空",
-                            modifier = Modifier.padding(end = 8.dp),
-                        ) { store.clear() }
-                    }
-                },
-                bottomContent = {
-                    GlassTabRow(
-                        tabs = listOf("书签", "历史"),
-                        selectedIndex = pagerState.currentPage,
-                        onSelect = { index ->
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        backdrop = backdrop,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                },
-            )
 
             // 书签栏右下角 FAB：GlassPopup 放在全屏 Box 根坐标系，锚点用 boundsInRoot
             if (pagerState.currentPage == TAB_BOOKMARKS) {

@@ -75,7 +75,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
@@ -127,10 +126,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
@@ -828,25 +824,6 @@ fun BrowserScreen(
                         .heightIn(max = screenH * 0.65f)
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    // 弹窗顶部渐进模糊
-                    if (settings.blurEnabled && homeBlurAvailable) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(72.dp)
-                                .progressiveTextureBlur(
-                                    backdrop = browserBackdrop,
-                                    shape = RectangleShape,
-                                    gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
-                                    blurRadius = 60f,
-                                    colors = BlurDefaults.blurColors(
-                                        blendColors = listOf(
-                                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.35f)),
-                                        ),
-                                    ),
-                                ),
-                        )
-                    }
                 if (settings.tabsStyle == 1) {
                     // 卡片显示
                     Column(
@@ -887,7 +864,7 @@ fun BrowserScreen(
                                         Column(
                                             modifier = Modifier.fillMaxSize(),
                                         ) {
-                                            // 标题行：miuix-glass 模糊底
+                                            // 标题行：miuix-glass 模糊底（仅采样卡片区域，避免顶部矩形壁纸）
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()

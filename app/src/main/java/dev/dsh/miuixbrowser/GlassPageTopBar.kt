@@ -4,30 +4,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.SolidColor
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.blur.Backdrop
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
-import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
-import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 统一的玻璃顶栏：可选 progressive blur 背景带 + GlassTopAppBar。
- * 各子页共用，避免重复拼装 blur / bandBrush / scrollBehavior。
- *
- * @param progressiveBlur 是否叠加 progressiveTextureBlur（关闭时用默认 bandBrush）
- * @param scrollBehavior 滚动驱动大标题收起与材质变化
- * @param isContentScrolled 内容是否已离开顶部
+ * 兼容旧调用的玻璃顶栏：委托 [PageGlassTopBar]。
+ * 新代码请直接把顶栏放进 Scaffold 的 topBar 槽。
  */
 @Composable
 fun GlassPageTopBar(
@@ -42,41 +25,14 @@ fun GlassPageTopBar(
     bottomContent: @Composable () -> Unit = {},
 ) {
     Box(modifier = modifier) {
-        if (progressiveBlur && backdrop != null) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .progressiveTextureBlur(
-                        backdrop = backdrop,
-                        shape = RectangleShape,
-                        gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
-                        blurRadius = 80f,
-                        colors = BlurDefaults.blurColors(
-                            blendColors = listOf(
-                                BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
-                            ),
-                        ),
-                    ),
-            )
-        }
         GlassTopAppBar(
             title = title,
             backdrop = backdrop,
-            scrollBehavior = scrollBehavior,
             isContentScrolled = isContentScrolled,
-            bandBrush = if (progressiveBlur && backdrop != null) {
-                SolidColor(Color.Transparent)
-            } else {
-                GlassTopAppBarDefaults.bandBrush(MiuixTheme.colorScheme.surface)
-            },
+            scrollBehavior = scrollBehavior,
             navigationIcon = onBack?.let { back ->
                 {
-                    GlassIconButton(onClick = back) {
-                        Icon(
-                            imageVector = MiuixIcons.Back,
-                            contentDescription = "返回",
-                        )
-                    }
+                    GlassBackButton(onClick = back)
                 }
             } ?: {},
             actions = actions,

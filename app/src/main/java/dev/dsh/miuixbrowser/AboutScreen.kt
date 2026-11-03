@@ -32,12 +32,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -49,27 +46,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurBlendMode
-import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.glass.GlassDefaults
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
-import top.yukonga.miuix.kmp.glass.GlassIconButton
-import top.yukonga.miuix.kmp.glass.GlassTopAppBar
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.glass.GlassShadows
+import top.yukonga.miuix.kmp.glass.GlassShape
+import top.yukonga.miuix.kmp.glass.GlassStrokes
+import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.ui.layout.onGloballyPositioned
 
 @Composable
 fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
@@ -80,231 +70,201 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     var checkingUpdate by remember { mutableStateOf(false) }
 
     val pageBackdrop = rememberLayerBackdrop()
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val glass = rememberGlassActive(blurEnabled)
+    val scrollBehavior = MiuixScrollBehavior()
+    val dark = isAppDarkTheme()
     val surface = MiuixTheme.colorScheme.surface
     val iconShape = RoundedCornerShape(26.dp)
-    val scrollState = rememberScrollState()
-    val scrollBehavior = MiuixScrollBehavior()
-    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
-    val isInDark = isAppDarkTheme()
 
-    // demo AboutPage / ForegroundBlurDemo 的标题 blend 配色
-    val titleBlend = remember(isInDark) {
-        if (isInDark) {
-            listOf(
-                BlendColorEntry(Color(0xe6a1a1a1), BlurBlendMode.ColorDodge),
-                BlendColorEntry(Color(0x4de6e6e6), BlurBlendMode.LinearLight),
-                BlendColorEntry(Color(0xff1af500), BlurBlendMode.Lab),
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            PageGlassTopBar(
+                title = "关于",
+                backdrop = pageBackdrop,
+                glass = glass,
+                scrollBehavior = scrollBehavior,
+                onBack = onBack,
             )
-        } else {
-            listOf(
-                BlendColorEntry(Color(0xcc4a4a4a), BlurBlendMode.ColorBurn),
-                BlendColorEntry(Color(0xff4f4f4f), BlurBlendMode.LinearLight),
-                BlendColorEntry(Color(0xff1af200), BlurBlendMode.Lab),
-            )
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(surface)) {
-        var topBarHeight by remember { mutableStateOf(statusTop + 56.dp) }
-        val density = androidx.compose.ui.platform.LocalDensity.current
-
-        // ---- 全屏采样：渐变背景 + 可滚动内容一并入 layerBackdrop，顶栏覆盖其上 ----
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(pageBackdrop),
-        ) {
-            Box(modifier = Modifier.fillMaxSize().background(surface))
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to MiuixTheme.colorScheme.primary.copy(alpha = 0.38f),
-                            0.45f to Color.Transparent,
-                            1f to MiuixTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+        },
+    ) { innerPadding ->
+        val topInset = innerPadding.calculateTopPadding()
+        Box(modifier = Modifier.fillMaxSize().background(surface)) {
+            // ---- 整页背景：铺满全屏的主题色渐变，供玻璃图标与顶栏采样（顶栏在录制层之外）----
+            Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
+                Box(modifier = Modifier.fillMaxSize().background(surface))
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to MiuixTheme.colorScheme.primary.copy(alpha = 0.38f),
+                                0.45f to Color.Transparent,
+                                1f to MiuixTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                            ),
                         ),
-                    ),
-            )
+                )
+            }
 
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .navigationBarsPadding()
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .verticalScroll(scrollState)
-                    .padding(top = topBarHeight)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = topInset)
                     .padding(bottom = 24.dp),
             ) {
-            // ---- 头部：大图标下移避开顶栏标题 + 版本号下检查更新 ----
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 56.dp, bottom = 22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(92.dp)
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh, iconShape),
-                    contentAlignment = Alignment.Center,
+                // ---- 头部：图标下移避开顶栏标题 + 版本号下检查更新 ----
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_launcher_foreground),
-                        contentDescription = null,
-                        colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
-                        modifier = Modifier.size(58.dp),
-                    )
-                }
-
-                Spacer(Modifier.height(18.dp))
-
-                // Foreground blur：文字 alpha 作为遮罩，从全屏 backdrop 毛玻璃化（demo DstIn）
-                Text(
-                    text = "Mafari",
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp)
-                        .then(
-                            if (blurEnabled) {
-                                Modifier.textureBlur(
-                                    backdrop = pageBackdrop,
-                                    shape = RoundedCornerShape(16.dp),
-                                    blurRadius = 150f,
-                                    noiseCoefficient = BlurDefaults.NoiseCoefficient,
-                                    colors = BlurDefaults.blurColors(blendColors = titleBlend),
-                                    contentBlendMode = ComposeBlendMode.DstIn,
-                                )
-                            } else {
-                                Modifier
-                            },
-                        ),
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "版本 " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
-                    fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                // glass 材质检查更新（版本号之下）
-                GlassDialogButton(
-                    onClick = {
-                        if (checkingUpdate) return@GlassDialogButton
-                        checkingUpdate = true
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
-                            checkingUpdate = false
-                            if (result == null) {
-                                Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
-                            } else {
-                                val current = BuildConfig.VERSION_NAME.removePrefix("v")
-                                val latest = result.first.removePrefix("v")
-                                if (latest == current) {
-                                    Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
+                    Box(
+                        modifier = Modifier
+                            .size(92.dp)
+                            .then(
+                                if (glass) {
+                                    Modifier.glassPanel(
+                                        backdrop = pageBackdrop,
+                                        shape = GlassShape(26.dp),
+                                        style = GlassDefaults.Style,
+                                        stroke = GlassStrokes.forTheme(dark, GlassStrokes.MiddleLight, GlassStrokes.MiddleDark),
+                                        shadow = GlassShadows.Regular,
+                                        shading = true,
+                                    )
                                 } else {
-                                    Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(result.second)),
-                                        )
+                                    Modifier.background(MiuixTheme.colorScheme.surfaceContainerHigh, iconShape)
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
+                            modifier = Modifier.size(58.dp),
+                        )
+                    }
+
+                    Spacer(Modifier.height(18.dp))
+
+                    Text(
+                        text = "Mafari",
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "版本 " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    GlassDialogButton(
+                        onClick = {
+                            if (checkingUpdate) return@GlassDialogButton
+                            checkingUpdate = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) { fetchLatestVersion() }
+                                checkingUpdate = false
+                                if (result == null) {
+                                    Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val current = BuildConfig.VERSION_NAME.removePrefix("v")
+                                    val latest = result.first.removePrefix("v")
+                                    if (latest == current) {
+                                        Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(result.second)),
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                    },
-                    role = GlassDialogButtonRole.Primary,
-                    modifier = Modifier.width(200.dp),
-                ) {
-                    Text(
-                        text = if (checkingUpdate) "检查中…" else "检查更新",
-                        style = MiuixTheme.textStyles.button,
-                    )
+                        },
+                        role = GlassDialogButtonRole.Primary,
+                        modifier = Modifier.width(200.dp),
+                    ) {
+                        Text(
+                            text = if (checkingUpdate) "检查中…" else "检查更新",
+                            style = MiuixTheme.textStyles.button,
+                        )
+                    }
                 }
-            }
 
-            SmallTitle(text = "版本")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                insideMargin = PaddingValues(0.dp),
-            ) {
-                AboutRow("MIUIX Glass", "0.9.4 · miuix-glass")
-                AboutRow("内核版本", kernel)
-            }
-
-            SmallTitle(text = "本机 UA")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                insideMargin = PaddingValues(16.dp),
-            ) {
-                Text(
-                    text = ua,
-                    fontSize = 12.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-
-            SmallTitle(text = "项目")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                insideMargin = PaddingValues(0.dp),
-            ) {
-                Column(
+                SmallTitle(text = "版本")
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)),
-                                )
-                            }
-                        }
-                        .padding(16.dp),
+                        .padding(horizontal = 12.dp),
+                    insideMargin = PaddingValues(0.dp),
                 ) {
-                    Text("项目地址", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(4.dp))
+                    AboutRow("MIUIX Glass", "0.9.4 · miuix-glass")
+                    AboutRow("内核版本", kernel)
+                }
+
+                SmallTitle(text = "本机 UA")
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    insideMargin = PaddingValues(16.dp),
+                ) {
                     Text(
-                        text = "https://github.com/rosenii/mafari",
+                        text = ua,
                         fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
                 }
-            }
 
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = "Mafari · 基于 MIUIX Glass 与系统 WebView",
-                fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
+                SmallTitle(text = "项目")
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)),
+                                    )
+                                }
+                            }
+                            .padding(16.dp),
+                    ) {
+                        Text("项目地址", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "https://github.com/rosenii/mafari",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "Mafari · 基于 MIUIX Glass 与系统 WebView",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
             }
         }
-
-        GlassPageTopBar(
-            title = "关于",
-            backdrop = pageBackdrop,
-            onBack = onBack,
-            progressiveBlur = blurEnabled,
-            scrollBehavior = scrollBehavior,
-            isContentScrolled = isScrolled,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .onGloballyPositioned { coords ->
-                    topBarHeight = with(density) { coords.size.height.toDp() }
-                },
-        )
     }
 }
 
