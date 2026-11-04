@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -87,6 +88,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.SolidColor
@@ -321,14 +324,39 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(tab.id, tab.url, editing, settings.addressDisplay, tab.title) {
-        if (!editing) {
-            address = when (settings.addressDisplay) {
-                0 -> if (tab.url.isBlank()) "" else tab.title.ifBlank { tab.url }
-                1 -> if (tab.url.isBlank()) "" else hostOf(tab.url)
-                else -> tab.url
-            }
+    // 非编辑态的地址栏文字直接由当前标签状态推导（不经过 LaunchedEffect，避免滞后一帧或漏更新）；
+    // 编辑态才使用用户正在输入的 address。
+    val displayAddress = if (editing) {
+        address
+    } else {
+        when (settings.addressDisplay) {
+            0 -> if (tab.url.isBlank()) "" else tab.title.ifBlank { tab.url }
+            1 -> if (tab.url.isBlank()) "" else hostOf(tab.url)
+            else -> tab.url
         }
+    }
+    // 用户是否真的改过输入框里的文字
+    var addressDirty by remember(tab.id) { mutableStateOf(false) }
+    LaunchedEffect(editing) { if (!editing) addressDirty = false }
+
+    // 页面导航导致 URL 变化时：若用户没有在输入，退出编辑态让地址栏跟随网页
+    LaunchedEffect(tab.id, tab.url) {
+        if (editing && !addressDirty) {
+            editing = false
+            focus.clearFocus()
+        }
+    }
+
+    // 键盘收起（返回键 / 手势）后退出编辑态，否则地址栏会一直停在旧内容上
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    var imeWasVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(imeBottom > 0) {
+        val visible = imeBottom > 0
+        if (imeWasVisible && !visible && editing) {
+            editing = false
+            focus.clearFocus()
+        }
+        imeWasVisible = visible
     }
 
     // 回到主页时隐藏 WebView：alpha=0 仍会吃触摸，必须 INVISIBLE + 禁用，
@@ -708,7 +736,7 @@ fun BrowserScreen(
             // 按实际字体宽度计算地址栏所需空间：固定按钮区 + 地址文字 + 地址栏内边距。
             // 不设置人为最小宽度，短文字不会留下空白；只有屏幕可用宽度作为上限。
             val textMeasurer = rememberTextMeasurer()
-            val addressMeasureText = address.ifBlank { "搜索或输入网址" }
+            val addressMeasureText = displayAddress.ifBlank { "搜索或输入网址" }
             val measuredAddressPx = textMeasurer.measure(
                 text = AnnotatedString(addressMeasureText),
                 style = TextStyle(fontSize = 15.sp),
@@ -847,14 +875,18 @@ fun BrowserScreen(
                 blurEnabled = settings.blurEnabled,
                 textureBlurEnabled = homeBlurAvailable,
                 backdrop = browserBackdrop,
-                address = address,
+                address = displayAddress,
                 loading = tab.loading,
                 canGoBack = tab.canGoBack,
                 canGoForward = tab.canGoForward,
                 tabCount = state.tabs.size,
                 onChange = {
                     address = it
+                    addressDirty = true
                     editing = true
+                },
+                onFocusLost = {
+                    if (editing) editing = false
                 },
                 onGo = {
                     if (address.isNotBlank()) {
@@ -1629,6 +1661,7 @@ private fun BottomBar(
     onMore: () -> Unit,
     onCopyAddress: () -> Unit,
     onAddressTap: () -> Unit = {},
+    onFocusLost: () -> Unit = {},
     editing: Boolean = false,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -1705,6 +1738,7 @@ private fun BottomBar(
                     onGo = onGo,
                     editing = editing,
                     onStartEdit = onAddressTap,
+                    onFocusLost = onFocusLost,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -1912,9 +1946,16 @@ private fun AddressField(
     onGo: () -> Unit,
     editing: Boolean = true,
     onStartEdit: () -> Unit = {},
+    onFocusLost: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val color = MiuixTheme.colorScheme.onSurface
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    var hadFocus by remember { mutableStateOf(false) }
+    // 进入编辑态时主动拿焦点（圆形搜索钮 / 点击地址栏），失焦时通知外部退出编辑态
+    LaunchedEffect(editing) {
+        if (editing) runCatching { focusRequester.requestFocus() }
+    }
     Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
         if (value.isEmpty()) {
             Text(
@@ -1931,7 +1972,17 @@ private fun AddressField(
             cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
             keyboardActions = KeyboardActions(onGo = { onGo() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged { st ->
+                    if (st.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus) {
+                        hadFocus = false
+                        onFocusLost()
+                    }
+                },
         )
         if (!editing) {
             // 未编辑时盖一层透明点击区，点一下立刻切到完整网址

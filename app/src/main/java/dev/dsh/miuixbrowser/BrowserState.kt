@@ -198,15 +198,30 @@ class BrowserTab(private val appContext: Context) {
             cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = userAgentString.replace("; wv", "")
         }
-        // 打开 WebView 的 WebAuthn（Passkey）支持
+        // 打开 WebView 的 WebAuthn（Passkey）支持。
+        // 注意：之前这里传的是 SUPPORT_NONE，等于主动关闭了 Passkey。
+        // 浏览器需要对任意网站的 origin 生效 → 优先 FOR_BROWSER；
+        // 若 WebView / 系统不接受（读回仍是 NONE），退回 FOR_APP。
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_AUTHENTICATION)) {
+                val settings = webView.settings
                 androidx.webkit.WebSettingsCompat.setWebAuthenticationSupport(
-                    webView.settings,
-                    androidx.webkit.WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_NONE,
+                    settings,
+                    androidx.webkit.WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_BROWSER,
                 )
+                var mode = androidx.webkit.WebSettingsCompat.getWebAuthenticationSupport(settings)
+                if (mode == androidx.webkit.WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_NONE) {
+                    androidx.webkit.WebSettingsCompat.setWebAuthenticationSupport(
+                        settings,
+                        androidx.webkit.WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP,
+                    )
+                    mode = androidx.webkit.WebSettingsCompat.getWebAuthenticationSupport(settings)
+                }
+                Diag.log("passkey: WebAuthn support mode=$mode")
+            } else {
+                Diag.log("passkey: WEB_AUTHENTICATION not supported by this WebView")
             }
-        }
+        }.onFailure { Diag.log("passkey: enable failed ${it.message}") }
         webView.setBackgroundColor(0xFFFFFFFF.toInt())
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)

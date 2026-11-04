@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 130
-        versionName = "v1.3.1-dev"
+        versionCode = 131
+        versionName = "v1.3.2-dev"
     }
 
     buildFeatures {
@@ -80,6 +80,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.webkit:webkit:1.14.0")
+    // Passkey：WebView 通过 Credential Manager 调起系统 / 密码管理器的 Passkey 界面
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
 }
