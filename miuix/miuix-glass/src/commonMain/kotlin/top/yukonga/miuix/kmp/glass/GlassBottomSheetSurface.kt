@@ -85,7 +85,11 @@ private class SheetTopBandShape(
     private val bandHeight: Dp,
     private val topCornerRadius: Dp,
 ) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline {
         val band = with(density) { bandHeight.toPx() }.coerceAtMost(size.height)
         val r = with(density) { topCornerRadius.toPx() }
             .coerceAtMost(size.width / 2f)
@@ -161,7 +165,7 @@ fun glassBottomSheetSurface(
         )
         base
             .onSizeChanged { surfaceHeight = it.height }
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
             .progressiveTextureBlur(
                 backdrop = effectiveBackdrop,
                 shape = bandShape,
