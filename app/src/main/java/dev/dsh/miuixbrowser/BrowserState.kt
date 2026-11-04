@@ -150,8 +150,8 @@ class BrowserTab(private val appContext: Context) {
     /** 退出全屏（视频结束 / 返回键） */
     var onHideCustomView: (() -> Unit)? = null
 
-    /** blob / data URL 抽取完成后的保存请求 */
-    var onBlobReady: ((dataUrl: String, fileName: String, mime: String?) -> Unit)? = null
+    /** blob / data URL 抽取完成：dataUri 或 tempPath 二选一（大文件走 tempPath） */
+    var onBlobReady: ((dataUrl: String?, fileName: String, mime: String?, tempPath: String?) -> Unit)? = null
 
     /** blob 抽取失败 */
     var onBlobError: ((message: String) -> Unit)? = null
@@ -173,6 +173,78 @@ class BrowserTab(private val appContext: Context) {
             webView.post {
                 onElementLongPress?.invoke(ElementHit(tag, imageUrl, selector))
             }
+        }
+    }
+
+    /**
+     * blob 分片接收：evaluateJavascript 返回值有大小上限，大文件必须走 JS→桥接分片。
+     * begin/appendChunk/end/fail 由页面脚本调用（binder 线程，内部用锁写缓存文件）。
+     */
+    private val blobLock = Any()
+    private var blobStream: java.io.FileOutputStream? = null
+    private var blobFile: java.io.File? = null
+    private var blobName = ""
+    private var blobMime: String? = null
+
+    private val blobBridge = object {
+        @android.webkit.JavascriptInterface
+        fun begin(name: String, mime: String) {
+            synchronized(blobLock) {
+                runCatching { blobStream?.close() }
+                blobStream = null
+                runCatching { blobFile?.delete() }
+                val f = java.io.File(appContext.cacheDir, "mafari_blob_${System.currentTimeMillis()}.part")
+                blobFile = f
+                blobStream = java.io.FileOutputStream(f)
+                blobName = name.ifBlank { "download" }
+                blobMime = mime.ifBlank { null }
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun appendChunk(b64: String) {
+            try {
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                synchronized(blobLock) {
+                    blobStream?.write(bytes)
+                    blobStream?.flush()
+                }
+            } catch (e: Exception) {
+                Diag.log("blob append failed: ${e.message}")
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun end() {
+            val file: java.io.File?
+            val name: String
+            val mime: String?
+            synchronized(blobLock) {
+                runCatching { blobStream?.flush(); blobStream?.close() }
+                blobStream = null
+                file = blobFile
+                name = blobName
+                mime = blobMime
+                blobFile = null
+            }
+            if (file == null || !file.exists() || file.length() <= 0L) {
+                webView.post { onBlobError?.invoke("blob 为空或写入失败") }
+                return
+            }
+            webView.post {
+                onBlobReady?.invoke(null, name, mime, file.absolutePath)
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun fail(msg: String) {
+            synchronized(blobLock) {
+                runCatching { blobStream?.close() }
+                blobStream = null
+                runCatching { blobFile?.delete() }
+                blobFile = null
+            }
+            webView.post { onBlobError?.invoke("无法读取 blob：$msg") }
         }
     }
 
@@ -206,13 +278,36 @@ class BrowserTab(private val appContext: Context) {
         if (cb == null && customView == null) return
         customView = null
         customViewCallback = null
+        restoreOrientation()
         onHideCustomView?.invoke()
         runCatching { cb?.onCustomViewHidden() }
     }
 
+    /** 全屏视频：强制横屏 */
+    private fun lockLandscape() {
+        val activity = resolveActivity() ?: return
+        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
+    /** 退出全屏：恢复系统方向 */
+    private fun restoreOrientation() {
+        val activity = resolveActivity() ?: return
+        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    /** LocalContext 可能是 ContextThemeWrapper，逐层解开找 Activity */
+    private fun resolveActivity(): android.app.Activity? {
+        var c: Context? = appContext
+        while (c != null) {
+            if (c is android.app.Activity) return c
+            c = (c as? android.content.ContextWrapper)?.baseContext
+        }
+        return null
+    }
+
     /**
-     * 用页面内 fetch 把 blob: 读成 data URL，再交给界面保存。
-     * 大文件可能超出 evaluateJavascript 返回上限，失败时回调 onBlobError。
+     * 用页面内 fetch 把 blob 分片写入缓存文件（不经 evaluateJavascript 返回大字符串），
+     * 完成后回调 onBlobReady(tempPath=...)。
      */
     fun extractBlob(
         url: String,
@@ -221,33 +316,39 @@ class BrowserTab(private val appContext: Context) {
         mime: String? = null,
     ) {
         val fileName = Downloader.fileNameFrom(url, disposition)
+        val preferredMime = mime ?: "application/octet-stream"
+        // 分片 256KB 二进制 → base64 约 350KB，避开 JS 桥接/字符串上限
         val js = """
             (function(){
-              return fetch(${org.json.JSONObject.quote(url)})
-                .then(function(r){ return r.blob(); })
-                .then(function(b){
-                  return new Promise(function(resolve, reject){
-                    var fr = new FileReader();
-                    fr.onload = function(){ resolve(String(fr.result)); };
-                    fr.onerror = function(){ reject('read'); };
-                    fr.readAsDataURL(b);
+              var url = ${org.json.JSONObject.quote(url)};
+              var fileName = ${org.json.JSONObject.quote(fileName)};
+              var preferredMime = ${org.json.JSONObject.quote(preferredMime)};
+              var CHUNK = 256 * 1024;
+              return fetch(url).then(function(r){ return r.blob(); }).then(function(b){
+                MafariBlob.begin(fileName, b.type || preferredMime);
+                var i = 0;
+                function next(){
+                  if (i >= b.size) { MafariBlob.end(); return; }
+                  var end = Math.min(i + CHUNK, b.size);
+                  var slice = b.slice(i, end);
+                  i = end;
+                  return slice.arrayBuffer().then(function(buf){
+                    var bytes = new Uint8Array(buf);
+                    var bin = '';
+                    var BL = 0x8000;
+                    for (var j = 0; j < bytes.length; j += BL) {
+                      bin += String.fromCharCode.apply(null, bytes.subarray(j, j + BL));
+                    }
+                    MafariBlob.appendChunk(btoa(bin));
+                    return next();
                   });
-                });
+                }
+                return next();
+              }).catch(function(e){ MafariBlob.fail(String(e && e.message || e)); });
             })()
         """.trimIndent()
-        webView.evaluateJavascript(js) { raw ->
-            val dataUrl = runCatching {
-                when (raw) {
-                    null, "null" -> null
-                    else -> org.json.JSONTokener(raw).nextValue() as? String
-                }
-            }.getOrNull()
-            if (dataUrl != null && dataUrl.startsWith("data:", ignoreCase = true)) {
-                onBlobReady?.invoke(dataUrl, fileName, mime)
-            } else {
-                onBlobError?.invoke("无法读取 blob 文件（可能过大）")
-            }
-        }
+        // 结果由 blobBridge 回调，这里不解析返回值
+        webView.evaluateJavascript(js, null)
     }
 
     /** 去广告元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面加载回调兜底注入） */
@@ -255,6 +356,7 @@ class BrowserTab(private val appContext: Context) {
 
     init {
         runCatching { webView.addJavascriptInterface(AdBlockBridge(), "MafariAdblock") }
+        runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
@@ -426,6 +528,7 @@ class BrowserTab(private val appContext: Context) {
                 }
                 customView = view
                 customViewCallback = callback
+                lockLandscape()
                 this@BrowserTab.onShowCustomView?.invoke(view, callback)
             }
 
@@ -433,6 +536,7 @@ class BrowserTab(private val appContext: Context) {
                 val cb = customViewCallback
                 customView = null
                 customViewCallback = null
+                restoreOrientation()
                 this@BrowserTab.onHideCustomView?.invoke()
                 // 界面摘掉 View 后必须通知 WebView
                 cb?.onCustomViewHidden()
@@ -471,7 +575,7 @@ class BrowserTab(private val appContext: Context) {
                 // data URL 附件：直接交给界面落盘
                 link.startsWith("data:", ignoreCase = true) -> {
                     val name = Downloader.fileNameFrom(link, contentDisposition)
-                    onBlobReady?.invoke(link, name, mimeType)
+                    onBlobReady?.invoke(link, name, mimeType, null)
                 }
                 else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
             }
@@ -1031,6 +1135,12 @@ class BrowserTab(private val appContext: Context) {
         destroyed = true
         cancelFileChooser()
         exitCustomView()
+        synchronized(blobLock) {
+            runCatching { blobStream?.close() }
+            blobStream = null
+            runCatching { blobFile?.delete() }
+            blobFile = null
+        }
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()

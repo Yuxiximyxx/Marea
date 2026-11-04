@@ -190,6 +190,8 @@ private data class DownloadRequest(
     val mime: String?,
     /** blob / data URL 已抽成 data URI，确认后直接落盘，不再走 HTTP 下载器 */
     val dataUri: String? = null,
+    /** 大 blob 分片写入的缓存临时文件路径，确认后拷到 Download/mafari */
+    val tempPath: String? = null,
 )
 
 /** 网页 <input type=file capture>：文件 / 拍照 / 录像 选择 */
@@ -664,13 +666,14 @@ fun BrowserScreen(
                 )
             }
         }
-        tab.onBlobReady = { dataUri, fileName, mime ->
+        tab.onBlobReady = { dataUri, fileName, mime, tempPath ->
             pendingDownload = DownloadRequest(
                 url = "",
                 userAgent = null,
                 fileName = fileName,
                 mime = mime,
                 dataUri = dataUri,
+                tempPath = tempPath,
             )
         }
         tab.onBlobError = { message ->
@@ -681,6 +684,7 @@ fun BrowserScreen(
         }
         tab.onShowCustomView = { view, _ ->
             customView = view
+            // 横屏在 BrowserTab.lockLandscape 已处理；这里确保容器铺满
         }
         tab.onHideCustomView = {
             customView = null
@@ -1516,10 +1520,17 @@ fun BrowserScreen(
             title = "下载文件",
             summary = downloadRequest?.let {
                 it.fileName + "\n" +
-                    if (it.dataUri != null) "页面内文件（blob/data）" else "保存到 /sdcard/Download/mafari"
+                    when {
+                        it.tempPath != null -> "页面内文件（blob）"
+                        it.dataUri != null -> "页面内文件（data）"
+                        else -> "保存到 /sdcard/Download/mafari"
+                    }
             },
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
-            onDismissRequest = { pendingDownload = null },
+            onDismissRequest = {
+                pendingDownload?.tempPath?.let { p -> runCatching { java.io.File(p).delete() } }
+                pendingDownload = null
+            },
         ) {
             if (downloadRequest != null) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -1528,7 +1539,10 @@ fun BrowserScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         GlassDialogButton(
-                            onClick = { pendingDownload = null },
+                            onClick = {
+                                downloadRequest.tempPath?.let { p -> runCatching { java.io.File(p).delete() } }
+                                pendingDownload = null
+                            },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
@@ -1538,23 +1552,38 @@ fun BrowserScreen(
                                 val req = downloadRequest
                                 pendingDownload = null
                                 scope.launch {
-                                    val ok = if (req.dataUri != null) {
-                                        Downloader.saveDataUri(context, req.dataUri, req.fileName)
-                                    } else {
-                                        Downloader.start(
-                                            context = context,
-                                            url = req.url,
-                                            userAgent = req.userAgent,
-                                            fileName = req.fileName,
-                                            mimeType = req.mime,
-                                        )
-                                        true
+                                    val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        when {
+                                            req.tempPath != null -> {
+                                                val f = java.io.File(req.tempPath)
+                                                val ok = f.exists() && Downloader.saveBytes(
+                                                    context,
+                                                    f.readBytes(),
+                                                    req.fileName,
+                                                    req.mime,
+                                                )
+                                                runCatching { f.delete() }
+                                                ok
+                                            }
+                                            req.dataUri != null ->
+                                                Downloader.saveDataUri(context, req.dataUri, req.fileName)
+                                            else -> {
+                                                Downloader.start(
+                                                    context = context,
+                                                    url = req.url,
+                                                    userAgent = req.userAgent,
+                                                    fileName = req.fileName,
+                                                    mimeType = req.mime,
+                                                )
+                                                true
+                                            }
+                                        }
                                     }
-                                    if (req.dataUri != null) {
+                                    if (req.tempPath != null || req.dataUri != null) {
                                         withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                if (ok) "已保存到 Download/mafari" else "保存失败",
+                                                if (saved) "已保存到 Download/mafari" else "保存失败",
                                                 android.widget.Toast.LENGTH_SHORT,
                                             ).show()
                                         }
