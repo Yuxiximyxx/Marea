@@ -246,9 +246,8 @@ val UA_PRESETS = listOf(
         "桌面 Chrome",
         DESKTOP_UA,
         listOf(
-            "https://www.google.com/s2/favicons?sz=128&domain_url=https://www.google.com/chrome/",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Google_Chrome_icon_%28February_2022%29.svg/128px-Google_Chrome_icon_%28February_2022%29.svg.png",
             "https://www.google.com/chrome/static/images/favicons/favicon-96x96.png",
-            "https://icons.duckduckgo.com/ip3/www.google.com.ico",
         ),
     ),
     UaPreset(

@@ -40,6 +40,10 @@ class HistoryStore(context: Context) {
         persist()
     }
 
+    fun remove(url: String) {
+        if (items.removeAll { it.url == url }) persist()
+    }
+
     fun clear() {
         items.clear()
         persist()

@@ -70,6 +70,7 @@ import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
+import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.icon.glass.Search
@@ -111,6 +112,7 @@ fun LibraryScreen(
     var showMenu by remember { mutableStateOf(false) }
     var editingFav by remember { mutableStateOf<Favorite?>(null) }
     var creatingFav by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
@@ -214,6 +216,7 @@ fun LibraryScreen(
                             listState = historyListState,
                             scrollBehavior = scrollBehavior,
                             onOpen = onOpen,
+                            onDelete = { store.remove(it.url) },
                             query = query,
                         )
                     }
@@ -306,7 +309,7 @@ fun LibraryScreen(
                                 haptic.performHapticFeedback(
                                     androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
                                 )
-                                store.clear()
+                                confirmClear = true
                             },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -316,6 +319,44 @@ fun LibraryScreen(
                             tint = Color(0xFFE53935),
                             modifier = Modifier.size(26.dp),
                         )
+                    }
+                }
+            }
+        }
+
+        GlassDialog(
+            show = confirmClear,
+            title = "清空历史",
+            backdrop = backdrop,
+            onDismissRequest = { confirmClear = false },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "确定要清空全部 ${store.items.size} 条历史记录吗？此操作无法撤销。",
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    GlassDialogButton(
+                        onClick = { confirmClear = false },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(text = "取消", style = MiuixTheme.textStyles.button)
+                    }
+                    GlassDialogButton(
+                        onClick = {
+                            store.clear()
+                            confirmClear = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        role = GlassDialogButtonRole.Destructive,
+                    ) {
+                        Text(text = "清空", style = MiuixTheme.textStyles.button)
                     }
                 }
             }
@@ -477,6 +518,7 @@ private fun HistoryPage(
     listState: androidx.compose.foundation.lazy.LazyListState,
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     onOpen: (String) -> Unit,
+    onDelete: (HistoryEntry) -> Unit,
     query: String = "",
 ) {
     val q = query.trim()
@@ -500,7 +542,7 @@ private fun HistoryPage(
         contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
     ) {
         item { SmallTitle(text = "最近访问") }
-        items(entries.size) { index ->
+        items(entries.size, key = { i -> entries[i].url }) { index ->
             val entry = entries[index]
             Card(
                 modifier = Modifier
@@ -538,6 +580,21 @@ private fun HistoryPage(
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(start = 8.dp),
                     )
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .clickable { onDelete(entry) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Glass.Close,
+                            contentDescription = "删除",
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
         }
