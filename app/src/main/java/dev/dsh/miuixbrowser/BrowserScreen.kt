@@ -624,6 +624,12 @@ fun BrowserScreen(
         )
     }
 
+    // 显示模式深浅色 → WebView 背景 + 官方 algorithmic darkening（跟随设置/系统）
+    val appDark = isAppDarkTheme()
+    LaunchedEffect(tab.id, appDark) {
+        tab.applyDisplayTheme(appDark)
+    }
+
     // WebView 不会把滚动事件抛给 Compose，这里轻量轮询页面滚动位置：
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.toList()) {

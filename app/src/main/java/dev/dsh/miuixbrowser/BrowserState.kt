@@ -306,7 +306,8 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /**
-     * 用页面内 fetch 把 blob 分片写入缓存文件（不经 evaluateJavascript 返回大字符串），
+     * 把 blob 分片写入缓存文件（不经 evaluateJavascript 返回大字符串）。
+     * 取 Blob 顺序：createObjectURL 缓存（含同源 iframe）→ XHR → fetch。
      * 完成后回调 onBlobReady(tempPath=...)。
      */
     fun extractBlob(
@@ -324,7 +325,55 @@ class BrowserTab(private val appContext: Context) {
               var fileName = ${org.json.JSONObject.quote(fileName)};
               var preferredMime = ${org.json.JSONObject.quote(preferredMime)};
               var CHUNK = 256 * 1024;
-              return fetch(url).then(function(r){ return r.blob(); }).then(function(b){
+
+              function findCached(u) {
+                try {
+                  if (window.__mafariBlobCache && window.__mafariBlobCache[u]) {
+                    return window.__mafariBlobCache[u];
+                  }
+                } catch (e) {}
+                try {
+                  var list = document.querySelectorAll('iframe');
+                  for (var i = 0; i < list.length; i++) {
+                    try {
+                      var w = list[i].contentWindow;
+                      if (w && w.__mafariBlobCache && w.__mafariBlobCache[u]) {
+                        return w.__mafariBlobCache[u];
+                      }
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+                return null;
+              }
+
+              function viaXhr(u) {
+                return new Promise(function(resolve, reject) {
+                  try {
+                    var x = new XMLHttpRequest();
+                    x.open('GET', u, true);
+                    x.responseType = 'blob';
+                    x.onload = function() {
+                      if (x.response && x.response.size >= 0) resolve(x.response);
+                      else reject(new Error('xhr empty'));
+                    };
+                    x.onerror = function() { reject(new Error('xhr error')); };
+                    x.send();
+                  } catch (e) { reject(e); }
+                });
+              }
+
+              function viaFetch(u) {
+                return fetch(u).then(function(r){ return r.blob(); });
+              }
+
+              function getBlob(u) {
+                var c = findCached(u);
+                if (c) return Promise.resolve(c);
+                return viaXhr(u).catch(function(){ return viaFetch(u); });
+              }
+
+              return getBlob(url).then(function(b){
+                if (!b || !b.size) throw new Error('empty blob');
                 MafariBlob.begin(fileName, b.type || preferredMime);
                 var i = 0;
                 function next(){
@@ -359,6 +408,12 @@ class BrowserTab(private val appContext: Context) {
         runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                // 社区通用：缓存 createObjectURL 的 Blob，extractBlob 直接读，避免 fetch blob: 失败
+                runCatching {
+                    val cacheJs = appContext.assets.open("mafari_blob_cache.js")
+                        .bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, cacheJs, setOf("*"))
+                }.onFailure { Diag.log("blob cache install failed: ${it.message}") }
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
                 adblockDocStart = true
             }
@@ -423,6 +478,7 @@ class BrowserTab(private val appContext: Context) {
                 Diag.log("passkey: WEB_AUTHENTICATION not supported by this WebView")
             }
         }.onFailure { Diag.log("passkey: enable failed ${it.message}") }
+        // 默认浅色底；深浅色由 applyDisplayTheme 按应用主题覆盖
         webView.setBackgroundColor(0xFFFFFFFF.toInt())
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -835,6 +891,35 @@ class BrowserTab(private val appContext: Context) {
             else -> customUserAgent
         }
         runCatching { webView.settings.userAgentString = ua }
+    }
+
+    /**
+     * 显示模式深浅色同步到 WebView（公开 API，不自造 CSS 覆盖）：
+     * 1. `WebSettings.setAlgorithmicDarkeningAllowed` — 系统/WebView 官方深色适配（API 33+）
+     * 2. `setBackgroundColor` — 空白/加载底色跟随应用主题
+     * 3. 对齐 Activity `Configuration.uiMode` — 让算法深色跟随应用内「深色/浅色/跟随系统」
+     */
+    fun applyDisplayTheme(dark: Boolean) {
+        runCatching { webView.settings.setAlgorithmicDarkeningAllowed(true) }
+        webView.setBackgroundColor(
+            if (dark) 0xFF1A1A1A.toInt() else 0xFFFFFFFF.toInt(),
+        )
+        val activity = resolveActivity() ?: return
+        runCatching {
+            val res = activity.resources
+            val conf = res.configuration
+            val night = if (dark) {
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            } else {
+                android.content.res.Configuration.UI_MODE_NIGHT_NO
+            }
+            if ((conf.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != night) {
+                val next = android.content.res.Configuration(conf)
+                next.uiMode = (next.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+                @Suppress("DEPRECATION")
+                res.updateConfiguration(next, res.displayMetrics)
+            }
+        }
     }
 
     /**
