@@ -905,7 +905,6 @@ fun BrowserScreen(
             surface = if (lastActiveSheet == Sheet.Tabs) {
                 tabSheetSurface(
                     backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
-                    progressive = settings.blurEnabled && homeBlurAvailable,
                 )
             } else {
                 null
@@ -2537,13 +2536,13 @@ private fun TabsSegmented(
     val thumb = MiuixTheme.colorScheme.surface
     Row(
         modifier = modifier
-            .width(184.dp)
-            .height(34.dp)
+            .width(236.dp)
+            .height(40.dp)
             .clip(CircleShape)
             .background(container)
             .drawBehind {
                 val segment = size.width / labels.size
-                val inset = 3.dp.toPx()
+                val inset = 4.dp.toPx()
                 drawRoundRect(
                     color = thumb,
                     topLeft = Offset(segment * thumbPosition + inset, inset),
@@ -2570,7 +2569,7 @@ private fun TabsSegmented(
             ) {
                 Text(
                     text = label,
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     fontWeight = if (index == selected) FontWeight.Medium else FontWeight.Normal,
                     color = MiuixTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -2581,31 +2580,15 @@ private fun TabsSegmented(
 }
 
 /**
- * 标签 sheet 表面：官方 glassBottomSheetSurface + 顶部渐进模糊带（GlassSheetTopBlur）。
+ * 标签 sheet 表面：官方 glassBottomSheetSurface，只换一个更薄的材质。
  *
- * 渐进模糊带由 miuix-glass 内部完成：与玻璃主体共用同一份带遮罩的采样背景，
- * 模糊强度自 sheet 顶边起逐步减弱，并与玻璃主体交叉淡出，所以带底部没有接缝；
- * 过度滚动补出的底边不会画带。
+ * 不再叠顶部渐进模糊带：drawBackdrop 会把它包住的所有子内容裁到自己的 shape 里，
+ * 套在整张 sheet 上就会把标签列表裁成只剩顶部一小段。
  */
 @Composable
 private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
-    progressive: Boolean,
 ): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    // 带上的主题色雾化：跟随当前主题的 background，深色模式下是深色而不是白色
-    val tint = MiuixTheme.colorScheme.background.copy(alpha = 0.2f)
-    val topBlur = remember(progressive, tint) {
-        if (progressive) {
-            top.yukonga.miuix.kmp.glass.GlassSheetTopBlur(
-                height = 112.dp,
-                blurRadius = 80f,
-                curve = 0.5f,
-                tint = tint,
-            )
-        } else {
-            null
-        }
-    }
     // 官方 dialogGlass 的浅色版叠了两层 0x99 白，盖住模糊后整张 sheet 看起来像纯白。
     // 标签 sheet 用同样的 60dp 模糊，但减薄白色层，让壁纸的模糊色彩透出来；深色沿用官方。
     val dark = isAppDarkTheme()
@@ -2633,7 +2616,6 @@ private fun tabSheetSurface(
     return top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(
         backdrop = backdrop,
         material = material,
-        topBlur = topBlur,
     )
 }
 
