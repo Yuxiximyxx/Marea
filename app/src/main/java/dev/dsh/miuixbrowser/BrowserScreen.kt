@@ -243,6 +243,8 @@ fun BrowserScreen(
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
+    var showingIncognitoTabs by remember { mutableStateOf(false) }
+    var clearTabsConfirmIncognito by remember { mutableStateOf(false) }
     var showTabAddMenu by remember { mutableStateOf(false) }
     var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     var tabPopupHostOffset by remember { mutableStateOf(Offset.Zero) }
@@ -863,7 +865,7 @@ fun BrowserScreen(
                 Sheet.Link -> hostOf(linkUrl)
                 Sheet.Image -> "图片"
                 Sheet.Element -> "页面元素"
-                Sheet.Tabs -> null // 标签页自定义头部（渐进模糊 + 添加/删除）
+                Sheet.Tabs -> null // 标签管理自定义头部（新建/删除）
                 else -> null
             },
             startAction = if (lastActiveSheet == Sheet.Tabs) {
@@ -873,6 +875,10 @@ fun BrowserScreen(
                         onShowMenu = { bounds ->
                             tabAddAnchor = bounds
                             showTabAddMenu = true
+                        },
+                        onClick = {
+                            state.newTab(incognito = showingIncognitoTabs)
+                            sheet = Sheet.None
                         },
                         onNormal = {
                             state.newTab(incognito = false)
@@ -887,9 +893,14 @@ fun BrowserScreen(
             } else {
                 null
             },
-            endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
+            endAction = if (lastActiveSheet == Sheet.Tabs &&
+                state.tabs.any { it.incognito == showingIncognitoTabs }
+            ) {
                 {
-                    HapticGlassIconButton(onClick = { showClearTabsConfirm = true }) {
+                    HapticGlassIconButton(onClick = {
+                        clearTabsConfirmIncognito = showingIncognitoTabs
+                        showClearTabsConfirm = true
+                    }) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Delete,
                             contentDescription = "全部删除",
@@ -902,13 +913,14 @@ fun BrowserScreen(
             },
             surface = if (lastActiveSheet == Sheet.Tabs) {
                 tabSheetSurface(
-                    backdrop = if (sheetBlurAvailable) browserBackdrop else null,
-                    progressive = sheetBlurAvailable,
+                    backdrop = null,
+                    progressive = false,
                 )
             } else {
                 null
             },
-            backdrop = if (sheetBlurAvailable) browserBackdrop else null,
+            backdrop = if (lastActiveSheet == Sheet.Tabs) null
+                else if (sheetBlurAvailable) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
             // 不能在 BottomSheet 的内容根节点使用 fillMaxSize：
@@ -929,7 +941,42 @@ fun BrowserScreen(
             when (lastActiveSheet) {
             Sheet.Tabs -> {
                 val screenH = LocalConfiguration.current.screenHeightDp.dp
-                // 标签列表（不再在底部放矩形新建按钮；添加入口在左上角圆形钮）
+                val visibleTabs = state.tabs.withIndex().filter {
+                    it.value.incognito == showingIncognitoTabs
+                }
+                // 普通标签与无痕标签独立分栏；切换分栏只改变列表，不改变当前活动标签。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    listOf(false, true).forEach { incognitoCategory ->
+                        val selected = showingIncognitoTabs == incognitoCategory
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) MiuixTheme.colorScheme.surface
+                                    else Color.Transparent,
+                                )
+                                .clickable { showingIncognitoTabs = incognitoCategory }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (incognitoCategory) "无痕浏览页" else "标签页",
+                                color = MiuixTheme.colorScheme.onSurface,
+                                style = MiuixTheme.textStyles.subtitle,
+                            )
+                        }
+                    }
+                }
+                // 列表独立滚动；高度由可用屏幕约束，底部保留导航栏安全区。
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -943,14 +990,15 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        val rows = state.tabs.chunked(2)
+                        val rows = visibleTabs.chunked(2)
                         rows.forEachIndexed { rowIndex, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                rowItems.forEachIndexed { colIndex, item ->
-                                    val index = rowIndex * 2 + colIndex
+                                rowItems.forEachIndexed { colIndex, indexedItem ->
+                                    val index = indexedItem.index
+                                    val item = indexedItem.value
                                     val thumb = item.thumbnail
                                     Box(
                                         modifier = Modifier
@@ -1052,12 +1100,11 @@ fun BrowserScreen(
                         }
                     }
                 } else {
-                    state.tabs.forEachIndexed { index, item ->
+                    visibleTabs.forEach { indexedItem ->
+                        val index = indexedItem.index
+                        val item = indexedItem.value
                         SheetRow(
-                            title = buildString {
-                                if (item.incognito) append("无痕 · ")
-                                append(item.title.ifBlank { "新标签页" })
-                            },
+                            title = item.title.ifBlank { "新标签页" },
                             subtitle = item.url.ifBlank { null },
                             trailing = {
                                 BarButton(
@@ -1071,6 +1118,17 @@ fun BrowserScreen(
                                 state.select(index)
                                 sheet = Sheet.None
                             },
+                        )
+                    }
+                }
+                if (visibleTabs.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = if (showingIncognitoTabs) "暂无无痕标签页" else "暂无标签页",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     }
                 }
@@ -1253,7 +1311,7 @@ fun BrowserScreen(
                     bottom = tabAddAnchor.bottom - tabPopupHostOffset.y,
                 ),
                 canAdd = state.tabs.size < 99,
-                backdrop = if (sheetBlurAvailable) browserBackdrop else null,
+                backdrop = null,
                 onDismiss = { showTabAddMenu = false },
                 onNormal = {
                     state.newTab(incognito = false)
@@ -1521,8 +1579,11 @@ fun BrowserScreen(
 
         GlassDialog(
             show = showClearTabsConfirm,
-            title = "删除全部标签页？",
-            summary = "将关闭除当前外的所有标签，并新建一个空白标签。",
+            title = if (clearTabsConfirmIncognito) "删除全部无痕标签页？" else "删除全部标签页？",
+            summary = if (clearTabsConfirmIncognito)
+                "将关闭全部无痕标签页，不会影响普通标签页。"
+            else
+                "将关闭全部普通标签页，不会影响无痕标签页。",
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { showClearTabsConfirm = false },
         ) {
@@ -1538,14 +1599,13 @@ fun BrowserScreen(
                 }
                 GlassDialogButton(
                     onClick = {
-                        state.closeAll()
+                        state.closeTabs(incognito = clearTabsConfirmIncognito)
                         showClearTabsConfirm = false
-                        sheet = Sheet.None
                     },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Destructive,
                 ) {
-                    Text(text = "全部删除", style = MiuixTheme.textStyles.button)
+                    Text(text = "删除此栏", style = MiuixTheme.textStyles.button)
                 }
             }
         }
@@ -2597,6 +2657,7 @@ private fun MenuGrid(
 private fun TabAddButton(
     canAdd: Boolean,
     onShowMenu: (androidx.compose.ui.geometry.Rect) -> Unit,
+    onClick: () -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
 ) {
@@ -2616,7 +2677,7 @@ private fun TabAddButton(
                 onClick = {
                     if (canAdd) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNormal()
+                        onClick()
                     }
                 },
                 onLongClick = {
@@ -2684,7 +2745,7 @@ private fun TabAddMenu(
 }
 
 /**
- * 标签 sheet 表面：官方 glassBottomSheetSurface + 顶部渐进模糊带（GlassSheetTopBlur）。
+ * 标签管理 Sheet 表面：保留 miuix-glass 原生材质，但不启用顶部渐进模糊。
  *
  * 渐进模糊带由 miuix-glass 内部完成：与玻璃主体共用同一份带遮罩的采样背景，
  * 模糊强度自 sheet 顶边起逐步减弱，并与玻璃主体交叉淡出，所以带底部没有接缝；
@@ -2695,7 +2756,7 @@ private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     progressive: Boolean,
 ): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    // 不叠加主题色蒙层，避免顶部渐进带看起来像白色/纯色渐变；只显示真实背景采样模糊。
+    // 标签管理采用静态原生玻璃表面，不采样网页背景，也不绘制渐进模糊带。
     val tint = Color.Unspecified
     val topBlur = remember(progressive, tint) {
         if (progressive) {

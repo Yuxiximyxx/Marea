@@ -793,6 +793,35 @@ class BrowserState(private val context: Context) {
         tab.load(target)
     }
 
+    /**
+     * 清空指定类型的标签页。普通与无痕标签互不影响。
+     * 若当前活动标签被清除，则切换到剩余标签；只有全部标签都被清除时才创建普通空白页。
+     */
+    fun closeTabs(incognito: Boolean) {
+        if (tabs.isEmpty()) return
+        val active = tabs.getOrNull(activeIndex)
+        val removeIndices = tabs.indices.filter { tabs[it].incognito == incognito }
+        if (removeIndices.isEmpty()) return
+
+        removeIndices.asReversed().forEach { index ->
+            tabs.removeAt(index).close()
+        }
+
+        if (tabs.isEmpty()) {
+            activeIndex = 0
+            newTab(incognito = false)
+            return
+        }
+
+        val preservedIndex = active?.let { tabs.indexOf(it) } ?: -1
+        activeIndex = if (preservedIndex >= 0) {
+            preservedIndex
+        } else {
+            // 被清空的是当前活动分类时，优先切换到剩余的普通标签，再回退到首个标签。
+            tabs.indexOfFirst { !it.incognito }.takeIf { it >= 0 } ?: 0
+        }
+    }
+
     fun closeAll() {
         tabs.forEach { it.close() }
         tabs.clear()
