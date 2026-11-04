@@ -914,7 +914,7 @@ fun BrowserScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .onGloballyPositioned { tabPopupHostOffset = it.positionInRoot() },
+                    .onGloballyPositioned { tabPopupHostOffset = it.boundsInRoot().topLeft },
             ) {
             Column(
                 modifier = Modifier
