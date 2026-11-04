@@ -66,7 +66,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun SettingsScreen(
     settings: AppSettings,
     onBack: () -> Unit,
-    onPickUa: () -> Unit,
+    onApplyUserAgent: (String) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenBookmarks: () -> Unit,
@@ -74,6 +74,7 @@ fun SettingsScreen(
     blurEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
+    var showUa by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
@@ -197,7 +198,7 @@ fun SettingsScreen(
                     SettingsRow(
                         title = "UA 标识管理",
                         summary = uaSummary(settings.userAgent),
-                        onClick = onPickUa,
+                        onClick = { showUa = true },
                     )
                     SettingsRow(
                         title = "下载",
@@ -280,6 +281,20 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            // UA 选择放在设置页自己的 Scaffold 里：浏览主界面的覆盖层会被二级页面盖住
+            UaDialog(
+                show = showUa,
+                initial = settings.userAgent,
+                // 不采样 browserBackdrop（主页可能含壁纸），用不透明回退色
+                backdrop = null,
+                onDismiss = { showUa = false },
+                onConfirm = {
+                    settings.updateUserAgent(it)
+                    onApplyUserAgent(it)
+                    showUa = false
+                },
+            )
 
             SearchSheet(
                 show = showSearch,

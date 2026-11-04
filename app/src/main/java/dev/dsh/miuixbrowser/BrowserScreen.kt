@@ -142,6 +142,10 @@ import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Back
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
+import top.yukonga.miuix.kmp.nav.core.navBackStackOf
+import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -208,9 +212,6 @@ fun BrowserScreen(
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
     val homeBlurAvailable = tab.url.isEmpty() && !tab.loading
-    // 标签 Sheet 覆盖在当前网页之上，允许在页面加载完成后采样完整浏览器画面；
-    // 仍避开 WebView 正在切换页面时的瞬态帧。
-    val sheetBlurAvailable = settings.blurEnabled && !tab.loading
     // 新建标签页（首页）的滚动状态：每个标签独立，供顶部渐进模糊带跟随滚动淡入
     val startScroll = remember(tab.id) { ScrollState(0) }
     val clipboard = LocalClipboardManager.current
@@ -227,31 +228,31 @@ fun BrowserScreen(
     var barMinimized by remember { mutableStateOf(false) }
     var favEditing by remember { mutableStateOf(false) }
     var showFavEditor by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
-    var showUaPicker by remember { mutableStateOf(false) }
-    var showDownloads by remember { mutableStateOf(false) }
-    var showExtensions by remember { mutableStateOf(false) }
-    var showHistory by remember { mutableStateOf(false) }
-    var libraryTab by remember { mutableIntStateOf(1) }
+    // 二级页面返回栈：官方 miuix-nav NavDisplay。栈底是浏览主界面。
+    val backStack = remember { navBackStackOf(AppRoute.Browser) }
+    fun pushPage(route: AppRoute) {
+        if (backStack.lastOrNull() != route) backStack.add(route)
+    }
+    fun popPage() {
+        if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+    }
+    fun popToBrowser() {
+        while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+    }
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>?>(null) }
-    var settingsReturn by remember { mutableStateOf(false) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
-    var showingIncognitoTabs by remember { mutableStateOf(false) }
-    var clearTabsConfirmIncognito by remember { mutableStateOf(false) }
     var showTabAddMenu by remember { mutableStateOf(false) }
     var tabAddAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-    var tabPopupHostOffset by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
-            showDownloads = true
+            pushPage(AppRoute.Downloads)
             sheet = Sheet.None
             onOpenDownloadsConsumed()
         }
@@ -436,30 +437,9 @@ fun BrowserScreen(
         label = "bottomBar",
     )
 
-    // 有 NavigationEvent 宿主时，子页由 predictiveBackPage 手势驱动，这里避免双处理
-    val hasNavDispatcher = androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner.current != null
-    val secondaryOpen = showSettings || showAbout || showExtensions || showDownloads || showHistory
-
-    /** 关闭二级页：若来自设置则回设置，否则回浏览主页 */
-    fun closeSecondaryPage(close: () -> Unit) {
-        close()
-        if (settingsReturn) {
-            showSettings = true
-            settingsReturn = false
-        }
-    }
-
-    BackHandler(enabled = !(hasNavDispatcher && secondaryOpen)) {
+    // 二级页面的返回（含预见性返回）由 NavDisplay 接管；这里只处理浏览主界面自己的返回。
+    BackHandler(enabled = backStack.size <= 1) {
         when {
-            showAbout -> closeSecondaryPage { showAbout = false }
-            showExtensions -> closeSecondaryPage { showExtensions = false }
-            showDownloads -> closeSecondaryPage { showDownloads = false }
-            showHistory -> closeSecondaryPage { showHistory = false }
-            showSettings -> {
-                showSettings = false
-                settingsReturn = false
-            }
-            showUaPicker -> showUaPicker = false
             showFind -> {
                 tab.clearFind()
                 showFind = false
@@ -472,6 +452,16 @@ fun BrowserScreen(
         }
     }
 
+    NavDisplay(
+        backStack = backStack,
+        modifier = Modifier.fillMaxSize(),
+        onBack = { popPage() },
+        effects = NavDisplayEffects(
+            cornerClipRadius = rememberNavSystemCornerRadius(),
+            backdropColor = MiuixTheme.colorScheme.surface,
+        ),
+    ) {
+    entry<AppRoute.Browser> {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MiuixTheme.colorScheme.surface,
@@ -865,7 +855,7 @@ fun BrowserScreen(
                 Sheet.Link -> hostOf(linkUrl)
                 Sheet.Image -> "图片"
                 Sheet.Element -> "页面元素"
-                Sheet.Tabs -> null // 标签管理自定义头部（新建/删除）
+                Sheet.Tabs -> null // 标签页自定义头部（渐进模糊 + 添加/删除）
                 else -> null
             },
             startAction = if (lastActiveSheet == Sheet.Tabs) {
@@ -875,10 +865,6 @@ fun BrowserScreen(
                         onShowMenu = { bounds ->
                             tabAddAnchor = bounds
                             showTabAddMenu = true
-                        },
-                        onClick = {
-                            state.newTab(incognito = showingIncognitoTabs)
-                            sheet = Sheet.None
                         },
                         onNormal = {
                             state.newTab(incognito = false)
@@ -893,14 +879,9 @@ fun BrowserScreen(
             } else {
                 null
             },
-            endAction = if (lastActiveSheet == Sheet.Tabs &&
-                state.tabs.any { it.incognito == showingIncognitoTabs }
-            ) {
+            endAction = if (lastActiveSheet == Sheet.Tabs && state.tabs.isNotEmpty()) {
                 {
-                    HapticGlassIconButton(onClick = {
-                        clearTabsConfirmIncognito = showingIncognitoTabs
-                        showClearTabsConfirm = true
-                    }) {
+                    HapticGlassIconButton(onClick = { showClearTabsConfirm = true }) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Delete,
                             contentDescription = "全部删除",
@@ -913,25 +894,15 @@ fun BrowserScreen(
             },
             surface = if (lastActiveSheet == Sheet.Tabs) {
                 tabSheetSurface(
-                    backdrop = null,
-                    progressive = false,
+                    backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+                    progressive = settings.blurEnabled && homeBlurAvailable,
                 )
             } else {
                 null
             },
-            backdrop = if (lastActiveSheet == Sheet.Tabs) null
-                else if (sheetBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
-            // 不能在 BottomSheet 的内容根节点使用 fillMaxSize：
-            // BottomSheetColumn 本身会按内容 wrapContentHeight，fillMaxSize 会反向撑满
-            // Dialog 可用高度，导致标签 Sheet 和内部 GlassPopup 看起来接近全屏。
-            // 这里只需要横向铺满，并记录 Popup 的坐标原点。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onGloballyPositioned { tabPopupHostOffset = it.boundsInRoot().topLeft },
-            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -941,42 +912,7 @@ fun BrowserScreen(
             when (lastActiveSheet) {
             Sheet.Tabs -> {
                 val screenH = LocalConfiguration.current.screenHeightDp.dp
-                val visibleTabs = state.tabs.withIndex().filter {
-                    it.value.incognito == showingIncognitoTabs
-                }
-                // 普通标签与无痕标签独立分栏；切换分栏只改变列表，不改变当前活动标签。
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    listOf(false, true).forEach { incognitoCategory ->
-                        val selected = showingIncognitoTabs == incognitoCategory
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(CircleShape)
-                                .background(
-                                    if (selected) MiuixTheme.colorScheme.surface
-                                    else Color.Transparent,
-                                )
-                                .clickable { showingIncognitoTabs = incognitoCategory }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = if (incognitoCategory) "无痕浏览页" else "标签页",
-                                color = MiuixTheme.colorScheme.onSurface,
-                                style = MiuixTheme.textStyles.subtitle,
-                            )
-                        }
-                    }
-                }
-                // 列表独立滚动；高度由可用屏幕约束，底部保留导航栏安全区。
+                // 标签列表（不再在底部放矩形新建按钮；添加入口在左上角圆形钮）
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -990,15 +926,14 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        val rows = visibleTabs.chunked(2)
+                        val rows = state.tabs.chunked(2)
                         rows.forEachIndexed { rowIndex, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                rowItems.forEachIndexed { colIndex, indexedItem ->
-                                    val index = indexedItem.index
-                                    val item = indexedItem.value
+                                rowItems.forEachIndexed { colIndex, item ->
+                                    val index = rowIndex * 2 + colIndex
                                     val thumb = item.thumbnail
                                     Box(
                                         modifier = Modifier
@@ -1100,11 +1035,12 @@ fun BrowserScreen(
                         }
                     }
                 } else {
-                    visibleTabs.forEach { indexedItem ->
-                        val index = indexedItem.index
-                        val item = indexedItem.value
+                    state.tabs.forEachIndexed { index, item ->
                         SheetRow(
-                            title = item.title.ifBlank { "新标签页" },
+                            title = buildString {
+                                if (item.incognito) append("无痕 · ")
+                                append(item.title.ifBlank { "新标签页" })
+                            },
                             subtitle = item.url.ifBlank { null },
                             trailing = {
                                 BarButton(
@@ -1118,17 +1054,6 @@ fun BrowserScreen(
                                 state.select(index)
                                 sheet = Sheet.None
                             },
-                        )
-                    }
-                }
-                if (visibleTabs.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = if (showingIncognitoTabs) "暂无无痕标签页" else "暂无标签页",
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     }
                 }
@@ -1185,24 +1110,11 @@ fun BrowserScreen(
                                 }
                             }
                             MenuAction.Home -> tab.goHome()
-                            MenuAction.Downloads -> {
-                                settingsReturn = false
-                                showDownloads = true
-                            }
-                            MenuAction.Extensions -> {
-                                settingsReturn = false
-                                showExtensions = true
-                            }
+                            MenuAction.Downloads -> pushPage(AppRoute.Downloads)
+                            MenuAction.Extensions -> pushPage(AppRoute.Extensions)
                             MenuAction.ScriptMenu -> tab.queryMenuCommands { scriptMenuItems = it }
-                            MenuAction.History -> {
-                                settingsReturn = false
-                                libraryTab = 1
-                                showHistory = true
-                            }
-                            MenuAction.Settings -> {
-                                settingsReturn = false
-                                showSettings = true
-                            }
+                            MenuAction.History -> pushPage(AppRoute.Library(1))
+                            MenuAction.Settings -> pushPage(AppRoute.Settings)
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
                         }
                     },
@@ -1300,88 +1212,8 @@ fun BrowserScreen(
             Sheet.None -> Unit
             }
             }
-
-            // 与 Sheet 共用同一个 Dialog/Overlay 根节点，确保长按菜单绘制在 Sheet 内容之上。
-            TabAddMenu(
-                show = showTabAddMenu && lastActiveSheet == Sheet.Tabs,
-                anchorBounds = androidx.compose.ui.geometry.Rect(
-                    left = tabAddAnchor.left - tabPopupHostOffset.x,
-                    top = tabAddAnchor.top - tabPopupHostOffset.y,
-                    right = tabAddAnchor.right - tabPopupHostOffset.x,
-                    bottom = tabAddAnchor.bottom - tabPopupHostOffset.y,
-                ),
-                canAdd = state.tabs.size < 99,
-                backdrop = null,
-                onDismiss = { showTabAddMenu = false },
-                onNormal = {
-                    state.newTab(incognito = false)
-                    sheet = Sheet.None
-                },
-                onIncognito = {
-                    state.newTab(incognito = true)
-                    sheet = Sheet.None
-                },
-            )
-            }
         }
 
-        if (showSettings) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackPage(visible = showSettings) {
-                        showSettings = false
-                        settingsReturn = false
-                    },
-            ) {
-                SettingsScreen(
-                    settings = settings,
-                    onBack = {
-                        showSettings = false
-                        settingsReturn = false
-                    },
-                    onPickUa = { showUaPicker = true },
-                    onOpenDownloads = {
-                        settingsReturn = true
-                        showSettings = false
-                        showDownloads = true
-                    },
-                    onOpenScripts = {
-                        settingsReturn = true
-                        showSettings = false
-                        showExtensions = true
-                    },
-                    onOpenBookmarks = {
-                        settingsReturn = true
-                        showSettings = false
-                        libraryTab = 0
-                        showHistory = true
-                    },
-                    onOpenAbout = {
-                        settingsReturn = true
-                        showSettings = false
-                        showAbout = true
-                    },
-                    blurEnabled = settings.blurEnabled,
-                )
-            }
-        }
-
-
-        if (showAbout) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackPage(visible = showAbout) {
-                        closeSecondaryPage { showAbout = false }
-                    },
-            ) {
-                AboutScreen(
-                    onBack = { closeSecondaryPage { showAbout = false } },
-                    blurEnabled = settings.blurEnabled,
-                )
-            }
-        }
 
         val downloadRequest = pendingDownload
         GlassDialog(
@@ -1496,7 +1328,7 @@ fun BrowserScreen(
                                     }
                                     if (code != null) {
                                         extensions.add("", code, sourceUrl = target)
-                                        showExtensions = true
+                                        pushPage(AppRoute.Extensions)
                                     }
                                 }
                             },
@@ -1510,80 +1342,10 @@ fun BrowserScreen(
             }
         }
 
-        if (showDownloads) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackPage(visible = showDownloads) {
-                        closeSecondaryPage { showDownloads = false }
-                    },
-            ) {
-                DownloadsScreen(
-                    onBack = { closeSecondaryPage { showDownloads = false } },
-                    blurEnabled = settings.blurEnabled,
-                )
-            }
-        }
-
-        if (showExtensions) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackPage(visible = showExtensions) {
-                        closeSecondaryPage { showExtensions = false }
-                    },
-            ) {
-                ExtensionsScreen(
-                    store = extensions,
-                    onBack = { closeSecondaryPage { showExtensions = false } },
-                    blurEnabled = settings.blurEnabled,
-                )
-            }
-        }
-
-        if (showHistory) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackPage(visible = showHistory) {
-                        closeSecondaryPage { showHistory = false }
-                    },
-            ) {
-                LibraryScreen(
-                    favorites = favorites,
-                    store = history,
-                    onBack = { closeSecondaryPage { showHistory = false } },
-                    onOpen = { url ->
-                        showHistory = false
-                        settingsReturn = false
-                        tab.loadUrl(url)
-                    },
-                    initialTab = libraryTab,
-                    blurEnabled = settings.blurEnabled,
-                )
-            }
-        }
-
-        UaDialog(
-            show = showUaPicker,
-            initial = settings.userAgent,
-            // 不采样 browserBackdrop（主页可能含壁纸），用不透明回退色，避免壁纸取色
-            backdrop = null,
-            onDismiss = { showUaPicker = false },
-            onConfirm = {
-                settings.updateUserAgent(it)
-                state.applyUserAgent(it)
-                showUaPicker = false
-            },
-        )
-
         GlassDialog(
             show = showClearTabsConfirm,
-            title = if (clearTabsConfirmIncognito) "删除全部无痕标签页？" else "删除全部标签页？",
-            summary = if (clearTabsConfirmIncognito)
-                "将关闭全部无痕标签页，不会影响普通标签页。"
-            else
-                "将关闭全部普通标签页，不会影响无痕标签页。",
+            title = "删除全部标签页？",
+            summary = "将关闭除当前外的所有标签，并新建一个空白标签。",
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { showClearTabsConfirm = false },
         ) {
@@ -1599,16 +1361,33 @@ fun BrowserScreen(
                 }
                 GlassDialogButton(
                     onClick = {
-                        state.closeTabs(incognito = clearTabsConfirmIncognito)
+                        state.closeAll()
                         showClearTabsConfirm = false
+                        sheet = Sheet.None
                     },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Destructive,
                 ) {
-                    Text(text = "删除此栏", style = MiuixTheme.textStyles.button)
+                    Text(text = "全部删除", style = MiuixTheme.textStyles.button)
                 }
             }
         }
+
+        TabAddMenu(
+            show = showTabAddMenu,
+            anchorBounds = tabAddAnchor,
+            canAdd = state.tabs.size < 99,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismiss = { showTabAddMenu = false },
+            onNormal = {
+                state.newTab(incognito = false)
+                sheet = Sheet.None
+            },
+            onIncognito = {
+                state.newTab(incognito = true)
+                sheet = Sheet.None
+            },
+        )
 
         FindDialog(
             show = showFind,
@@ -1635,6 +1414,52 @@ fun BrowserScreen(
                 }
                 showFavEditor = false
             },
+        )
+    }
+    }
+    }
+    entry<AppRoute.Settings> {
+        SettingsScreen(
+            settings = settings,
+            onBack = { popPage() },
+            onApplyUserAgent = { state.applyUserAgent(it) },
+            onOpenDownloads = { pushPage(AppRoute.Downloads) },
+            onOpenScripts = { pushPage(AppRoute.Extensions) },
+            onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
+            onOpenAbout = { pushPage(AppRoute.About) },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.About> {
+        AboutScreen(
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.Downloads> {
+        DownloadsScreen(
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.Extensions> {
+        ExtensionsScreen(
+            store = extensions,
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.Library> { route ->
+        LibraryScreen(
+            favorites = favorites,
+            store = history,
+            onBack = { popPage() },
+            onOpen = { url ->
+                popToBrowser()
+                tab.loadUrl(url)
+            },
+            initialTab = route.tab,
+            blurEnabled = settings.blurEnabled,
         )
     }
     }
@@ -2422,7 +2247,7 @@ private fun FavoriteEditor(
 
 /** UA 选择：GlassBottomSheet 预设 + 自定义 */
 @Composable
-private fun UaDialog(
+internal fun UaDialog(
     show: Boolean,
     initial: String,
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
@@ -2657,7 +2482,6 @@ private fun MenuGrid(
 private fun TabAddButton(
     canAdd: Boolean,
     onShowMenu: (androidx.compose.ui.geometry.Rect) -> Unit,
-    onClick: () -> Unit,
     onNormal: () -> Unit,
     onIncognito: () -> Unit,
 ) {
@@ -2677,7 +2501,7 @@ private fun TabAddButton(
                 onClick = {
                     if (canAdd) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onClick()
+                        onNormal()
                     }
                 },
                 onLongClick = {
@@ -2745,7 +2569,7 @@ private fun TabAddMenu(
 }
 
 /**
- * 标签管理 Sheet 表面：保留 miuix-glass 原生材质，但不启用顶部渐进模糊。
+ * 标签 sheet 表面：官方 glassBottomSheetSurface + 顶部渐进模糊带（GlassSheetTopBlur）。
  *
  * 渐进模糊带由 miuix-glass 内部完成：与玻璃主体共用同一份带遮罩的采样背景，
  * 模糊强度自 sheet 顶边起逐步减弱，并与玻璃主体交叉淡出，所以带底部没有接缝；
@@ -2756,8 +2580,8 @@ private fun tabSheetSurface(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     progressive: Boolean,
 ): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    // 标签管理采用静态原生玻璃表面，不采样网页背景，也不绘制渐进模糊带。
-    val tint = Color.Unspecified
+    // 带上的主题色雾化：跟随当前主题的 background，深色模式下是深色而不是白色
+    val tint = MiuixTheme.colorScheme.background.copy(alpha = 0.35f)
     val topBlur = remember(progressive, tint) {
         if (progressive) {
             top.yukonga.miuix.kmp.glass.GlassSheetTopBlur(
