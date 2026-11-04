@@ -7,12 +7,16 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -118,8 +122,32 @@ class BrowserTab(private val appContext: Context) {
     var pullProgress by mutableFloatStateOf(0f)
         private set
 
-    /** 下载请求回调（交给界面弹确认框） */
+    /** 下载请求回调（交给界面弹确认框）。blob: 会先抽出字节再走 data 下载。 */
     var onDownload: ((url: String, userAgent: String?, disposition: String?, mime: String?) -> Unit)? = null
+
+    /** 页面要求选文件 / 拍照 / 录像：由界面拉起系统选择器或相机 */
+    var onShowFileChooser: (
+        params: WebChromeClient.FileChooserParams,
+        callback: ValueCallback<Array<Uri>>,
+    ) -> Unit = { _, callback -> callback.onReceiveValue(null) }
+
+    /** HTML5 视频全屏：把 WebView 给的 View 挂到全屏容器 */
+    var onShowCustomView: ((view: View, callback: WebChromeClient.CustomViewCallback) -> Unit)? = null
+
+    /** 退出全屏（视频结束 / 返回键） */
+    var onHideCustomView: (() -> Unit)? = null
+
+    /** 网页权限「询问」弹窗（摄像头 / 麦克风等） */
+    var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
+
+    /** 申请 Android 运行时权限，完成后回调（调用方再自行检查授予结果） */
+    var requestAndroidPermissions: ((Array<String>, () -> Unit) -> Unit)? = null
+
+    /** blob 抽取完成后的保存请求（文件名 + mime + data URL） */
+    var onBlobReady: ((dataUrl: String, fileName: String, mime: String?) -> Unit)? = null
+
+    /** blob 抽取失败 */
+    var onBlobError: ((message: String) -> Unit)? = null
 
     /** 下拉刷新回调 */
     var onPullRefresh: (() -> Unit)? = null
@@ -146,6 +174,73 @@ class BrowserTab(private val appContext: Context) {
 
     private val scriptHandlers = mutableListOf<androidx.webkit.ScriptHandler>()
     private var installedScriptsSignature = ""
+
+    /** 文件选择器：WebView 持有的回调，界面拉起选择器后必须回传（null = 取消） */
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+
+    /** HTML5 视频全屏中的 View 与回调 */
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    /** 界面取消文件选择（返回键 / 关闭弹层） */
+    fun cancelFileChooser() {
+        val cb = pendingFileCallback
+        pendingFileCallback = null
+        runCatching { cb?.onReceiveValue(null) }
+    }
+
+    /** 是否正在全屏自定义视图 */
+    val isCustomViewShowing: Boolean get() = customView != null
+
+    /** 退出视频全屏（返回键调用） */
+    fun exitCustomView() {
+        val cb = customViewCallback
+        if (cb == null && customView == null) return
+        customView = null
+        customViewCallback = null
+        onHideCustomView?.invoke()
+        runCatching { cb?.onCustomViewHidden() }
+    }
+
+    /**
+     * 用页面内 fetch 把 blob: 读成 data URL，再交给界面保存。
+     * 大文件可能超出 evaluateJavascript 返回上限，失败时回调 onBlobError。
+     */
+    fun extractBlob(
+        url: String,
+        userAgent: String? = null,
+        disposition: String? = null,
+        mime: String? = null,
+    ) {
+        val fileName = Downloader.fileNameFrom(url, disposition)
+        val js = """
+            (function(){
+              return fetch(${org.json.JSONObject.quote(url)})
+                .then(function(r){ return r.blob(); })
+                .then(function(b){
+                  return new Promise(function(resolve, reject){
+                    var fr = new FileReader();
+                    fr.onload = function(){ resolve(String(fr.result)); };
+                    fr.onerror = function(){ reject('read'); };
+                    fr.readAsDataURL(b);
+                  });
+                });
+            })()
+        """.trimIndent()
+        webView.evaluateJavascript(js) { raw ->
+            val dataUrl = runCatching {
+                when (raw) {
+                    null, "null" -> null
+                    else -> org.json.JSONTokener(raw).nextValue() as? String
+                }
+            }.getOrNull()
+            if (dataUrl != null && dataUrl.startsWith("data:", ignoreCase = true)) {
+                onBlobReady?.invoke(dataUrl, fileName, mime)
+            } else {
+                onBlobError?.invoke("无法读取 blob 文件（可能过大）")
+            }
+        }
+    }
 
     init {
         runCatching {
@@ -248,10 +343,75 @@ class BrowserTab(private val appContext: Context) {
             override fun onReceivedTitle(view: WebView, pageTitle: String?) {
                 if (!pageTitle.isNullOrBlank()) title = pageTitle
             }
+
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?,
+            ): Boolean {
+                if (filePathCallback == null || fileChooserParams == null) return false
+                // WebView 可能在上一次未回调时再次请求，先取消上一次
+                cancelFileChooser()
+                pendingFileCallback = filePathCallback
+                this@BrowserTab.onShowFileChooser.invoke(fileChooserParams, filePathCallback)
+                return true
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || callback == null) return
+                if (customView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                this@BrowserTab.onShowCustomView?.invoke(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                val cb = customViewCallback
+                customView = null
+                customViewCallback = null
+                this@BrowserTab.onHideCustomView?.invoke()
+                // 界面摘掉 View 后必须通知 WebView
+                cb?.onCustomViewHidden()
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                webView.post { handleWebPermission(request) }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: GeolocationPermissions.Callback,
+            ) {
+                webView.post {
+                    decide(
+                        locationMode,
+                        Uri.parse(origin).host ?: origin,
+                        "获取你的位置",
+                        arrayOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                        ),
+                        anyOk = true,
+                    ) { allow -> callback.invoke(origin, allow, false) }
+                }
+            }
         }
 
         webView.setDownloadListener { link, userAgent, contentDisposition, mimeType, _ ->
-            onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            when {
+                link.startsWith("blob:", ignoreCase = true) -> {
+                    // blob：HTTP 下载器拉不到，走页面内抽取
+                    extractBlob(link, userAgent, contentDisposition, mimeType)
+                }
+                link.startsWith("data:", ignoreCase = true) -> {
+                    val name = Downloader.fileNameFrom(link, contentDisposition)
+                    onBlobReady?.invoke(link, name, mimeType)
+                }
+                else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            }
         }
 
         // 约 2.5cm 的拉动距离，避免误触
@@ -483,25 +643,157 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /**
-     * 应用隐私设置：第三方 Cookie、DNT 请求头、WebRTC 禁用。
-     * DNT 通过附加请求头实现；WebRTC 通过关闭媒体源间接限制（WebView 无直接开关时尽力而为）。
+     * 应用隐私与权限设置（当前标签成为活动标签、或设置变化时调用）。
+     * - 第三方 Cookie：CookieManager 按 WebView 设置；Cookie 总开关随标签是否无痕切换。
+     * - DNT：请求头 + navigator.doNotTrack / globalPrivacyControl。
+     * - WebRTC / 剪贴板 / 媒体静音：document-start 脚本注入所有框架，刷新页面后生效。
+     * - 摄像头 / 麦克风 / 定位：在 WebChromeClient 里按「询问 / 允许 / 拒绝」处理。
      */
     fun applyPrivacy(
         thirdPartyCookiesAllowed: Boolean,
         sendDnt: Boolean,
         webrtcDisabled: Boolean,
+        clipboardMode: Int = 0,
+        mediaMode: Int = 1,
+        cameraMode: Int = 0,
+        micMode: Int = 0,
+        locationMode: Int = 0,
+        blockTrackers: Boolean = false,
     ) {
         runCatching {
+            CookieManager.getInstance().setAcceptCookie(!incognito)
             CookieManager.getInstance().setAcceptThirdPartyCookies(webView, thirdPartyCookiesAllowed)
         }
         dntEnabled = sendDnt
-        // WebRTC：关闭混合内容与媒体播放授权，降低 IP 泄露面
-        runCatching {
+        this.webrtcDisabledFlag = webrtcDisabled
+        this.cameraMode = cameraMode
+        this.micMode = micMode
+        this.locationMode = locationMode
+        this.blockTrackers = blockTrackers
+        // 询问 / 拒绝：需要用户手势才能出声；允许：自动播放
+        runCatching { webView.settings.mediaPlaybackRequiresUserGesture = mediaMode != 1 }
+
+        val script = buildString {
             if (webrtcDisabled) {
-                webView.settings.mediaPlaybackRequiresUserGesture = true
+                runCatching {
+                    append(appContext.assets.open("mafari_no_webrtc.js").bufferedReader(Charsets.UTF_8).use { it.readText() })
+                    append('\n')
+                }
+            }
+            if (clipboardMode == 2) {
+                append(
+                    "(function(){try{var d=function(){return Promise.reject(new DOMException('Permission denied','NotAllowedError'))};" +
+                        "if(navigator.clipboard){['read','readText','write','writeText'].forEach(function(m){try{navigator.clipboard[m]=d}catch(e){}})}}catch(e){}})();\n",
+                )
+            }
+            if (sendDnt) {
+                append(
+                    "(function(){try{Object.defineProperty(Navigator.prototype,'doNotTrack',{get:function(){return '1'},configurable:true});" +
+                        "Object.defineProperty(Navigator.prototype,'globalPrivacyControl',{get:function(){return true},configurable:true})}catch(e){}})();\n",
+                )
+            }
+            if (mediaMode == 2) {
+                append(
+                    "(function(){try{Object.defineProperty(HTMLMediaElement.prototype,'muted',{get:function(){return true},set:function(v){},configurable:true});" +
+                        "var p=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{this.volume=0}catch(e){}return p.apply(this,arguments)}}catch(e){}})();\n",
+                )
             }
         }
-        this.webrtcDisabledFlag = webrtcDisabled
+        runCatching { privacyHandler?.remove() }
+        privacyHandler = null
+        if (script.isNotBlank() &&
+            androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
+            runCatching {
+                privacyHandler = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+            }.onFailure { Diag.log("privacy script install failed: ${it.message}") }
+        }
+    }
+
+    private var privacyHandler: androidx.webkit.ScriptHandler? = null
+
+    @Volatile
+    private var blockTrackers = false
+
+    @Volatile
+    private var pageHost = ""
+
+    private var lastDntUrl = ""
+
+    private var cameraMode = 0
+    private var micMode = 0
+    private var locationMode = 0
+
+    private fun hasPermission(permission: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(appContext, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun ensureAndroid(perms: Array<String>, anyOk: Boolean, result: (Boolean) -> Unit) {
+        fun granted() = if (anyOk) perms.any { hasPermission(it) } else perms.all { hasPermission(it) }
+        if (granted()) {
+            result(true)
+            return
+        }
+        val request = requestAndroidPermissions
+        if (request == null) {
+            result(false)
+        } else {
+            request(perms.filter { !hasPermission(it) }.toTypedArray()) { result(granted()) }
+        }
+    }
+
+    private fun decide(
+        mode: Int,
+        origin: String,
+        what: String,
+        perms: Array<String>,
+        anyOk: Boolean = false,
+        result: (Boolean) -> Unit,
+    ) {
+        when (mode) {
+            2 -> result(false)
+            1 -> ensureAndroid(perms, anyOk, result)
+            else -> {
+                val prompt = onPermissionPrompt
+                if (prompt == null) {
+                    result(false)
+                } else {
+                    prompt(origin, what) { allow ->
+                        if (allow) ensureAndroid(perms, anyOk, result) else result(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleWebPermission(request: PermissionRequest) {
+        val res = request.resources.toSet()
+        val keep = mutableListOf<String>()
+        if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in res) keep += PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+        val camOk = PermissionRequest.RESOURCE_VIDEO_CAPTURE in res && cameraMode != 2
+        val micOk = PermissionRequest.RESOURCE_AUDIO_CAPTURE in res && micMode != 2
+        fun finish(extra: List<String>) {
+            val all = keep + extra
+            if (all.isEmpty()) request.deny() else request.grant(all.toTypedArray())
+        }
+        if (!camOk && !micOk) {
+            finish(emptyList())
+            return
+        }
+        val perms = buildList {
+            if (camOk) add(android.Manifest.permission.CAMERA)
+            if (micOk) add(android.Manifest.permission.RECORD_AUDIO)
+        }.toTypedArray()
+        val what = listOfNotNull(if (camOk) "摄像头" else null, if (micOk) "麦克风" else null).joinToString("、")
+        val mustAsk = (camOk && cameraMode == 0) || (micOk && micMode == 0)
+        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms) { ok ->
+            finish(
+                if (ok) buildList {
+                    if (camOk) add(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                    if (micOk) add(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                } else emptyList(),
+            )
+        }
     }
 
     @Volatile
@@ -603,6 +895,8 @@ class BrowserTab(private val appContext: Context) {
     fun destroyNow() {
         if (destroyed) return
         destroyed = true
+        cancelFileChooser()
+        exitCustomView()
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()
