@@ -1,6 +1,6 @@
 package dev.dsh.miuixbrowser
 
-/** 内置脚本：不进 prefs，按需一键加入脚本列表。去广告规则不在这里，见「设置 → 高级 → 去广告」。 */
+/** 建议安装的脚本：不进 prefs，按需一键加入脚本列表。去广告规则不在这里，见「设置 → 高级 → 去广告」。 */
 data class BuiltinScript(
     val name: String,
     val description: String,

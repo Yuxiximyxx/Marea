@@ -171,7 +171,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 ) {
                     if (missingBuiltins.isNotEmpty()) {
                         item {
-                            SmallTitle(text = "内置脚本")
+                            SmallTitle(text = "建议安装的脚本")
                         }
                         items(missingBuiltins.size) { index ->
                             val builtin = missingBuiltins[index]
