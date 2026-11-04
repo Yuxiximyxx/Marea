@@ -911,9 +911,13 @@ fun BrowserScreen(
             backdrop = if (sheetBlurAvailable) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
+            // 不能在 BottomSheet 的内容根节点使用 fillMaxSize：
+            // BottomSheetColumn 本身会按内容 wrapContentHeight，fillMaxSize 会反向撑满
+            // Dialog 可用高度，导致标签 Sheet 和内部 GlassPopup 看起来接近全屏。
+            // 这里只需要横向铺满，并记录 Popup 的坐标原点。
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .onGloballyPositioned { tabPopupHostOffset = it.boundsInRoot().topLeft },
             ) {
             Column(
