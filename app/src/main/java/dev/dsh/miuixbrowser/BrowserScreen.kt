@@ -45,6 +45,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -1007,167 +1009,85 @@ fun BrowserScreen(
                 // 只显示当前栏的标签；index 仍是全局下标，选中/关闭时用
                 val pageIncognito = tabsPage == 1
                 val visibleTabs = state.tabs.withIndex().filter { it.value.incognito == pageIncognito }
-                // 标签列表（不再在底部放矩形新建按钮；添加入口在左上角圆形钮）
-                Column(
+                val cardStyle = settings.tabsStyle == 1
+                // 懒加载：只组合/绘制可见行（最多 99 个标签时不再一次性全部组合）
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = screenH * 0.68f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = 4.dp),
+                        .heightIn(max = screenH * 0.68f),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                    verticalArrangement = if (cardStyle) Arrangement.spacedBy(10.dp) else Arrangement.Top,
                 ) {
-                if (settings.tabsStyle == 1) {
-                    // 卡片显示：加高、左右对齐
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        val rows = visibleTabs.chunked(2)
-                        rows.forEachIndexed { rowIndex, rowItems ->
+                    if (cardStyle) {
+                        items(
+                            items = visibleTabs.chunked(2),
+                            key = { row -> row.first().value.id },
+                            contentType = { "tabCardRow" },
+                        ) { rowItems ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowItems.forEach { indexed ->
-                                    val index = indexed.index
-                                    val item = indexed.value
-                                    val thumb = item.thumbnail
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(160.dp)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(
-                                                if (item.incognito) {
-                                                    Color(0xFF3D2B4F)
-                                                } else {
-                                                    MiuixTheme.colorScheme.surfaceContainerHigh
-                                                },
-                                            )
-                                            .clickable {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                state.select(index)
-                                                sheet = Sheet.None
-                                            },
-                                    ) {
-                                        // 网页缩略图铺满卡片，作为底图
-                                        if (thumb != null) {
-                                            Image(
-                                                bitmap = thumb,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .graphicsLayer { alpha = 0.45f },
-                                            )
-                                        }
-                                        Column(
-                                            modifier = Modifier.fillMaxSize(),
-                                        ) {
-                                            // 标题行：miuix-glass 模糊底
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .then(
-                                                        if (settings.blurEnabled && homeBlurAvailable) {
-                                                            Modifier.glassPanel(
-                                                                backdrop = browserBackdrop,
-                                                                shape = GlassShape(0.dp),
-                                                                style = GlassDefaults.style(isAppDarkTheme()),
-                                                                material = GlassMaterials.puredThinGlass(isAppDarkTheme()),
-                                                                stroke = GlassStrokes.forTheme(isAppDarkTheme()),
-                                                                shading = false,
-                                                            )
-                                                        } else {
-                                                            Modifier.background(
-                                                                MiuixTheme.colorScheme.surface.copy(alpha = 0.55f),
-                                                            )
-                                                        },
-                                                    )
-                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                            ) {
-                                                Text(
-                                                    text = buildString {
-                                                        if (item.incognito) append("无痕 · ")
-                                                        append(item.title.ifBlank { "新标签页" })
-                                                    },
-                                                    fontSize = 13.sp,
-                                                    color = MiuixTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                            Spacer(Modifier.weight(1f))
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    text = if (item.url.isBlank()) "主页" else hostOf(item.url),
-                                                    fontSize = 11.sp,
-                                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                IconButton(
-                                                    onClick = { state.closeTab(index) },
-                                                    minWidth = 28.dp,
-                                                    minHeight = 28.dp,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = MiuixIcons.Glass.Close,
-                                                        contentDescription = "关闭",
-                                                        modifier = Modifier.size(14.dp),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
+                                    TabCard(
+                                        item = indexed.value,
+                                        blurBackdrop = if (settings.blurEnabled && homeBlurAvailable) browserBackdrop else null,
+                                        modifier = Modifier.weight(1f),
+                                        onSelect = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            state.select(indexed.index)
+                                            sheet = Sheet.None
+                                        },
+                                        onClose = { state.closeTab(indexed.index) },
+                                    )
                                 }
                                 repeat(2 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
+                    } else {
+                        items(
+                            items = visibleTabs,
+                            key = { it.value.id },
+                            contentType = { "tabRow" },
+                        ) { (index, item) ->
+                            SheetRow(
+                                title = buildString {
+                                    if (item.incognito) append("无痕 · ")
+                                    append(item.title.ifBlank { "新标签页" })
+                                },
+                                subtitle = item.url.ifBlank { null },
+                                trailing = {
+                                    BarButton(
+                                        icon = MiuixIcons.Glass.Close,
+                                        description = "关闭",
+                                        enabled = state.tabs.size > 1,
+                                        onClick = { state.closeTab(index) },
+                                    )
+                                },
+                                onClick = {
+                                    state.select(index)
+                                    sheet = Sheet.None
+                                },
+                            )
+                        }
                     }
-                } else {
-                    visibleTabs.forEach { (index, item) ->
-                        SheetRow(
-                            title = buildString {
-                                if (item.incognito) append("无痕 · ")
-                                append(item.title.ifBlank { "新标签页" })
-                            },
-                            subtitle = item.url.ifBlank { null },
-                            trailing = {
-                                BarButton(
-                                    icon = MiuixIcons.Glass.Close,
-                                    description = "关闭",
-                                    enabled = state.tabs.size > 1,
-                                    onClick = { state.closeTab(index) },
+                    if (visibleTabs.isEmpty()) {
+                        item(key = "empty") {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(160.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = if (pageIncognito) "没有无痕浏览页" else "没有标签页",
+                                    fontSize = 14.sp,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
-                            },
-                            onClick = {
-                                state.select(index)
-                                sheet = Sheet.None
-                            },
-                        )
+                            }
+                        }
                     }
-                }
-                if (visibleTabs.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(160.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = if (pageIncognito) "没有无痕浏览页" else "没有标签页",
-                            fontSize = 14.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 }
             }
+
 
             Sheet.Menu -> {
                 MenuGrid(
@@ -2618,7 +2538,7 @@ private fun MenuGrid(
                             tint = if (action == MenuAction.Incognito && incognitoActive) purple
                             else MiuixTheme.colorScheme.onSurface,
                             dragged = dragAction == action,
-                            dragOffset = dragOffset,
+                            dragOffset = { dragOffset },
                             dimmed = (dragAction != null && dragAction != action) || (inHidden && dragAction == null),
                             onClick = { if (!editing) onAction(action) },
                             onDragStart = {
@@ -2706,7 +2626,7 @@ private fun MenuCell(
     cellHeight: androidx.compose.ui.unit.Dp,
     tint: Color,
     dragged: Boolean,
-    dragOffset: Offset,
+    dragOffset: () -> Offset,
     dimmed: Boolean,
     onClick: () -> Unit,
     onDragStart: () -> Unit,
@@ -2723,8 +2643,9 @@ private fun MenuCell(
             .height(cellHeight)
             .graphicsLayer {
                 if (dragged) {
-                    translationX = dragOffset.x
-                    translationY = dragOffset.y
+                    val offset = dragOffset()
+                    translationX = offset.x
+                    translationY = offset.y
                     scaleX = 1.08f
                     scaleY = 1.08f
                 }
@@ -2753,6 +2674,89 @@ private fun MenuCell(
             )
             Spacer(Modifier.height(6.dp))
             Text(text = label, fontSize = 11.sp, color = tint, maxLines = 1)
+        }
+    }
+}
+
+/** 标签卡片。[blurBackdrop] 非空时标题条使用 miuix-glass 模糊底，否则退回半透明纯色底。 */
+@Composable
+private fun TabCard(
+    item: BrowserTab,
+    blurBackdrop: LayerBackdrop?,
+    onSelect: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val thumb = item.thumbnail
+    val cardColor = if (item.incognito) Color(0xFF3D2B4F) else MiuixTheme.colorScheme.surfaceContainerHigh
+    Box(
+        modifier = modifier
+            .height(160.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(cardColor)
+            .clickable(onClick = onSelect),
+    ) {
+        if (thumb != null) {
+            Image(
+                bitmap = thumb,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.45f,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (blurBackdrop != null) {
+                            Modifier.glassPanel(
+                                backdrop = blurBackdrop,
+                                shape = GlassShape(0.dp),
+                                style = GlassDefaults.style(isAppDarkTheme()),
+                                material = GlassMaterials.puredThinGlass(isAppDarkTheme()),
+                                stroke = GlassStrokes.forTheme(isAppDarkTheme()),
+                                shading = false,
+                            )
+                        } else {
+                            Modifier.background(MiuixTheme.colorScheme.surface.copy(alpha = 0.55f))
+                        },
+                    )
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = buildString {
+                        if (item.incognito) append("无痕 · ")
+                        append(item.title.ifBlank { "新标签页" })
+                    },
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (item.url.isBlank()) "主页" else hostOf(item.url),
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onClose, minWidth = 28.dp, minHeight = 28.dp) {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Close,
+                        contentDescription = "关闭",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
         }
     }
 }

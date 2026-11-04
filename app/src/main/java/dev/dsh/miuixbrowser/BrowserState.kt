@@ -853,15 +853,16 @@ class BrowserTab(private val appContext: Context) {
         if (closed || destroyed || url.isBlank() || url == "about:blank") return
         runCatching {
             if (view.width <= 0 || view.height <= 0) return
+            // 卡片只有 ~180dp 宽且叠了 0.45 透明度，缩到 480x854 以内足够；
+            // 原来 720x1280 ARGB 每张 3.5MB，多标签时绘制/上传纹理都很重。
+            val scale = minOf(480f / view.width, 854f / view.height, 1f)
             val bitmap = android.graphics.Bitmap.createBitmap(
-                view.width.coerceAtMost(720),
-                view.height.coerceAtMost(1280),
+                (view.width * scale).toInt().coerceAtLeast(1),
+                (view.height * scale).toInt().coerceAtLeast(1),
                 android.graphics.Bitmap.Config.ARGB_8888,
             )
             val canvas = android.graphics.Canvas(bitmap)
-            val scaleX = bitmap.width.toFloat() / view.width
-            val scaleY = bitmap.height.toFloat() / view.height
-            canvas.scale(scaleX, scaleY)
+            canvas.scale(scale, scale)
             view.draw(canvas)
             thumbnail = bitmap.asImageBitmap()
         }
