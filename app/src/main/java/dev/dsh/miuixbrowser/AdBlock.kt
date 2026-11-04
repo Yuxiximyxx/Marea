@@ -175,19 +175,19 @@ object AdBlock {
     /* 开关                                                                */
     /* ------------------------------------------------------------------ */
 
-    fun setEnabled(value: Boolean) {
+    fun updateEnabled(value: Boolean) {
         enabled = value
         fastEnabled = value
         prefs.edit().putBoolean("enabled", value).apply()
     }
 
-    fun setCosmetic(value: Boolean) {
+    fun updateCosmetic(value: Boolean) {
         cosmetic = value
         fastCosmetic = value
         prefs.edit().putBoolean("cosmetic", value).apply()
     }
 
-    fun setAutoUpdate(mode: Int) {
+    fun updateAutoUpdate(mode: Int) {
         autoUpdate = mode.coerceIn(0, 3)
         prefs.edit().putInt("auto_update", autoUpdate).apply()
     }

@@ -194,13 +194,13 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                                     else -> "已加载 ${AdBlock.loadedRules} 条规则 · 累计拦截 $blockedTotal 次"
                                 },
                                 checked = AdBlock.enabled,
-                                onCheckedChange = { AdBlock.setEnabled(it) },
+                                onCheckedChange = { AdBlock.updateEnabled(it) },
                             )
                             SwitchPreference(
                                 title = "隐藏页面广告元素",
                                 summary = "按规则隐藏页面里的广告位，对新打开的页面生效",
                                 checked = AdBlock.cosmetic,
-                                onCheckedChange = { AdBlock.setCosmetic(it) },
+                                onCheckedChange = { AdBlock.updateCosmetic(it) },
                                 enabled = AdBlock.enabled,
                             )
                             SwitchPreference(
@@ -215,7 +215,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                                 title = "自动更新订阅",
                                 items = listOf("手动", "每天", "每 3 天", "每周"),
                                 selectedIndex = AdBlock.autoUpdate.coerceIn(0, 3),
-                                onSelectedIndexChange = { AdBlock.setAutoUpdate(it) },
+                                onSelectedIndexChange = { AdBlock.updateAutoUpdate(it) },
                             )
                         }
                     }
