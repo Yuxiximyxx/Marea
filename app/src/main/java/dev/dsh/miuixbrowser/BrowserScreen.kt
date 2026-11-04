@@ -524,6 +524,17 @@ fun BrowserScreen(
                             }
                         },
                         update = { view ->
+                            // 主页盖在 WebView 上面，但 WebView 仍保留着刚才网页的画面。
+                            // 主页开启 MIUIX 背景采集后，这帧会被录进 layerBackdrop 再送进 RuntimeShader，
+                            // 点主页按钮时会原生崩溃。主页状态下把 WebView 设为 INVISIBLE（不销毁，
+                            // 返回时仍能还原网页），这样采集层里只有 Compose 内容。
+                            // 这里读取了 tab.url，主页/网页切换时 update 会重新执行。
+                            val wantedVisibility = if (tab.url.isEmpty()) {
+                                android.view.View.INVISIBLE
+                            } else {
+                                android.view.View.VISIBLE
+                            }
+                            if (view.visibility != wantedVisibility) view.visibility = wantedVisibility
                             // update 在 View 已进入 AndroidView 容器后执行；此时重新请求 Insets
                             // 才能确保 WebView 获得当前 Window 的真实可用区域。
                             view.post {
