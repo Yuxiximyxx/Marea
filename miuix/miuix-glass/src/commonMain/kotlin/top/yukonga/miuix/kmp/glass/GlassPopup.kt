@@ -141,7 +141,7 @@ object GlassPopupDefaults {
 
     /** Default popup material for the current theme. */
     @Composable
-    fun material(): GlassMaterial = GlassMaterials.popupViewGlass(
+    fun material(): GlassMaterial = GlassMaterials.puredThinGlass(
         isDark = MiuixTheme.colorScheme.background.luminance() < 0.5f,
     )
 

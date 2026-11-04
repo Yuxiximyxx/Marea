@@ -212,7 +212,11 @@ fun BrowserScreen(
     val history = remember { HistoryStore(context) }
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
-    val homeBlurAvailable = tab.url.isEmpty() && !tab.loading
+    // 回主页时 WebView 要先真正隐藏，再开启 MIUIX 背景采集：
+    // 隐藏发生在 LaunchedEffect（下一帧）里，若同一帧就开始采集，
+    // 会把还可见的 WebView 录进 layerBackdrop 并送进 RuntimeShader，导致原生崩溃。
+    var webViewHidden by remember(tab.id) { mutableStateOf(false) }
+    val homeBlurAvailable = tab.url.isEmpty() && !tab.loading && webViewHidden
     // 新建标签页（首页）的滚动状态：每个标签独立，供顶部渐进模糊带跟随滚动淡入
     val startScroll = remember(tab.id) { ScrollState(0) }
     val clipboard = LocalClipboardManager.current
@@ -323,6 +327,7 @@ fun BrowserScreen(
     // 否则主页看起来是首页，点击却落到下层网页。
     LaunchedEffect(tab.id, tab.url) {
         val onHome = tab.url.isEmpty()
+        if (!onHome) webViewHidden = false
         tab.webView.apply {
             alpha = if (onHome) 0f else 1f
             visibility = if (onHome) {
@@ -335,6 +340,8 @@ fun BrowserScreen(
             isFocusable = !onHome
             isFocusableInTouchMode = !onHome
         }
+        // WebView 已经隐藏，主页现在才允许采集
+        if (onHome) webViewHidden = true
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
@@ -913,13 +920,6 @@ fun BrowserScreen(
                 null
             },
             endAction = null,
-            surface = if (lastActiveSheet == Sheet.Tabs) {
-                tabSheetSurface(
-                    backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
-                )
-            } else {
-                null
-            },
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
@@ -2588,46 +2588,6 @@ private fun TabsSegmented(
             }
         }
     }
-}
-
-/**
- * 标签 sheet 表面：官方 glassBottomSheetSurface，只换一个更薄的材质。
- *
- * 不再叠顶部渐进模糊带：drawBackdrop 会把它包住的所有子内容裁到自己的 shape 里，
- * 套在整张 sheet 上就会把标签列表裁成只剩顶部一小段。
- */
-@Composable
-private fun tabSheetSurface(
-    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
-): @Composable top.yukonga.miuix.kmp.layout.BottomSheetSurfaceScope.() -> Modifier {
-    // 官方 dialogGlass 的浅色版叠了两层 0x99 白，盖住模糊后整张 sheet 看起来像纯白。
-    // 标签 sheet 用同样的 60dp 模糊，但减薄白色层，让壁纸的模糊色彩透出来；深色沿用官方。
-    val dark = isAppDarkTheme()
-    val material = remember(dark) {
-        if (dark) {
-            GlassMaterials.dialogGlass(true)
-        } else {
-            top.yukonga.miuix.kmp.glass.GlassMaterial(
-                blurRadius = 60.dp,
-                first = top.yukonga.miuix.kmp.glass.GlassColorLayer(
-                    Color(0x05000000),
-                    top.yukonga.miuix.kmp.glass.GlassColorBlendMode.PlusDarker,
-                ),
-                second = top.yukonga.miuix.kmp.glass.GlassColorLayer(
-                    Color(0x55FFFFFF),
-                    top.yukonga.miuix.kmp.glass.GlassColorBlendMode.SoftLight,
-                ),
-                third = top.yukonga.miuix.kmp.glass.GlassColorLayer(
-                    Color(0x33FFFFFF),
-                    top.yukonga.miuix.kmp.glass.GlassColorBlendMode.HardLight,
-                ),
-            )
-        }
-    }
-    return top.yukonga.miuix.kmp.glass.glassBottomSheetSurface(
-        backdrop = backdrop,
-        material = material,
-    )
 }
 
 private val GoogleColors = listOf(
