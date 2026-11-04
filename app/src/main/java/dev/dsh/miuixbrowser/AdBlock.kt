@@ -1,0 +1,758 @@
+package dev.dsh.miuixbrowser
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+
+/** 一个订阅源（URL 订阅，或从本地文件导入的规则，后者 [url] 为空）。 */
+data class AdSub(
+    val id: String,
+    val name: String,
+    val url: String,
+    val enabled: Boolean = true,
+    /** 最近一次成功下载的时间，0 = 还没下载过 */
+    val updatedAt: Long = 0L,
+    val ruleCount: Int = 0,
+    /** 最近一次更新失败的原因，空 = 正常 */
+    val error: String = "",
+)
+
+data class AdPreset(val name: String, val url: String, val summary: String)
+
+/** 推荐订阅（点一下即可订阅）。地址都是各规则项目官方对外提供的订阅链接。 */
+val AD_PRESETS = listOf(
+    AdPreset(
+        "AdGuard 中文",
+        "https://filters.adtidy.org/extension/ublock/filters/224.txt",
+        "国内网站广告，首选",
+    ),
+    AdPreset(
+        "EasyList China",
+        "https://easylist-downloads.adblockplus.org/easylistchina.txt",
+        "EasyList 的中文补充规则",
+    ),
+    AdPreset(
+        "EasyList",
+        "https://easylist.to/easylist/easylist.txt",
+        "国际通用广告规则",
+    ),
+    AdPreset(
+        "AdGuard 移动广告",
+        "https://filters.adtidy.org/extension/ublock/filters/11.txt",
+        "针对移动端网页的广告",
+    ),
+    AdPreset(
+        "anti-AD",
+        "https://anti-ad.net/easylist.txt",
+        "国内广告域名合集",
+    ),
+)
+
+/** 旧版本存放在脚本列表里的去广告订阅，由 [ExtensionStore] 读出后交给 [AdBlock.migrateLegacy]。 */
+data class LegacyAdSub(val name: String, val url: String, val enabled: Boolean)
+
+/**
+ * 去广告：订阅管理 + 网络拦截 + 元素隐藏。
+ *
+ * - 规则文件存放在 filesDir/adblock/，每个订阅一个文本文件；custom.txt 是用户自定义规则
+ *   （手写的规则、长按「标记为广告」产生的规则都在里面）。
+ * - 订阅变化后在后台线程重新合并成 [AdEngine]，构建期间旧引擎继续工作，完成后原子替换。
+ * - 网络拦截走 WebView 的 shouldInterceptRequest（[intercept]）；元素隐藏由
+ *   document-start 脚本通过 [AdBlockBridge] 取回本站点的 CSS 注入（所有框架）。
+ */
+object AdBlock {
+
+    private const val PREFS = "mafari_adblock"
+    private const val MAX_BYTES = 24 * 1024 * 1024
+    private const val CUSTOM_FILE = "custom.txt"
+
+    private lateinit var appContext: Context
+    private lateinit var prefs: SharedPreferences
+    private lateinit var dir: File
+    private var inited = false
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val main = Handler(Looper.getMainLooper())
+    private val compileLock = Mutex()
+    private val generation = AtomicInteger(0)
+    private val subsLock = Any()
+
+    private class CachedList(val stamp: Long, val list: ParsedList)
+
+    private val parsedCache = ConcurrentHashMap<String, CachedList>()
+
+    /* ---------- 界面状态 ---------- */
+
+    val subs = mutableStateListOf<AdSub>()
+    val allowHosts = mutableStateListOf<String>()
+
+    var enabled by mutableStateOf(true)
+        private set
+    var cosmetic by mutableStateOf(true)
+        private set
+
+    /** 自动更新：0 手动 1 每天 2 每 3 天 3 每周 */
+    var autoUpdate by mutableIntStateOf(2)
+        private set
+
+    /** 当前引擎里生效的规则条数（含内置基础规则与自定义规则） */
+    var loadedRules by mutableIntStateOf(0)
+        private set
+    var compiling by mutableStateOf(false)
+        private set
+    var customLines by mutableIntStateOf(0)
+        private set
+
+    /* ---------- 后台线程读取的快照 ---------- */
+
+    @Volatile private var engine: AdEngine? = null
+    @Volatile private var subsShadow: List<AdSub> = emptyList()
+    @Volatile private var fastEnabled = false
+    @Volatile private var fastCosmetic = true
+    @Volatile private var fastAllow: Set<String> = emptySet()
+
+    private val blockedSession = AtomicLong(0)
+    private var baseTotal = 0L
+
+    /** 累计拦截的请求数（跨启动） */
+    val blockedTotal: Long get() = baseTotal + blockedSession.get()
+
+    @Synchronized
+    fun init(context: Context) {
+        if (inited) return
+        inited = true
+        appContext = context.applicationContext
+        prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        dir = File(appContext.filesDir, "adblock").also { it.mkdirs() }
+
+        enabled = prefs.getBoolean("enabled", true)
+        cosmetic = prefs.getBoolean("cosmetic", true)
+        autoUpdate = prefs.getInt("auto_update", 2).coerceIn(0, 3)
+        baseTotal = prefs.getLong("blocked_total", 0L)
+        fastEnabled = enabled
+        fastCosmetic = cosmetic
+
+        subs.addAll(loadSubs())
+        subsShadow = subs.toList()
+        allowHosts.addAll(loadAllow())
+        fastAllow = allowHosts.toSet()
+
+        migrateUserAdRules()
+        customLines = countCustomLines()
+        requestRebuild()
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 开关                                                                */
+    /* ------------------------------------------------------------------ */
+
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        fastEnabled = value
+        prefs.edit().putBoolean("enabled", value).apply()
+    }
+
+    fun setCosmetic(value: Boolean) {
+        cosmetic = value
+        fastCosmetic = value
+        prefs.edit().putBoolean("cosmetic", value).apply()
+    }
+
+    fun setAutoUpdate(mode: Int) {
+        autoUpdate = mode.coerceIn(0, 3)
+        prefs.edit().putInt("auto_update", autoUpdate).apply()
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 订阅管理                                                            */
+    /* ------------------------------------------------------------------ */
+
+    /** 从 URL 添加订阅：下载 → 校验是规则列表 → 保存。 */
+    suspend fun subscribe(url: String, nameHint: String = ""): Result<AdSub> {
+        val u = url.trim()
+        if (!u.startsWith("http://", true) && !u.startsWith("https://", true)) {
+            return Result.failure(IllegalArgumentException("请输入 http(s) 开头的订阅地址"))
+        }
+        if (subsShadow.any { it.url.equals(u, ignoreCase = true) }) {
+            return Result.failure(IllegalStateException("已经订阅过这个地址"))
+        }
+        val fetched = withContext(Dispatchers.IO) { runCatching { fetchList(u) } }
+        val f = fetched.getOrElse { return Result.failure(it) }
+        val id = UUID.randomUUID().toString()
+        val saved = withContext(Dispatchers.IO) { runCatching { writeList(id, f.text, f.parsed) } }
+        saved.getOrElse { return Result.failure(it) }
+        val sub = AdSub(
+            id = id,
+            name = f.parsed.title.ifBlank { nameHint.ifBlank { hostOf(u) } },
+            url = u,
+            enabled = true,
+            updatedAt = System.currentTimeMillis(),
+            ruleCount = f.parsed.ruleCount,
+        )
+        synchronized(subsLock) {
+            subs.add(sub)
+            persistSubs()
+        }
+        requestRebuild()
+        return Result.success(sub)
+    }
+
+    /** 导入本地规则文件。没有来源地址，之后无法自动更新。 */
+    suspend fun importLocal(name: String, text: String): Result<AdSub> {
+        if (!AdParser.looksLikeFilterList(text)) {
+            return Result.failure(IllegalArgumentException("这不是有效的去广告规则列表"))
+        }
+        val parsed = withContext(Dispatchers.Default) { AdParser.parse(text) }
+        if (parsed.ruleCount == 0) return Result.failure(IllegalArgumentException("列表里没有可用规则"))
+        val id = UUID.randomUUID().toString()
+        val saved = withContext(Dispatchers.IO) { runCatching { writeList(id, text, parsed) } }
+        saved.getOrElse { return Result.failure(it) }
+        val sub = AdSub(
+            id = id,
+            name = parsed.title.ifBlank { name.ifBlank { "本地规则" } },
+            url = "",
+            enabled = true,
+            updatedAt = System.currentTimeMillis(),
+            ruleCount = parsed.ruleCount,
+        )
+        synchronized(subsLock) {
+            subs.add(sub)
+            persistSubs()
+        }
+        requestRebuild()
+        return Result.success(sub)
+    }
+
+    /** 重新下载某个订阅，成功返回规则条数。 */
+    suspend fun refresh(id: String): Result<Int> {
+        val sub = subsShadow.firstOrNull { it.id == id }
+            ?: return Result.failure(IllegalStateException("订阅不存在"))
+        if (sub.url.isBlank()) return Result.failure(IllegalStateException("本地导入的规则没有更新地址"))
+        val fetched = withContext(Dispatchers.IO) { runCatching { fetchList(sub.url) } }
+        val f = fetched.getOrElse {
+            updateSub(id) { s -> s.copy(error = it.message ?: "更新失败") }
+            return Result.failure(it)
+        }
+        val saved = withContext(Dispatchers.IO) { runCatching { writeList(id, f.text, f.parsed) } }
+        saved.getOrElse {
+            updateSub(id) { s -> s.copy(error = it.message ?: "保存失败") }
+            return Result.failure(it)
+        }
+        updateSub(id) { s ->
+            s.copy(
+                name = s.name.ifBlank { f.parsed.title },
+                updatedAt = System.currentTimeMillis(),
+                ruleCount = f.parsed.ruleCount,
+                error = "",
+            )
+        }
+        requestRebuild()
+        return Result.success(f.parsed.ruleCount)
+    }
+
+    /** 更新所有启用且有地址的订阅，返回 (成功数, 总数)。 */
+    suspend fun refreshAll(): Pair<Int, Int> {
+        val targets = subsShadow.filter { it.enabled && it.url.isNotBlank() }
+        var ok = 0
+        for (t in targets) if (refresh(t.id).isSuccess) ok++
+        return ok to targets.size
+    }
+
+    fun setSubEnabled(id: String, value: Boolean) {
+        updateSub(id) { it.copy(enabled = value) }
+        requestRebuild()
+    }
+
+    fun removeSub(id: String) {
+        synchronized(subsLock) {
+            subs.removeAll { it.id == id }
+            persistSubs()
+        }
+        parsedCache.remove(id)
+        runCatching { fileOf(id).delete() }
+        requestRebuild()
+    }
+
+    /** 按设置的间隔在后台自动更新订阅，启动时调用一次。 */
+    suspend fun autoUpdateIfDue() {
+        val days = when (autoUpdate) {
+            1 -> 1
+            2 -> 3
+            3 -> 7
+            else -> return
+        }
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong("last_auto", 0L) < days * 86_400_000L) return
+        if (subsShadow.none { it.enabled && it.url.isNotBlank() }) return
+        prefs.edit().putLong("last_auto", now).apply()
+        refreshAll()
+    }
+
+    /** 旧版本脚本列表里的去广告订阅 → 迁移到这里，并在后台把规则下载回来。 */
+    fun migrateLegacy(items: List<LegacyAdSub>) {
+        if (items.isEmpty()) return
+        val added = ArrayList<String>()
+        synchronized(subsLock) {
+            for (item in items) {
+                if (item.url.isBlank() || subs.any { s -> s.url.equals(item.url, ignoreCase = true) }) continue
+                val id = UUID.randomUUID().toString()
+                subs.add(AdSub(id = id, name = item.name.ifBlank { hostOf(item.url) }, url = item.url, enabled = item.enabled))
+                added.add(id)
+            }
+            if (added.isNotEmpty()) persistSubs()
+        }
+        if (added.isNotEmpty()) {
+            scope.launch { added.forEach { runCatching { refresh(it) } } }
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 自定义规则 / 站点白名单                                              */
+    /* ------------------------------------------------------------------ */
+
+    fun readCustom(): String =
+        runCatching { File(dir, CUSTOM_FILE).takeIf { it.exists() }?.readText().orEmpty() }.getOrDefault("")
+
+    fun saveCustom(text: String) {
+        synchronized(this) {
+            val f = File(dir, CUSTOM_FILE)
+            if (text.isBlank()) f.delete() else f.writeText(text.trim() + "\n")
+            customLines = countCustomLines()
+        }
+        requestRebuild()
+    }
+
+    /** 长按「标记为广告」：记成一条 `站点##选择器`。选择器不安全（可能逃出 CSS）时拒绝。 */
+    fun addUserCosmetic(host: String, selector: String): Boolean {
+        val h = host.trim().lowercase()
+        val s = selector.trim()
+        if (!AdParser.isSafeSelector(s)) return false
+        if (h.isEmpty() || h.any { !(it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-') }) return false
+        val line = "$h##$s"
+        synchronized(this) {
+            val f = File(dir, CUSTOM_FILE)
+            val current = if (f.exists()) f.readText() else ""
+            if (current.lineSequence().any { it.trim() == line }) return true
+            f.writeText((current.trimEnd() + "\n" + line).trimStart() + "\n")
+            customLines = countCustomLines()
+        }
+        requestRebuild()
+        return true
+    }
+
+    fun allowSite(host: String): Boolean {
+        val h = host.trim().lowercase().removePrefix("www.")
+        if (h.isEmpty() || h.any { !(it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-') }) return false
+        if (h in allowHosts) return true
+        allowHosts.add(h)
+        persistAllow()
+        return true
+    }
+
+    fun disallowSite(host: String) {
+        allowHosts.remove(host)
+        persistAllow()
+    }
+
+    fun isSiteAllowed(host: String): Boolean = hostAllowed(host)
+
+    private fun hostAllowed(host: String): Boolean {
+        val set = fastAllow
+        if (set.isEmpty() || host.isEmpty()) return false
+        var h = host.lowercase()
+        while (true) {
+            if (h in set) return true
+            val dot = h.indexOf('.')
+            if (dot < 0) return false
+            h = h.substring(dot + 1)
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* WebView 接入                                                        */
+    /* ------------------------------------------------------------------ */
+
+    /** shouldInterceptRequest 里调用：命中返回空响应，否则返回 null 放行。 */
+    fun intercept(request: WebResourceRequest, pageHost: String, trackers: Boolean): WebResourceResponse? {
+        if (!fastEnabled || request.isForMainFrame) return null
+        val uri = request.url
+        val scheme = uri.scheme
+        if (scheme != "http" && scheme != "https") return null
+        val host = uri.host?.lowercase() ?: return null
+        val page = pageHost.lowercase()
+        if (hostAllowed(page)) return null
+        val accept = request.requestHeaders?.get("Accept")
+        val url = uri.toString().lowercase()
+
+        var hit = false
+        if (trackers && TrackerList.matches(host) && AdMatch.isThirdParty(host, page)) hit = true
+        if (!hit) {
+            val eng = engine
+            if (eng != null && eng.shouldBlock(url, page, accept)) hit = true
+        }
+        if (!hit) return null
+
+        val n = blockedSession.incrementAndGet()
+        if (n % 40L == 0L) prefs.edit().putLong("blocked_total", baseTotal + n).apply()
+        return blockedResponse(AdMatch.inferType(url, accept))
+    }
+
+    /** 元素隐藏 CSS（JS 桥调用，任意线程）。 */
+    fun cosmeticCss(hostRaw: String?, topHostRaw: String?): String {
+        if (!fastEnabled || !fastCosmetic) return ""
+        val host = hostRaw?.trim()?.lowercase().orEmpty()
+        if (host.isEmpty()) return ""
+        val top = topHostRaw?.trim()?.lowercase().orEmpty()
+        if (hostAllowed(host) || (top.isNotEmpty() && hostAllowed(top))) return ""
+        return engine?.cssFor(host).orEmpty()
+    }
+
+    private val EMPTY = ByteArray(0)
+
+    // 1x1 透明 GIF
+    private val PIXEL_GIF = byteArrayOf(
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80.toByte(), 0x00, 0x00,
+        0x00, 0x00, 0x00, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x21, 0xF9.toByte(), 0x04,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+        0x02, 0x02, 0x44, 0x01, 0x00, 0x3B,
+    )
+
+    private fun blockedResponse(type: Int): WebResourceResponse = when {
+        type == AdType.IMAGE -> WebResourceResponse("image/gif", null, ByteArrayInputStream(PIXEL_GIF))
+        type == AdType.STYLESHEET -> WebResourceResponse("text/css", "utf-8", ByteArrayInputStream(EMPTY))
+        type == AdType.SUBDOC -> WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(EMPTY))
+        (type and AdType.SCRIPT) != 0 -> WebResourceResponse("application/javascript", "utf-8", ByteArrayInputStream(EMPTY))
+        else -> WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(EMPTY))
+    }
+
+    /**
+     * document-start 注入到所有框架：向 [AdBlockBridge] 要本站点的隐藏 CSS，插入 <style>。
+     * 带重入保护，系统不支持 document-start 脚本时由页面加载回调再补注入一次。
+     */
+    const val COSMETIC_JS = """(function(){
+  try {
+    if (window.__mafariAdblockInit) return;
+    window.__mafariAdblockInit = 1;
+    if (typeof MafariAdblock === 'undefined') return;
+    var host = location.hostname;
+    if (!host) return;
+    var topHost = host;
+    try {
+      var ao = location.ancestorOrigins;
+      if (ao && ao.length) topHost = new URL(ao[ao.length - 1]).hostname;
+    } catch (e) {}
+    var css = '';
+    try { css = MafariAdblock.css(host, topHost); } catch (e) { return; }
+    if (!css) return;
+    var st = null;
+    function mount() {
+      var root = document.head || document.documentElement;
+      if (!root) return false;
+      if (!st) {
+        st = document.createElement('style');
+        st.setAttribute('data-mafari-adblock', '1');
+        st.textContent = css;
+      }
+      if (!st.isConnected) root.appendChild(st);
+      return true;
+    }
+    if (!mount()) {
+      var wait = new MutationObserver(function () { if (mount()) wait.disconnect(); });
+      wait.observe(document, { childList: true, subtree: true });
+    }
+    var watch = new MutationObserver(function () { if (st && !st.isConnected) mount(); });
+    if (document.documentElement) watch.observe(document.documentElement, { childList: true });
+  } catch (e) {}
+})();"""
+
+    /* ------------------------------------------------------------------ */
+    /* 引擎构建                                                            */
+    /* ------------------------------------------------------------------ */
+
+    private val baseList: ParsedList by lazy { AdParser.parse(BASE_RULES) }
+
+    fun requestRebuild() {
+        val gen = generation.incrementAndGet()
+        scope.launch {
+            delay(150)
+            if (gen != generation.get()) return@launch
+            compileLock.withLock { compileNow() }
+        }
+    }
+
+    private fun compileNow() {
+        main.post { compiling = true }
+        try {
+            val lists = ArrayList<ParsedList>()
+            lists.add(baseList)
+            val counts = HashMap<String, Int>()
+            val liveIds = HashSet<String>()
+            for (s in subsShadow) {
+                if (!s.enabled) continue
+                val file = fileOf(s.id)
+                if (!file.exists()) continue
+                liveIds.add(s.id)
+                val stamp = file.lastModified()
+                val cached = parsedCache[s.id]
+                val parsed = if (cached != null && cached.stamp == stamp) {
+                    cached.list
+                } else {
+                    AdParser.parse(file.readText(Charsets.UTF_8)).also { parsedCache[s.id] = CachedList(stamp, it) }
+                }
+                lists.add(parsed)
+                counts[s.id] = parsed.ruleCount
+            }
+            // 停用 / 删除的订阅不占内存
+            parsedCache.keys.retainAll(liveIds)
+
+            val custom = File(dir, CUSTOM_FILE)
+            if (custom.exists()) lists.add(AdParser.parse(custom.readText(Charsets.UTF_8)))
+
+            val built = AdEngine(lists)
+            engine = built
+            val total = built.networkRuleCount + built.cosmeticRuleCount
+            main.post {
+                loadedRules = total
+                compiling = false
+                counts.forEach { (id, c) ->
+                    val cur = subs.firstOrNull { it.id == id }
+                    if (cur != null && cur.ruleCount != c) updateSub(id) { s -> s.copy(ruleCount = c) }
+                }
+            }
+        } catch (t: Throwable) {
+            Diag.log("adblock: compile failed ${t.message}")
+            main.post { compiling = false }
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 下载 / 存储                                                         */
+    /* ------------------------------------------------------------------ */
+
+    private class Fetched(val text: String, val parsed: ParsedList)
+
+    private fun fetchList(url: String): Fetched {
+        val text = download(url)
+        if (!AdParser.looksLikeFilterList(text)) throw IOException("不是有效的去广告规则列表")
+        val parsed = AdParser.parse(text)
+        if (parsed.ruleCount == 0) throw IOException("列表里没有可用规则")
+        return Fetched(text, parsed)
+    }
+
+    private fun download(start: String): String {
+        var current = start
+        for (hop in 0..5) {
+            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", "Mozilla/5.0 Mafari")
+            }
+            try {
+                val code = conn.responseCode
+                if (code in 300..399) {
+                    val loc = conn.getHeaderField("Location") ?: throw IOException("重定向缺少目标地址")
+                    current = URL(URL(current), loc).toString()
+                    if (!current.startsWith("http://", true) && !current.startsWith("https://", true)) {
+                        throw IOException("不支持的重定向目标")
+                    }
+                    continue
+                }
+                if (code !in 200..299) throw IOException("服务器返回 HTTP $code")
+                if (conn.contentLengthLong > MAX_BYTES) throw IOException("文件过大")
+                val out = ByteArrayOutputStream()
+                val buf = ByteArray(16 * 1024)
+                var total = 0
+                conn.inputStream.use { input ->
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > MAX_BYTES) throw IOException("文件过大")
+                        out.write(buf, 0, n)
+                    }
+                }
+                return out.toString("UTF-8")
+            } catch (e: java.net.UnknownHostException) {
+                throw IOException("无法解析域名，请检查网络或链接")
+            } catch (e: java.net.SocketTimeoutException) {
+                throw IOException("连接超时")
+            } catch (e: javax.net.ssl.SSLException) {
+                throw IOException("HTTPS 连接失败（证书或协议错误）")
+            } catch (e: IOException) {
+                throw e
+            } catch (e: Exception) {
+                throw IOException(e.message ?: "下载失败")
+            } finally {
+                conn.disconnect()
+            }
+        }
+        throw IOException("重定向次数过多")
+    }
+
+    private fun fileOf(id: String) = File(dir, "$id.txt")
+
+    private fun writeList(id: String, text: String, parsed: ParsedList?) {
+        val target = fileOf(id)
+        val tmp = File(dir, "$id.tmp")
+        tmp.writeText(text, Charsets.UTF_8)
+        if (!tmp.renameTo(target)) {
+            target.delete()
+            if (!tmp.renameTo(target)) throw IOException("写入规则文件失败")
+        }
+        if (parsed != null) parsedCache[id] = CachedList(target.lastModified(), parsed)
+    }
+
+    private fun updateSub(id: String, change: (AdSub) -> AdSub) {
+        synchronized(subsLock) {
+            val i = subs.indexOfFirst { it.id == id }
+            if (i < 0) return
+            subs[i] = change(subs[i])
+            persistSubs()
+        }
+    }
+
+    private fun persistSubs() {
+        val snapshot = subs.toList()
+        subsShadow = snapshot
+        val arr = JSONArray()
+        snapshot.forEach {
+            arr.put(
+                JSONObject()
+                    .put("id", it.id)
+                    .put("name", it.name)
+                    .put("url", it.url)
+                    .put("enabled", it.enabled)
+                    .put("updatedAt", it.updatedAt)
+                    .put("ruleCount", it.ruleCount)
+                    .put("error", it.error),
+            )
+        }
+        prefs.edit().putString("subs", arr.toString()).apply()
+    }
+
+    private fun loadSubs(): List<AdSub> {
+        val raw = prefs.getString("subs", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val id = o.optString("id")
+                if (id.isBlank()) null else AdSub(
+                    id = id,
+                    name = o.optString("name"),
+                    url = o.optString("url"),
+                    enabled = o.optBoolean("enabled", true),
+                    updatedAt = o.optLong("updatedAt"),
+                    ruleCount = o.optInt("ruleCount"),
+                    error = o.optString("error"),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistAllow() {
+        fastAllow = allowHosts.toSet()
+        prefs.edit().putString("allow", JSONArray(allowHosts.toList()).toString()).apply()
+    }
+
+    private fun loadAllow(): List<String> {
+        val raw = prefs.getString("allow", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun countCustomLines(): Int {
+        val f = File(dir, CUSTOM_FILE)
+        if (!f.exists()) return 0
+        return runCatching {
+            f.readLines().count { l ->
+                val t = l.trim()
+                t.isNotEmpty() && !t.startsWith("!") && !t.startsWith("[")
+            }
+        }.getOrDefault(0)
+    }
+
+    /** 旧版「标记为广告」存在 mafari_ad_rules 里，迁移成自定义规则后清掉。 */
+    private fun migrateUserAdRules() {
+        val legacy = appContext.getSharedPreferences("mafari_ad_rules", Context.MODE_PRIVATE)
+        val all = legacy.all
+        if (all.isEmpty()) return
+        val lines = ArrayList<String>()
+        for ((host, value) in all) {
+            val h = host.trim().lowercase()
+            if (h.isEmpty() || h.any { !(it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-') }) continue
+            @Suppress("UNCHECKED_CAST")
+            val selectors = (value as? Set<String>).orEmpty()
+            for (s in selectors) if (AdParser.isSafeSelector(s.trim())) lines.add("$h##${s.trim()}")
+        }
+        if (lines.isNotEmpty()) {
+            runCatching {
+                val f = File(dir, CUSTOM_FILE)
+                val current = if (f.exists()) f.readText() else ""
+                val merged = (current.lines().map { it.trim() } + lines).filter { it.isNotEmpty() }.distinct()
+                f.writeText(merged.joinToString("\n") + "\n")
+            }.onFailure { return }
+        }
+        legacy.edit().clear().apply()
+    }
+
+    /** 内置基础规则：离线也能挡掉最常见的广告联盟，不依赖任何订阅。 */
+    private const val BASE_RULES = """[Adblock Plus 2.0]
+! Title: Mafari 内置基础规则
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||adservice.google.com^
+||cpro.baidu.com^
+||pos.baidu.com^
+||eclick.baidu.com^
+||cpro.baidustatic.com^
+||dup.baidustatic.com^
+##.adsbygoogle
+##ins.adsbygoogle
+##.google-auto-placed
+##[id^="div-gpt-ad"]
+##iframe[src*="doubleclick.net"]
+##iframe[src*="googlesyndication.com"]
+##iframe[src*="cpro.baidu.com"]
+##a[href*="doubleclick.net"]
+"""
+}
+
+/** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS，不泄露任何用户数据。 */
+class AdBlockBridge {
+    @JavascriptInterface
+    fun css(host: String?, topHost: String?): String = AdBlock.cosmeticCss(host, topHost)
+}

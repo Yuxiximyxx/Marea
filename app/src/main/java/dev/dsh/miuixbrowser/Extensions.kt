@@ -19,8 +19,6 @@ data class UserScript(
     val runAt: String = "document-end",
     /** 油猴 @icon，脚本列表左侧显示 */
     val icon: String = "",
-    /** 非空表示这是去广告规则订阅，显示在「内置脚本」分组 */
-    val subscriptionUrl: String = "",
 ) {
     fun matches(url: String): Boolean {
         val patterns = match.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -48,7 +46,20 @@ class ExtensionStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("mafari_ext", Context.MODE_PRIVATE)
 
+    /**
+     * 旧版本把去广告订阅也存在脚本列表里（subscriptionUrl 非空）。
+     * 读取时把它们从脚本列表里剥离出来，交给 AdBlock.migrateLegacy，
+     * 迁移完成后调用 commitLegacyMigration 落盘。
+     */
+    val legacyAdSubs = mutableListOf<LegacyAdSub>()
+
     val items = mutableStateListOf<UserScript>().apply { addAll(load()) }
+
+    fun commitLegacyMigration() {
+        if (legacyAdSubs.isEmpty()) return
+        legacyAdSubs.clear()
+        persist()
+    }
 
     private fun load(): List<UserScript> {
         val raw = prefs.getString(KEY, null) ?: return emptyList()
@@ -57,6 +68,17 @@ class ExtensionStore(context: Context) {
             buildList {
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
+                    val legacyUrl = obj.optString("subscriptionUrl")
+                    if (legacyUrl.isNotBlank()) {
+                        legacyAdSubs.add(
+                            LegacyAdSub(
+                                name = obj.optString("name"),
+                                url = legacyUrl,
+                                enabled = obj.optBoolean("enabled", true),
+                            ),
+                        )
+                        continue
+                    }
                     add(
                         UserScript(
                             id = obj.optString("id"),
@@ -67,7 +89,6 @@ class ExtensionStore(context: Context) {
                             sourceUrl = obj.optString("sourceUrl"),
                             runAt = obj.optString("runAt", "document-end"),
                             icon = obj.optString("icon"),
-                            subscriptionUrl = obj.optString("subscriptionUrl"),
                         ),
                     )
                 }
@@ -80,7 +101,6 @@ class ExtensionStore(context: Context) {
         code: String,
         match: String = "",
         sourceUrl: String = "",
-        subscriptionUrl: String = "",
     ) {
         val (parsedName, parsedMatch, parsedRunAt) = parseUserScript(code)
         items.add(
@@ -91,7 +111,6 @@ class ExtensionStore(context: Context) {
                 sourceUrl = sourceUrl,
                 runAt = parsedRunAt,
                 icon = UserscriptEngine.parse(code).icon,
-                subscriptionUrl = subscriptionUrl,
             ),
         )
         persist()
@@ -155,8 +174,7 @@ class ExtensionStore(context: Context) {
                     .put("match", it.match)
                     .put("sourceUrl", it.sourceUrl)
                     .put("runAt", it.runAt)
-                    .put("icon", it.icon)
-                    .put("subscriptionUrl", it.subscriptionUrl),
+                    .put("icon", it.icon),
             )
         }
         prefs.edit().putString(KEY, array.toString()).apply()

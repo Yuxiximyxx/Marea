@@ -218,6 +218,14 @@ fun BrowserScreen(
         }
     }
     val extensions = remember { ExtensionStore(context) }
+    // 旧版本放在脚本列表里的去广告订阅 → 迁移到「去广告」页；之后按设置的间隔在后台更新订阅
+    remember {
+        AdBlock.init(context)
+        AdBlock.migrateLegacy(extensions.legacyAdSubs.toList())
+        extensions.commitLegacyMigration()
+        true
+    }
+    LaunchedEffect(Unit) { AdBlock.autoUpdateIfDue() }
     val history = remember { HistoryStore(context) }
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
@@ -1245,7 +1253,7 @@ fun BrowserScreen(
                         subtitle = "记住这条规则，下次访问该站点自动隐藏",
                     ) {
                         sheet = Sheet.None
-                        UserAdRules.add(context, hostOf(tab.url), hit.selector)
+                        AdBlock.addUserCosmetic(hostOf(tab.url), hit.selector)
                         tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
                     }
                     SheetRow(title = "仅移除该元素") {
@@ -1508,6 +1516,7 @@ fun BrowserScreen(
             onApplyUserAgent = { state.applyUserAgent(it) },
             onOpenDownloads = { pushPage(AppRoute.Downloads) },
             onOpenScripts = { pushPage(AppRoute.Extensions) },
+            onOpenAdBlock = { pushPage(AppRoute.AdBlockPage) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
             onPageEnhancementsChange = { extensions.setAllEnabled(it) },
@@ -1522,6 +1531,13 @@ fun BrowserScreen(
     }
     entry<AppRoute.Downloads> {
         DownloadsScreen(
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.AdBlockPage> {
+        AdBlockScreen(
+            settings = settings,
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
         )

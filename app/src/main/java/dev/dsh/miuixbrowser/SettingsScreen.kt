@@ -75,6 +75,7 @@ fun SettingsScreen(
     onApplyUserAgent: (String) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
+    onOpenAdBlock: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenAbout: () -> Unit,
     onPageEnhancementsChange: (Boolean) -> Unit = {},
@@ -255,12 +256,6 @@ fun SettingsScreen(
                         checked = settings.webrtcDisabled,
                         onCheckedChange = { settings.updateWebrtcDisabled(it) },
                     )
-                    SwitchPreference(
-                        title = "拦截跟踪脚本",
-                        summary = "拦截第三方统计 / 追踪域名的请求（需开启页面增强）",
-                        checked = settings.blockTrackingScripts,
-                        onCheckedChange = { settings.updateBlockTrackingScripts(it) },
-                    )
                 }
 
                 SmallTitle(text = "高级")
@@ -271,13 +266,22 @@ fun SettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SettingsRow(
+                        title = "去广告",
+                        summary = if (AdBlock.enabled) {
+                            "已开启 · " + AdBlock.subs.count { it.enabled } + " 个订阅 · 订阅源导入、自定义规则"
+                        } else {
+                            "已关闭"
+                        },
+                        onClick = onOpenAdBlock,
+                    )
+                    SettingsRow(
                         title = "脚本管理",
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
                     )
                     SwitchPreference(
                         title = "页面增强",
-                        summary = "开关会同步启用 / 停用全部油猴脚本；关闭后也不注入去广告规则和长按标记",
+                        summary = "开关会同步启用 / 停用全部油猴脚本；关闭后也不再注入长按标记广告的检测",
                         checked = settings.pageEnhancements,
                         onCheckedChange = {
                             settings.updatePageEnhancements(it)

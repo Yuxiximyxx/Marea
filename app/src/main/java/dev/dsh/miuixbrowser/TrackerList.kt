@@ -5,7 +5,7 @@ object TrackerList {
     private val domains = setOf(
         "google-analytics.com", "analytics.google.com", "googletagmanager.com", "googletagservices.com",
         "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com",
-        "connect.facebook.net", "facebook.com/tr", "graph.facebook.com", "pixel.facebook.com",
+        "connect.facebook.net", "graph.facebook.com", "pixel.facebook.com",
         "hotjar.com", "mixpanel.com", "segment.io", "segment.com", "amplitude.com", "fullstory.com",
         "clarity.ms", "scorecardresearch.com", "quantserve.com", "taboola.com", "outbrain.com",
         "criteo.com", "adnxs.com", "rubiconproject.com", "pubmatic.com", "openx.net", "moatads.com",
@@ -14,7 +14,7 @@ object TrackerList {
         "mmstat.com", "tanx.com", "cm.g.doubleclick.net", "bat.bing.com", "ads.twitter.com",
         "analytics.twitter.com", "ads.linkedin.com", "px.ads.linkedin.com", "snap.licdn.com",
         "analytics.tiktok.com", "ads-api.tiktok.com", "log.byteoversea.com", "mon.zijieapi.com",
-    ).map { it.substringBefore('/') }.toSet()
+    ).toSet()
 
     fun matches(host: String): Boolean {
         val h = host.lowercase()

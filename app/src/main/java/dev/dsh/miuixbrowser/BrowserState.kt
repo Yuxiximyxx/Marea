@@ -118,7 +118,7 @@ class BrowserTab(private val appContext: Context) {
             syncUserScripts()
         }
 
-    /** 页面增强总开关：关闭后不再注入任何脚本 / 规则 / 长按逻辑，用于排查 */
+    /** 页面增强总开关：关闭后不再注入任何脚本 / 长按逻辑，用于排查（去广告有自己的开关，见 AdBlock） */
     var pageEnhancements: Boolean = true
         set(value) {
             if (field == value) return
@@ -163,7 +163,17 @@ class BrowserTab(private val appContext: Context) {
     private var installedScriptsSignature = ""
     private var prefetchingScripts = false
 
+    /** 去广告元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面加载回调兜底注入） */
+    private var adblockDocStart = false
+
     init {
+        runCatching { webView.addJavascriptInterface(AdBlockBridge(), "MafariAdblock") }
+        runCatching {
+            if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
+                adblockDocStart = true
+            }
+        }.onFailure { Diag.log("adblock: document-start install failed ${it.message}") }
         runCatching {
             webView.addJavascriptInterface(
                 GmBridge(
@@ -236,6 +246,7 @@ class BrowserTab(private val appContext: Context) {
                 errorText = null
                 syncNav()
                 syncUserScripts()
+                if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
             }
 
             override fun onPageFinished(view: WebView, pageUrl: String?) {
@@ -246,7 +257,7 @@ class BrowserTab(private val appContext: Context) {
                 onVisited?.invoke(url, title)
 
                 injectMissingUserScripts(view)
-                injectUserAdRules(view, pageUrl)
+                if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
                 installElementInspector(view)
                 // 稍等布局稳定再截标签缩略图
                 view.postDelayed({ captureThumbnail(view) }, 350)
@@ -257,18 +268,8 @@ class BrowserTab(private val appContext: Context) {
                 syncNav()
             }
 
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                if (blockTrackers && pageEnhancements && !request.isForMainFrame) {
-                    val host = request.url.host
-                    val page = pageHost
-                    if (host != null && TrackerList.matches(host) &&
-                        !(host == page || host.endsWith(".$page") || page.endsWith(".$host"))
-                    ) {
-                        return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
-                    }
-                }
-                return null
-            }
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                AdBlock.intercept(request, pageHost, blockTrackers)
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) errorText = error.description?.toString()
@@ -463,19 +464,6 @@ class BrowserTab(private val appContext: Context) {
         view.evaluateJavascript(js, null)
     }
 
-    /** 把用户「标记为广告」记住的选择器注入当前页 */
-    private fun injectUserAdRules(view: WebView, pageUrl: String?) {
-        if (!pageEnhancements) return
-        val host = pageUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return
-        val selectors = UserAdRules.selectors(appContext, host)
-        if (selectors.isEmpty()) return
-        val css = selectors.joinToString(",") + "{display:none!important}"
-        val js = "(function(){try{var s=document.createElement('style');s.textContent=" +
-            org.json.JSONObject.quote(css) +
-            ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();"
-        view.evaluateJavascript(js, null)
-    }
-
     /**
      * 所有启用的脚本都用 addDocumentStartJavaScript 注入（覆盖 iframe、真正的 document-start），
      * 具体的 URL 匹配与 run-at 等待在运行时（assets/mafari_gm_runtime.js）里按各框架处理。
@@ -624,7 +612,7 @@ class BrowserTab(private val appContext: Context) {
      * - DNT：请求头（地址栏 / 链接点击的主框架导航）+ navigator.doNotTrack / globalPrivacyControl。
      * - WebRTC / 剪贴板 / 媒体静音：document-start 脚本注入所有框架，刷新页面后生效。
      * - 摄像头 / 麦克风 / 定位：在 WebChromeClient 里按「询问 / 允许 / 拒绝」处理。
-     * - 跟踪脚本：shouldInterceptRequest 拦截第三方统计域名（需开启页面增强）。
+     * - 跟踪脚本：shouldInterceptRequest 拦截第三方统计域名（由去广告总开关控制，见 AdBlock）。
      */
     fun applyPrivacy(
         thirdPartyCookiesAllowed: Boolean,
@@ -693,7 +681,7 @@ class BrowserTab(private val appContext: Context) {
     private var blockTrackers = false
 
     @Volatile
-    private var pageHost = ""
+    @Volatile private var pageHost = ""
 
     private var lastDntUrl = ""
 
