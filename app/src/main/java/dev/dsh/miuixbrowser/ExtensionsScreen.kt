@@ -91,6 +91,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val scrollBehavior = MiuixScrollBehavior()
     var showMore by remember { mutableStateOf(false) }
     var moreAnchor by remember { mutableStateOf(Rect.Zero) }
+    var barBottom by remember { mutableStateOf(0f) }
     val updateAll: () -> Unit = {
         if (!updatingAll) {
             val targets = store.items.filter { it.sourceUrl.isNotBlank() }
@@ -129,6 +130,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             }
         }
     }
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -157,6 +159,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
         },
     ) { innerPadding ->
         val topInset = innerPadding.calculateTopPadding()
+        val barBottomPx = with(androidx.compose.ui.platform.LocalDensity.current) { topInset.toPx() }
+        androidx.compose.runtime.LaunchedEffect(barBottomPx) { barBottom = barBottomPx }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
@@ -371,35 +375,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     modifier = Modifier.size(26.dp),
                 )
             }
-            // 右上角“更多”菜单：与按钮同在全屏 Box 内，锚点用 boundsInRoot
-            // 菜单锚点：顶边取「按钮底部」与「顶栏底部（内容区起点）」中更靠下者，再下移一小段距离。
-            // GlassPopup 的面板顶边与锚点 top 对齐，所以这样既在按钮下方留出间隔，又不会盖住顶栏。
-            val popupGap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
-            val popupTop = maxOf(moreAnchor.bottom, with(androidx.compose.ui.platform.LocalDensity.current) { topInset.toPx() }) + popupGap
-            GlassPopup(
-                show = showMore,
-                onDismissRequest = { showMore = false },
-                anchorBounds = Rect(moreAnchor.left, popupTop, moreAnchor.right, popupTop),
-                backdrop = if (glass) backdrop else null,
-            ) {
-                GlassPopupItem(
-                    text = "导入",
-                    onClick = {
-                        showMore = false
-                        importing = true
-                    },
-                    icon = MiuixIcons.Glass.Download,
-                )
-                GlassPopupItem(
-                    text = if (updatingAll) "更新中…" else "全部更新",
-                    enabled = !updatingAll,
-                    onClick = {
-                        showMore = false
-                        updateAll()
-                    },
-                    icon = MiuixIcons.Glass.Refresh,
-                )
-            }
         } // end outer Box
 
         GlassDialog(
@@ -486,6 +461,36 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 editing = null
             },
         )
+    }
+    // “更多”菜单：与 Scaffold 同级、放在最后 → 位于最上层（盖住顶栏）；
+    // GlassPopup 自带全屏遮罩层，点菜单以外任何区域（含顶栏）都会触发 onDismissRequest 收起。
+    // 锚点顶边取「按钮底部」与「顶栏底部」中更靠下者再下移 8dp：在按钮下方留出间隔，且不压住顶栏。
+    val popupGap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+    val popupTop = maxOf(moreAnchor.bottom, barBottom) + popupGap
+    GlassPopup(
+        show = showMore,
+        onDismissRequest = { showMore = false },
+        anchorBounds = Rect(moreAnchor.left, popupTop, moreAnchor.right, popupTop),
+        backdrop = if (glass) backdrop else null,
+    ) {
+        GlassPopupItem(
+            text = "导入",
+            onClick = {
+                showMore = false
+                importing = true
+            },
+            icon = MiuixIcons.Glass.Download,
+        )
+        GlassPopupItem(
+            text = if (updatingAll) "更新中…" else "全部更新",
+            enabled = !updatingAll,
+            onClick = {
+                showMore = false
+                updateAll()
+            },
+            icon = MiuixIcons.Glass.Refresh,
+        )
+    }
     }
 }
 
