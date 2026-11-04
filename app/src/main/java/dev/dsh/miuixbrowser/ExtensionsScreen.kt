@@ -372,10 +372,14 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 )
             }
             // 右上角“更多”菜单：与按钮同在全屏 Box 内，锚点用 boundsInRoot
+            // 菜单锚点：顶边取「按钮底部」与「顶栏底部（内容区起点）」中更靠下者，再下移一小段距离。
+            // GlassPopup 的面板顶边与锚点 top 对齐，所以这样既在按钮下方留出间隔，又不会盖住顶栏。
+            val popupGap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+            val popupTop = maxOf(moreAnchor.bottom, with(androidx.compose.ui.platform.LocalDensity.current) { topInset.toPx() }) + popupGap
             GlassPopup(
                 show = showMore,
                 onDismissRequest = { showMore = false },
-                anchorBounds = moreAnchor,
+                anchorBounds = Rect(moreAnchor.left, popupTop, moreAnchor.right, popupTop),
                 backdrop = if (glass) backdrop else null,
             ) {
                 GlassPopupItem(

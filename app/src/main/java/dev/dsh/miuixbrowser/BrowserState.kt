@@ -198,6 +198,8 @@ class BrowserTab(private val appContext: Context) {
             cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = userAgentString.replace("; wv", "")
         }
+        // 先固定系统默认 UA（之后 applyUserAgent 会覆盖 settings.userAgentString）
+        runCatching { defaultUserAgent.length }
         // 打开 WebView 的 WebAuthn（Passkey）支持。
         // 注意：之前这里传的是 SUPPORT_NONE，等于主动关闭了 Passkey。
         // 浏览器需要对任意网站的 origin 生效 → 优先 FOR_BROWSER；
@@ -609,7 +611,7 @@ class BrowserTab(private val appContext: Context) {
     /** 应用 UA：桌面模式优先，其次设置里的自定义 UA，最后系统默认 */
     fun applyUserAgent() {
         val ua = when {
-            desktopMode -> DESKTOP_UA
+            desktopMode -> desktopUserAgent()
             customUserAgent.isBlank() || customUserAgent == DESKTOP_UA -> defaultUserAgent
             else -> customUserAgent
         }
@@ -791,12 +793,47 @@ class BrowserTab(private val appContext: Context) {
             emptyMap()
         }
 
+    /** 与本机 WebView 内核主版本一致的桌面 Chrome UA（遵循 UA 精简格式 Chrome/主版本.0.0.0） */
+    private fun desktopUserAgent(): String {
+        val major = Regex("Chrome/(\\d+)").find(defaultUserAgent)?.groupValues?.get(1)
+            ?: return DESKTOP_UA
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
+    }
+
+    private var desktopHandler: androidx.webkit.ScriptHandler? = null
+
+    /** 安装 / 移除桌面模式脚本（viewport 重写、platform / 触控 / 媒体查询伪装），随该标签所有导航生效 */
+    private fun installDesktopScript(enabled: Boolean) {
+        runCatching { desktopHandler?.remove() }
+        desktopHandler = null
+        if (!enabled) return
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        runCatching {
+            val script = appContext.assets.open("mafari_desktop.js")
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+            desktopHandler = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+        }.onFailure { Diag.log("desktop script install failed: ${it.message}") }
+    }
+
     fun toggleDesktopMode(enabled: Boolean) {
         desktopMode = enabled
         runCatching {
-            webView.settings.useWideViewPort = true
-            webView.settings.loadWithOverviewMode = true
+            webView.settings.apply {
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+                // 桌面模式关掉文字自动放大，保持桌面排版；退出后恢复
+                layoutAlgorithm = if (enabled) {
+                    WebSettings.LayoutAlgorithm.NORMAL
+                } else {
+                    WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+                }
+            }
         }
+        installDesktopScript(enabled)
         applyUserAgent()
         val target = webView.url ?: url
         if (target.isNotBlank() && !target.startsWith("about:")) {
