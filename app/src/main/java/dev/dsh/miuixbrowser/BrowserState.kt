@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceResponse
 import android.webkit.WebResourceError
@@ -16,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -133,8 +135,26 @@ class BrowserTab(private val appContext: Context) {
     var pullProgress by mutableFloatStateOf(0f)
         private set
 
-    /** 下载请求回调（交给界面弹确认框） */
+    /** 下载请求回调（交给界面弹确认框）。blob/data 由 extractBlob 抽取后走 onBlobReady。 */
     var onDownload: ((url: String, userAgent: String?, disposition: String?, mime: String?) -> Unit)? = null
+
+    /** 页面要求选文件 / 拍照 / 录像：由界面拉起系统选择器或相机 */
+    var onShowFileChooser: (
+        params: WebChromeClient.FileChooserParams,
+        callback: ValueCallback<Array<Uri>>,
+    ) -> Unit = { _, callback -> callback.onReceiveValue(null) }
+
+    /** HTML5 视频全屏：把 WebView 给的 View 挂到全屏容器 */
+    var onShowCustomView: ((view: View, callback: WebChromeClient.CustomViewCallback) -> Unit)? = null
+
+    /** 退出全屏（视频结束 / 返回键） */
+    var onHideCustomView: (() -> Unit)? = null
+
+    /** blob / data URL 抽取完成后的保存请求 */
+    var onBlobReady: ((dataUrl: String, fileName: String, mime: String?) -> Unit)? = null
+
+    /** blob 抽取失败 */
+    var onBlobError: ((message: String) -> Unit)? = null
 
     /** 下拉刷新回调 */
     var onPullRefresh: (() -> Unit)? = null
@@ -162,6 +182,73 @@ class BrowserTab(private val appContext: Context) {
     private val scriptHandlers = mutableListOf<androidx.webkit.ScriptHandler>()
     private var installedScriptsSignature = ""
     private var prefetchingScripts = false
+
+    /** 文件选择器：WebView 持有的回调，界面拉起选择器后必须回传（null = 取消） */
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+
+    /** HTML5 视频全屏中的 View 与回调 */
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    /** 界面取消文件选择（返回键 / 关闭弹层） */
+    fun cancelFileChooser() {
+        val cb = pendingFileCallback
+        pendingFileCallback = null
+        runCatching { cb?.onReceiveValue(null) }
+    }
+
+    /** 是否正在全屏自定义视图 */
+    val isCustomViewShowing: Boolean get() = customView != null
+
+    /** 退出视频全屏（返回键调用） */
+    fun exitCustomView() {
+        val cb = customViewCallback
+        if (cb == null && customView == null) return
+        customView = null
+        customViewCallback = null
+        onHideCustomView?.invoke()
+        runCatching { cb?.onCustomViewHidden() }
+    }
+
+    /**
+     * 用页面内 fetch 把 blob: 读成 data URL，再交给界面保存。
+     * 大文件可能超出 evaluateJavascript 返回上限，失败时回调 onBlobError。
+     */
+    fun extractBlob(
+        url: String,
+        userAgent: String? = null,
+        disposition: String? = null,
+        mime: String? = null,
+    ) {
+        val fileName = Downloader.fileNameFrom(url, disposition)
+        val js = """
+            (function(){
+              return fetch(${org.json.JSONObject.quote(url)})
+                .then(function(r){ return r.blob(); })
+                .then(function(b){
+                  return new Promise(function(resolve, reject){
+                    var fr = new FileReader();
+                    fr.onload = function(){ resolve(String(fr.result)); };
+                    fr.onerror = function(){ reject('read'); };
+                    fr.readAsDataURL(b);
+                  });
+                });
+            })()
+        """.trimIndent()
+        webView.evaluateJavascript(js) { raw ->
+            val dataUrl = runCatching {
+                when (raw) {
+                    null, "null" -> null
+                    else -> org.json.JSONTokener(raw).nextValue() as? String
+                }
+            }.getOrNull()
+            if (dataUrl != null && dataUrl.startsWith("data:", ignoreCase = true)) {
+                onBlobReady?.invoke(dataUrl, fileName, mime)
+            } else {
+                onBlobError?.invoke("无法读取 blob 文件（可能过大）")
+            }
+        }
+    }
 
     /** 去广告元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面加载回调兜底注入） */
     private var adblockDocStart = false
@@ -318,6 +405,39 @@ class BrowserTab(private val appContext: Context) {
                 if (!pageTitle.isNullOrBlank()) title = pageTitle
             }
 
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?,
+            ): Boolean {
+                if (filePathCallback == null || fileChooserParams == null) return false
+                // WebView 可能在上一次未回调时再次请求，先取消上一次
+                cancelFileChooser()
+                pendingFileCallback = filePathCallback
+                this@BrowserTab.onShowFileChooser.invoke(fileChooserParams, filePathCallback)
+                return true
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || callback == null) return
+                if (customView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                this@BrowserTab.onShowCustomView?.invoke(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                val cb = customViewCallback
+                customView = null
+                customViewCallback = null
+                this@BrowserTab.onHideCustomView?.invoke()
+                // 界面摘掉 View 后必须通知 WebView
+                cb?.onCustomViewHidden()
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 webView.post { handleWebPermission(request) }
             }
@@ -343,10 +463,17 @@ class BrowserTab(private val appContext: Context) {
 
         webView.setDownloadListener { link, userAgent, contentDisposition, mimeType, _ ->
             // 一些站点把 .user.js 以附件形式返回，会走到下载回调；这里改成「导入脚本」
-            if (isUserScriptUrl(link)) {
-                onUserScriptLink?.invoke(link)
-            } else {
-                onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            when {
+                isUserScriptUrl(link) -> onUserScriptLink?.invoke(link)
+                // blob：HTTP 下载器拉不到，走页面内抽取
+                link.startsWith("blob:", ignoreCase = true) ->
+                    extractBlob(link, userAgent, contentDisposition, mimeType)
+                // data URL 附件：直接交给界面落盘
+                link.startsWith("data:", ignoreCase = true) -> {
+                    val name = Downloader.fileNameFrom(link, contentDisposition)
+                    onBlobReady?.invoke(link, name, mimeType)
+                }
+                else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
             }
         }
 
@@ -902,6 +1029,8 @@ class BrowserTab(private val appContext: Context) {
     fun destroyNow() {
         if (destroyed) return
         destroyed = true
+        cancelFileChooser()
+        exitCustomView()
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()

@@ -14,6 +14,7 @@ mafari-release.jks
 # 本地参考/会话，不入库
 _ref/
 .mimocode/
+_mafari_extract/
 **/.gradle/
 **/build/
 **/.idea/

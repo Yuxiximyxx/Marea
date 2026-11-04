@@ -3,8 +3,15 @@ package dev.dsh.miuixbrowser
 import android.app.Activity
 import android.os.Build
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.MediaStore
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -181,6 +188,14 @@ private data class DownloadRequest(
     val userAgent: String?,
     val fileName: String,
     val mime: String?,
+    /** blob / data URL 已抽成 data URI，确认后直接落盘，不再走 HTTP 下载器 */
+    val dataUri: String? = null,
+)
+
+/** 网页 <input type=file capture>：文件 / 拍照 / 录像 选择 */
+private class FileChooserChoice(
+    val params: WebChromeClient.FileChooserParams,
+    val callback: ValueCallback<Array<Uri>>,
 )
 
 private fun androidx.compose.ui.geometry.Offset.round(): IntOffset =
@@ -271,6 +286,12 @@ fun BrowserScreen(
     var showClearTabsConfirm by remember { mutableStateOf(false) }
     // 标签列表当前栏：0 = 标签页，1 = 无痕浏览页
     var tabsPage by remember { mutableIntStateOf(0) }
+    // 文件选择 + 视频全屏 + 网页权限询问
+    var fileChooserChoice by remember { mutableStateOf<FileChooserChoice?>(null) }
+    var customView by remember { mutableStateOf<android.view.View?>(null) }
+    var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var webPermPrompt by remember { mutableStateOf<WebPermPrompt?>(null) }
+    var androidPermDone by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     // 启动自动检查更新：每个进程只查一次；有新版本且未被忽略时弹底部提示
     var updateRelease by remember { mutableStateOf<AppRelease?>(null) }
@@ -300,28 +321,6 @@ fun BrowserScreen(
     // 网页增强总开关 → 所有标签页
     LaunchedEffect(settings.pageEnhancements, state.tabs.size) {
         state.tabs.forEach { it.pageEnhancements = settings.pageEnhancements }
-    }
-
-    LaunchedEffect(tab.id, extensions.items.toList()) {
-        tab.userScripts = extensions.items.toList()
-        tab.onVisited = { url, title -> if (!tab.incognito) history.record(url, title) }
-    }
-
-    LaunchedEffect(tab.id, settings.searchTemplate) {
-        tab.searchTemplate = settings.searchTemplate
-        tab.onPullRefresh = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            tab.webView.reload()
-        }
-        tab.onUserScriptLink = { url -> pendingScript = url }
-        tab.onDownload = { url, ua, disposition, mime ->
-            pendingDownload = DownloadRequest(
-                url = url,
-                userAgent = ua,
-                fileName = Downloader.fileNameFrom(url, disposition),
-                mime = mime,
-            )
-        }
     }
 
     LaunchedEffect(tab.id) {
@@ -407,18 +406,188 @@ fun BrowserScreen(
         // WebView 已经隐藏，主页现在才允许采集
         if (onHome) webViewHidden = true
     }
-    DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
+    DisposableEffect(tab.id) {
+        onDispose {
+            tab.onLongPressLink = null
+            tab.onShowFileChooser = { _, callback -> callback.onReceiveValue(null) }
+            tab.onShowCustomView = null
+            tab.onHideCustomView = null
+            tab.onPermissionPrompt = null
+            tab.requestAndroidPermissions = null
+            tab.onBlobReady = null
+            tab.onBlobError = null
+            fileChooserChoice = null
+            customView = null
+            webPermPrompt = null
+        }
+    }
 
-    // 网页权限「询问」弹窗 + Android 运行时权限申请
-    var webPermPrompt by remember { mutableStateOf<WebPermPrompt?>(null) }
-    var androidPermDone by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val androidPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    // Android 运行时权限申请结果
+    val androidPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) {
         val done = androidPermDone
         androidPermDone = null
         done?.invoke()
     }
+
+    // 系统文件选择器（含多选）
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val choice = fileChooserChoice
+        fileChooserChoice = null
+        val cb = choice?.callback ?: return@rememberLauncherForActivityResult
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val clip = data?.clipData
+            val uris = when {
+                clip != null && clip.itemCount > 0 -> Array(clip.itemCount) { clip.getItemAt(it).uri }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> null
+            }
+            cb.onReceiveValue(uris)
+        } else {
+            cb.onReceiveValue(null)
+        }
+    }
+
+    // 拍照 / 录像
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val choice = fileChooserChoice
+        fileChooserChoice = null
+        val cb = choice?.callback
+        val out = cameraOutputUri
+        cameraOutputUri = null
+        if (result.resultCode == Activity.RESULT_OK && out != null) {
+            cb?.onReceiveValue(arrayOf(out))
+        } else {
+            out?.let { uri ->
+                runCatching {
+                    context.contentResolver.update(
+                        uri,
+                        android.content.ContentValues().apply {
+                            put(MediaStore.Images.Media.IS_PENDING, 0)
+                            put(MediaStore.Video.Media.IS_PENDING, 0)
+                        },
+                        null,
+                        null,
+                    )
+                }
+            }
+            cb?.onReceiveValue(null)
+        }
+    }
+
+    /** 拉起系统文件选择器（按 acceptTypes / 多选） */
+    fun launchFilePicker(choice: FileChooserChoice) {
+        val params = choice.params
+        val types = params.acceptTypes
+            ?.mapNotNull { it?.trim()?.takeIf { t -> t.isNotEmpty() } }
+            .orEmpty()
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = when {
+                types.isEmpty() -> "*/*"
+                types.size == 1 && types[0].contains("/") -> types[0]
+                else -> "*/*"
+            }
+            if (types.size > 1 || (types.size == 1 && !types[0].contains("/"))) {
+                val mimes = types.map { t ->
+                    if (t.startsWith(".")) {
+                        when (t.lowercase()) {
+                            ".jpg", ".jpeg" -> "image/jpeg"
+                            ".png" -> "image/png"
+                            ".gif" -> "image/gif"
+                            ".webp" -> "image/webp"
+                            ".mp4" -> "video/mp4"
+                            ".webm" -> "video/webm"
+                            ".pdf" -> "application/pdf"
+                            else -> t.removePrefix(".")
+                        }
+                    } else t
+                }.distinct().toTypedArray()
+                if (mimes.isNotEmpty()) putExtra(Intent.EXTRA_MIME_TYPES, mimes)
+            }
+            if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+        }
+        val canResolve = intent.resolveActivity(context.packageManager) != null
+        if (canResolve) {
+            filePickerLauncher.launch(intent)
+        } else {
+            runCatching { filePickerLauncher.launch(Intent.createChooser(intent, "选择文件")) }
+                .onFailure {
+                    choice.callback.onReceiveValue(null)
+                    fileChooserChoice = null
+                }
+        }
+    }
+
+    /** 拍照或录像：MediaStore pending 输出 + 相机 Intent */
+    fun launchCamera(choice: FileChooserChoice, video: Boolean) {
+        val resolver = context.contentResolver
+        val uri = runCatching {
+            if (video) {
+                val values = android.content.ContentValues().apply {
+                    put(MediaStore.Video.Media.DISPLAY_NAME, "rec_${System.currentTimeMillis()}.mp4")
+                    put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Mafari")
+                        put(MediaStore.Video.Media.IS_PENDING, 1)
+                    }
+                }
+                resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            } else {
+                val values = android.content.ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "photo_${System.currentTimeMillis()}.jpg")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Mafari")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                }
+                resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            }
+        }.getOrNull()
+        if (uri == null) {
+            choice.callback.onReceiveValue(null)
+            fileChooserChoice = null
+            return
+        }
+        cameraOutputUri = uri
+        val intent = if (video) {
+            Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_OUTPUT, uri) }
+        } else {
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply { putExtra(MediaStore.EXTRA_OUTPUT, uri) }
+        }.apply {
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching {
+            val resInfo = context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            for (info in resInfo) {
+                context.grantUriPermission(
+                    info.activityInfo.packageName,
+                    uri,
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+        }
+        val canResolve = intent.resolveActivity(context.packageManager) != null
+        if (canResolve) {
+            cameraLauncher.launch(intent)
+        } else {
+            cameraOutputUri = null
+            runCatching { resolver.delete(uri, null, null) }
+            choice.callback.onReceiveValue(null)
+            fileChooserChoice = null
+            android.widget.Toast.makeText(context, "未找到相机应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     LaunchedEffect(tab.id) {
         tab.onPermissionPrompt = { origin, what, decide -> webPermPrompt = WebPermPrompt(origin, what, decide) }
         tab.requestAndroidPermissions = { perms, done ->
@@ -460,6 +629,23 @@ fun BrowserScreen(
         tab.onVisited = { url, title -> if (!tab.incognito) history.record(url, title) }
     }
 
+    // 文件选择：非 capture 直接拉系统选择器；单一类型 capture 直接开相机；
+    // 混合类型 capture 由下方 GlassDialog 让用户选。
+    LaunchedEffect(fileChooserChoice) {
+        val choice = fileChooserChoice ?: return@LaunchedEffect
+        val params = choice.params
+        val accepts = params.acceptTypes?.joinToString(",")?.lowercase().orEmpty()
+        val wantsImage = accepts.contains("image") || accepts.isBlank()
+        val wantsVideo = accepts.contains("video")
+        val capture = params.isCaptureEnabled
+        when {
+            !capture -> launchFilePicker(choice)
+            wantsImage && !wantsVideo -> launchCamera(choice, video = false)
+            wantsVideo && !wantsImage -> launchCamera(choice, video = true)
+            // 混合 + capture：等用户在弹层里选
+        }
+    }
+
     LaunchedEffect(tab.id, settings.searchTemplate) {
         tab.searchTemplate = settings.searchTemplate
         tab.onPullRefresh = {
@@ -468,12 +654,36 @@ fun BrowserScreen(
         }
         tab.onUserScriptLink = { url -> pendingScript = url }
         tab.onDownload = { url, ua, disposition, mime ->
+            // blob/data 由 BrowserState 抽取后走 onBlobReady
+            if (!url.startsWith("blob:", ignoreCase = true) && !url.startsWith("data:", ignoreCase = true)) {
+                pendingDownload = DownloadRequest(
+                    url = url,
+                    userAgent = ua,
+                    fileName = Downloader.fileNameFrom(url, disposition),
+                    mime = mime,
+                )
+            }
+        }
+        tab.onBlobReady = { dataUri, fileName, mime ->
             pendingDownload = DownloadRequest(
-                url = url,
-                userAgent = ua,
-                fileName = Downloader.fileNameFrom(url, disposition),
+                url = "",
+                userAgent = null,
+                fileName = fileName,
                 mime = mime,
+                dataUri = dataUri,
             )
+        }
+        tab.onBlobError = { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+        tab.onShowFileChooser = { params, callback ->
+            fileChooserChoice = FileChooserChoice(params, callback)
+        }
+        tab.onShowCustomView = { view, _ ->
+            customView = view
+        }
+        tab.onHideCustomView = {
+            customView = null
         }
     }
 
@@ -543,6 +753,15 @@ fun BrowserScreen(
     // 二级页面的返回（含预见性返回）由 NavDisplay 接管；这里只处理浏览主界面自己的返回。
     BackHandler(enabled = backStack.size <= 1) {
         when {
+            // 视频全屏优先退出
+            customView != null -> {
+                tab.exitCustomView()
+                customView = null
+            }
+            fileChooserChoice != null -> {
+                fileChooserChoice?.callback?.onReceiveValue(null)
+                fileChooserChoice = null
+            }
             showFind -> {
                 tab.clearFind()
                 showFind = false
@@ -1199,21 +1418,28 @@ fun BrowserScreen(
 
             Sheet.Image -> {
                 val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
+                val blobImage = imageUrl.startsWith("blob:", ignoreCase = true)
                 SheetRow(
                     title = "保存图片",
-                    subtitle = if (inlineImage) "内嵌图片" else hostOf(imageUrl),
+                    subtitle = when {
+                        inlineImage -> "内嵌图片"
+                        blobImage -> "页面内图片"
+                        else -> hostOf(imageUrl)
+                    },
                 ) {
                     sheet = Sheet.None
-                    if (inlineImage) {
-                        val name = "image_" + System.currentTimeMillis() + ".png"
-                        val ok = Downloader.saveDataUri(context, imageUrl, name)
-                        android.widget.Toast.makeText(
-                            context,
-                            if (ok) "已保存到 Download/mafari" else "保存失败",
-                            android.widget.Toast.LENGTH_SHORT,
-                        ).show()
-                    } else {
-                        pendingDownload = DownloadRequest(
+                    when {
+                        inlineImage -> {
+                            val name = "image_" + System.currentTimeMillis() + ".png"
+                            val ok = Downloader.saveDataUri(context, imageUrl, name)
+                            android.widget.Toast.makeText(
+                                context,
+                                if (ok) "已保存到 Download/mafari" else "保存失败",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        blobImage -> tab.extractBlob(imageUrl, null, null, "image/*")
+                        else -> pendingDownload = DownloadRequest(
                             url = imageUrl,
                             userAgent = null,
                             fileName = Downloader.fileNameFrom(imageUrl, null),
@@ -1221,7 +1447,7 @@ fun BrowserScreen(
                         )
                     }
                 }
-                if (!inlineImage) {
+                if (!inlineImage && !blobImage) {
                     SheetRow(title = "复制图片地址") {
                         sheet = Sheet.None
                         clipboard.setText(AnnotatedString(imageUrl))
@@ -1288,7 +1514,10 @@ fun BrowserScreen(
         GlassDialog(
             show = downloadRequest != null,
             title = "下载文件",
-            summary = downloadRequest?.let { it.fileName + "\n保存到 /sdcard/Download/mafari" },
+            summary = downloadRequest?.let {
+                it.fileName + "\n" +
+                    if (it.dataUri != null) "页面内文件（blob/data）" else "保存到 /sdcard/Download/mafari"
+            },
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
             onDismissRequest = { pendingDownload = null },
         ) {
@@ -1306,15 +1535,30 @@ fun BrowserScreen(
                         }
                         GlassDialogButton(
                             onClick = {
+                                val req = downloadRequest
                                 pendingDownload = null
                                 scope.launch {
-                                    Downloader.start(
-                                        context = context,
-                                        url = downloadRequest.url,
-                                        userAgent = downloadRequest.userAgent,
-                                        fileName = downloadRequest.fileName,
-                                        mimeType = downloadRequest.mime,
-                                    )
+                                    val ok = if (req.dataUri != null) {
+                                        Downloader.saveDataUri(context, req.dataUri, req.fileName)
+                                    } else {
+                                        Downloader.start(
+                                            context = context,
+                                            url = req.url,
+                                            userAgent = req.userAgent,
+                                            fileName = req.fileName,
+                                            mimeType = req.mime,
+                                        )
+                                        true
+                                    }
+                                    if (req.dataUri != null) {
+                                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                if (ok) "已保存到 Download/mafari" else "保存失败",
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -1325,6 +1569,89 @@ fun BrowserScreen(
                     }
                 }
             }
+        }
+
+        // capture 混合类型：让用户选拍照 / 录像 / 文件
+        // 注意：launchCamera / filePickerLauncher 依赖 fileChooserChoice 里的 callback，
+        // 弹层里不要先置 null，由 launcher 回调时再清。
+        val captureChoice = fileChooserChoice
+        GlassDialog(
+            show = captureChoice != null && captureChoice.params.isCaptureEnabled &&
+                run {
+                    val a = captureChoice.params.acceptTypes?.joinToString(",")?.lowercase().orEmpty()
+                    a.contains("image") && a.contains("video")
+                },
+            title = "选择来源",
+            summary = "网页需要图片或视频",
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismissRequest = {
+                captureChoice?.callback?.onReceiveValue(null)
+                fileChooserChoice = null
+            },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassDialogButton(
+                    onClick = {
+                        if (captureChoice != null) launchCamera(captureChoice, video = false)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "拍照", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
+                    onClick = {
+                        if (captureChoice != null) launchCamera(captureChoice, video = true)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = "录像", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
+                    onClick = {
+                        if (captureChoice != null) launchFilePicker(captureChoice)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = "从文件选择", style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
+
+        // HTML5 视频全屏：把 WebView 给的 View 挂到全屏黑底容器
+        if (customView != null) {
+            AndroidView(
+                factory = { ctx ->
+                    FrameLayout(ctx).apply {
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                    }
+                },
+                update = { container ->
+                    val cv = customView
+                    if (cv != null) {
+                        if (cv.parent !== container) {
+                            (cv.parent as? android.view.ViewGroup)?.removeView(cv)
+                            container.removeAllViews()
+                            container.addView(
+                                cv,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                ),
+                            )
+                        }
+                    } else {
+                        container.removeAllViews()
+                    }
+                },
+                onRelease = { container ->
+                    container.removeAllViews()
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(100f)
+                    .background(Color.Black),
+            )
         }
 
         val menuItems = scriptMenuItems
