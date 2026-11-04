@@ -230,8 +230,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                     ) {
                                         Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
                                         Spacer(Modifier.height(2.dp))
+                                        // 副标题优先用元数据 @description，没有再回退代码预览
+                                        val subtitle = UserscriptEngine.parse(script.code).description
+                                            .ifBlank { script.code.take(60).replace("\n", " ") }
                                         Text(
-                                            text = script.code.take(60).replace("\n", " "),
+                                            text = subtitle,
                                             fontSize = 11.sp,
                                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                             maxLines = 1,
