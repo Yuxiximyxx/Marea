@@ -91,7 +91,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val scrollBehavior = MiuixScrollBehavior()
     var showMore by remember { mutableStateOf(false) }
     var moreAnchor by remember { mutableStateOf(Rect.Zero) }
-    var barBottom by remember { mutableStateOf(0f) }
     val updateAll: () -> Unit = {
         if (!updatingAll) {
             val targets = store.items.filter { it.sourceUrl.isNotBlank() }
@@ -159,8 +158,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
         },
     ) { innerPadding ->
         val topInset = innerPadding.calculateTopPadding()
-        val barBottomPx = with(androidx.compose.ui.platform.LocalDensity.current) { topInset.toPx() }
-        androidx.compose.runtime.LaunchedEffect(barBottomPx) { barBottom = barBottomPx }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
@@ -464,13 +461,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     }
     // “更多”菜单：与 Scaffold 同级、放在最后 → 位于最上层（盖住顶栏）；
     // GlassPopup 自带全屏遮罩层，点菜单以外任何区域（含顶栏）都会触发 onDismissRequest 收起。
-    // 锚点顶边取「按钮底部」与「顶栏底部」中更靠下者再下移 8dp：在按钮下方留出间隔，且不压住顶栏。
-    val popupGap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
-    val popupTop = maxOf(moreAnchor.bottom, barBottom) + popupGap
+    // 锚点：面板顶边直接对齐按钮底部，右边与按钮右边对齐。
     GlassPopup(
         show = showMore,
         onDismissRequest = { showMore = false },
-        anchorBounds = Rect(moreAnchor.left, popupTop, moreAnchor.right, popupTop),
+        anchorBounds = Rect(moreAnchor.left, moreAnchor.bottom, moreAnchor.right, moreAnchor.bottom),
         backdrop = if (glass) backdrop else null,
     ) {
         GlassPopupItem(
