@@ -265,6 +265,16 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
+                    SwitchPreference(
+                        title = "网页增强",
+                        summary = "总开关：同步启用 / 停用全部油猴脚本和去广告；关闭后也不再检测长按标记广告",
+                        checked = settings.pageEnhancements,
+                        onCheckedChange = {
+                            settings.updatePageEnhancements(it)
+                            onPageEnhancementsChange(it)
+                            AdBlock.updateEnabled(it)
+                        },
+                    )
                     SettingsRow(
                         title = "去广告",
                         summary = if (AdBlock.enabled) {
@@ -278,15 +288,6 @@ fun SettingsScreen(
                         title = "脚本管理",
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
-                    )
-                    SwitchPreference(
-                        title = "页面增强",
-                        summary = "开关会同步启用 / 停用全部油猴脚本；关闭后也不再注入长按标记广告的检测",
-                        checked = settings.pageEnhancements,
-                        onCheckedChange = {
-                            settings.updatePageEnhancements(it)
-                            onPageEnhancementsChange(it)
-                        },
                     )
                 }
 

@@ -118,7 +118,7 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_BLUR, enabled).apply()
     }
 
-    /** 页面增强：油猴脚本、去广告规则、长按标记广告 */
+    /** 网页增强：油猴脚本、去广告规则、长按标记广告 */
     var pageEnhancements by mutableStateOf(prefs.getBoolean(KEY_ENHANCE, true))
         private set
 

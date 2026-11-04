@@ -297,7 +297,7 @@ fun BrowserScreen(
         }
     }
 
-    // 页面增强总开关 → 所有标签页
+    // 网页增强总开关 → 所有标签页
     LaunchedEffect(settings.pageEnhancements, state.tabs.size) {
         state.tabs.forEach { it.pageEnhancements = settings.pageEnhancements }
     }

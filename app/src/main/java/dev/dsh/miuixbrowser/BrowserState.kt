@@ -118,7 +118,7 @@ class BrowserTab(private val appContext: Context) {
             syncUserScripts()
         }
 
-    /** 页面增强总开关：关闭后不再注入任何脚本 / 长按逻辑，用于排查（去广告有自己的开关，见 AdBlock） */
+    /** 网页增强总开关：关闭后不再注入任何脚本 / 长按逻辑，用于排查（去广告有自己的开关，见 AdBlock） */
     var pageEnhancements: Boolean = true
         set(value) {
             if (field == value) return

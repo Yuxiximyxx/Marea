@@ -145,7 +145,7 @@ class ExtensionStore(context: Context) {
         persist()
     }
 
-    /** 页面增强总开关联动：全部脚本一起开 / 关 */
+    /** 网页增强总开关联动：全部脚本一起开 / 关 */
     fun setAllEnabled(enabled: Boolean) {
         var changed = false
         items.forEachIndexed { index, script ->
