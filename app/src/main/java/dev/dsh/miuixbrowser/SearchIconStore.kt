@@ -81,3 +81,20 @@ fun rememberSearchIcon(url: String): ImageBitmap? {
     }
     return icon
 }
+
+/** 依次尝试多个图标地址，取第一个加载成功的；全部失败返回 null（调用方回退本地图标）。 */
+@Composable
+fun rememberFirstIcon(urls: List<String>): ImageBitmap? {
+    val context = LocalContext.current
+    var icon by remember(urls) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(urls) {
+        icon = if (urls.isEmpty()) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                urls.firstNotNullOfOrNull { SearchIconStore.load(context, it) }
+            }
+        }
+    }
+    return icon
+}

@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -143,13 +144,6 @@ fun LibraryScreen(
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
                 actions = {
-                    if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
-                        IconTextAction(
-                            icon = MiuixIcons.Glass.Delete,
-                            label = "清空",
-                            modifier = Modifier.padding(end = 4.dp),
-                        ) { store.clear() }
-                    }
                     HapticGlassIconButton(
                         onClick = {
                             searching = !searching
@@ -290,6 +284,39 @@ fun LibraryScreen(
                         },
                         icon = MiuixIcons.Glass.File,
                     )
+                }
+            }
+
+            // 历史栏右下角清空 FAB：位置 / 大小 / 形状与书签 FAB 一致，图标为红色垃圾桶
+            if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
+                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 20.dp, bottom = 96.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .shadow(6.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(MiuixTheme.colorScheme.surfaceContainer)
+                            .clickable {
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                                store.clear()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Glass.Delete,
+                            contentDescription = "清空历史",
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
                 }
             }
         }
@@ -470,7 +497,7 @@ private fun HistoryPage(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
     ) {
         item { SmallTitle(text = "最近访问") }
         items(entries.size) { index ->

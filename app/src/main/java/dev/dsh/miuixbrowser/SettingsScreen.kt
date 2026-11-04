@@ -48,6 +48,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -323,43 +324,39 @@ fun SettingsScreen(
                 onDismissRequest = { showWallpaper = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "选择壁纸",
-                        fontSize = 16.sp,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showWallpaper = false
-                                picker.launch(arrayOf("image/*"))
-                            }
-                            .padding(horizontal = 6.dp, vertical = 12.dp),
+                    WallpaperDialogRow(
+                        title = "选择壁纸",
+                        onClick = {
+                            showWallpaper = false
+                            picker.launch(arrayOf("image/*"))
+                        },
                     )
-                    Text(
-                        text = "清除壁纸",
-                        fontSize = 16.sp,
-                        color = MiuixTheme.colorScheme.error,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showWallpaper = false
-                                settings.updateWallpaper("")
-                            }
-                            .padding(horizontal = 6.dp, vertical = 12.dp),
+                    WallpaperDialogRow(
+                        title = "清除壁纸",
+                        titleColor = MiuixTheme.colorScheme.error,
+                        onClick = {
+                            showWallpaper = false
+                            settings.updateWallpaper("")
+                        },
                     )
-                    Spacer(Modifier.height(4.dp))
-                    SwitchPreference(
+                    WallpaperDialogRow(
                         title = "模糊壁纸",
                         summary = "主页壁纸做高斯模糊，减少干扰",
-                        checked = settings.wallpaperBlur,
-                        onCheckedChange = { settings.updateWallpaperBlur(it) },
-                    )
-                    Spacer(Modifier.height(8.dp))
+                        onClick = { settings.updateWallpaperBlur(!settings.wallpaperBlur) },
+                    ) {
+                        Switch(
+                            checked = settings.wallpaperBlur,
+                            onCheckedChange = { settings.updateWallpaperBlur(it) },
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
                     GlassDialogButton(
                         onClick = { showWallpaper = false },
                         modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = 14.dp,
+                        minHeight = 44.dp,
                     ) {
-                        Text(text = "关闭", style = MiuixTheme.textStyles.button)
+                        Text(text = "关闭", fontSize = 16.sp, style = MiuixTheme.textStyles.button)
                     }
                 }
             }
@@ -391,6 +388,41 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/** 壁纸弹窗里的一行：标题统一 16sp、说明统一 12sp，右侧可放开关。 */
+@Composable
+private fun WallpaperDialogRow(
+    title: String,
+    onClick: () -> Unit,
+    titleColor: Color = MiuixTheme.colorScheme.onSurface,
+    summary: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, color = titleColor)
+            if (summary != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = summary,
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
         }
     }
 }

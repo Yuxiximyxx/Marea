@@ -2428,12 +2428,22 @@ internal fun UaDialog(
                         .padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        imageVector = presetIcon,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                        tint = MiuixTheme.colorScheme.primary,
-                    )
+                    val netIcon = rememberFirstIcon(preset.iconUrls)
+                    if (netIcon != null) {
+                        Image(
+                            bitmap = netIcon,
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = presetIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp).padding(1.dp),
+                            tint = MiuixTheme.colorScheme.primary,
+                        )
+                    }
                     Spacer(Modifier.width(12.dp))
                     Text(
                         text = preset.name,

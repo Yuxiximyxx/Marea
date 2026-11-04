@@ -228,7 +228,7 @@ val SEARCH_ENGINES = listOf(
     SearchEngine("DuckDuckGo", "https://duckduckgo.com/?q=%s", "https://duckduckgo.com/favicon.ico"),
 )
 
-data class UaPreset(val name: String, val value: String)
+data class UaPreset(val name: String, val value: String, val iconUrls: List<String> = emptyList())
 
 /** 常用 UA 预设 */
 val UA_PRESETS = listOf(
@@ -236,14 +236,29 @@ val UA_PRESETS = listOf(
     UaPreset(
         "Android Chrome",
         "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+        listOf(
+            "https://www.android.com/favicon.ico",
+            "https://www.google.com/s2/favicons?sz=128&domain_url=https://www.android.com/",
+            "https://icons.duckduckgo.com/ip3/www.android.com.ico",
+        ),
     ),
     UaPreset(
         "桌面 Chrome",
         DESKTOP_UA,
+        listOf(
+            "https://www.google.com/s2/favicons?sz=128&domain_url=https://www.google.com/chrome/",
+            "https://www.google.com/chrome/static/images/favicons/favicon-96x96.png",
+            "https://icons.duckduckgo.com/ip3/www.google.com.ico",
+        ),
     ),
     UaPreset(
         "iPhone Safari",
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+        listOf(
+            "https://www.apple.com/favicon.ico",
+            "https://www.google.com/s2/favicons?sz=128&domain_url=https://www.apple.com/",
+            "https://icons.duckduckgo.com/ip3/www.apple.com.ico",
+        ),
     ),
 )
 
