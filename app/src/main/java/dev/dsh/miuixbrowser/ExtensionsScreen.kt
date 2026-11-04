@@ -50,7 +50,13 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.More
 import top.yukonga.miuix.kmp.icon.glass.Refresh
+import top.yukonga.miuix.kmp.glass.GlassPopup
+import top.yukonga.miuix.kmp.glass.GlassPopupItem
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Delete
@@ -83,6 +89,46 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val deleteTarget = deleting
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
+    var showMore by remember { mutableStateOf(false) }
+    var moreAnchor by remember { mutableStateOf(Rect.Zero) }
+    val updateAll: () -> Unit = {
+        if (!updatingAll) {
+            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
+            if (targets.isEmpty()) {
+                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                updatingAll = true
+                busy = true
+                scope.launch {
+                    var ok = 0
+                    targets.forEach { target ->
+                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            fetchScript(target.sourceUrl)
+                        }
+                        if (fresh != null) {
+                            if (target.subscriptionUrl.isNotBlank()) {
+                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
+                                if (converted != null) {
+                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
+                                    ok++
+                                }
+                            } else {
+                                store.update(target.id, target.name, fresh, target.enabled, target.match)
+                                ok++
+                            }
+                        }
+                    }
+                    busy = false
+                    updatingAll = false
+                    android.widget.Toast.makeText(
+                        context,
+                        "已更新 $ok/${targets.size} 个脚本",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -94,52 +140,17 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
                 actions = {
-                    IconTextAction(
-                        icon = MiuixIcons.Glass.Download,
-                        label = "导入",
-                        modifier = Modifier.padding(end = 6.dp),
-                    ) { importing = true }
-                    IconTextAction(
-                        icon = MiuixIcons.Glass.Refresh,
-                        label = if (updatingAll) "更新中" else "全部更新",
-                        modifier = Modifier.padding(end = 10.dp),
+                    HapticGlassIconButton(
+                        onClick = { showMore = true },
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .onGloballyPositioned { moreAnchor = it.boundsInRoot() },
                     ) {
-                        if (!updatingAll) {
-                            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
-                            if (targets.isEmpty()) {
-                                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                updatingAll = true
-                                busy = true
-                                scope.launch {
-                                    var ok = 0
-                                    targets.forEach { target ->
-                                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            fetchScript(target.sourceUrl)
-                                        }
-                                        if (fresh != null) {
-                                            if (target.subscriptionUrl.isNotBlank()) {
-                                                val converted = AdblockRules.convert(fresh, target.subscriptionUrl)
-                                                if (converted != null) {
-                                                    store.update(target.id, converted.name, converted.code, target.enabled, target.match)
-                                                    ok++
-                                                }
-                                            } else {
-                                                store.update(target.id, target.name, fresh, target.enabled, target.match)
-                                                ok++
-                                            }
-                                        }
-                                    }
-                                    busy = false
-                                    updatingAll = false
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "已更新 $ok/${targets.size} 个脚本",
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
-                        }
+                        Icon(
+                            imageVector = MiuixIcons.Glass.More,
+                            contentDescription = "更多",
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 },
             )
@@ -358,6 +369,31 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     contentDescription = "新建脚本",
                     tint = Color.White,
                     modifier = Modifier.size(26.dp),
+                )
+            }
+            // 右上角“更多”菜单：与按钮同在全屏 Box 内，锚点用 boundsInRoot
+            GlassPopup(
+                show = showMore,
+                onDismissRequest = { showMore = false },
+                anchorBounds = moreAnchor,
+                backdrop = if (glass) backdrop else null,
+            ) {
+                GlassPopupItem(
+                    text = "导入",
+                    onClick = {
+                        showMore = false
+                        importing = true
+                    },
+                    icon = MiuixIcons.Glass.Download,
+                )
+                GlassPopupItem(
+                    text = if (updatingAll) "更新中…" else "全部更新",
+                    enabled = !updatingAll,
+                    onClick = {
+                        showMore = false
+                        updateAll()
+                    },
+                    icon = MiuixIcons.Glass.Refresh,
                 )
             }
         } // end outer Box
