@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.webkit.WebViewCompat
@@ -143,6 +146,15 @@ fun SettingsScreen(
                         title = "主页壁纸",
                         summary = if (settings.wallpaper.isBlank()) "未设置" else "已设置",
                         onClick = { showWallpaper = true },
+                    )
+                    AppIconPicker(
+                        selected = settings.appIcon,
+                        onSelect = {
+                            if (it != settings.appIcon) {
+                                settings.updateAppIcon(it)
+                                Toast.makeText(context, "退出应用后桌面图标将更新", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                     )
                     SwitchPreference(
                         title = "模糊效果",
@@ -425,6 +437,77 @@ private fun WallpaperDialogRow(
         if (trailing != null) {
             Spacer(Modifier.width(12.dp))
             trailing()
+        }
+    }
+}
+
+/** 应用图标选择：四个预览并排，选中项带主题色描边和对勾。 */
+@Composable
+private fun AppIconPicker(selected: Int, onSelect: (Int) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Text(
+            text = "应用图标",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "切换后在退出应用时更新桌面图标",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            AppIconManager.ICONS.forEachIndexed { index, option ->
+                val active = index == selected
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onSelect(index) }
+                        .padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(62.dp)
+                            .border(
+                                width = if (active) 2.dp else 0.dp,
+                                color = if (active) MiuixTheme.colorScheme.primary else Color.Transparent,
+                                shape = RoundedCornerShape(18.dp),
+                            )
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(15.dp)),
+                    ) {
+                        Image(
+                            painter = painterResource(option.preview),
+                            contentDescription = option.label,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (active) {
+                            Icon(
+                                imageVector = MiuixIcons.Basic.Check,
+                                contentDescription = "已选中",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Text(
+                            text = option.label,
+                            fontSize = 13.sp,
+                            color = if (active) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }

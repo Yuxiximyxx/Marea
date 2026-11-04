@@ -12,6 +12,15 @@ class AppSettings(context: Context) {
     var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
         private set
 
+    /** 应用图标：0=默认 1=多彩 2=立体 3=深色（对应 AppIconManager.ICONS） */
+    var appIcon by mutableStateOf(prefs.getInt(KEY_APP_ICON, 0).coerceIn(0, 3))
+        private set
+
+    fun updateAppIcon(index: Int) {
+        appIcon = index.coerceIn(0, 3)
+        prefs.edit().putInt(KEY_APP_ICON, appIcon).apply()
+    }
+
     /** 外部链接打开方式：0=应用内打开 1=交给其他浏览器（询问） */
     var linkOpenMode by mutableStateOf(prefs.getInt(KEY_LINK_MODE, 0))
         private set
@@ -197,6 +206,7 @@ class AppSettings(context: Context) {
 
     private companion object {
         const val KEY_BLUR = "blur"
+        const val KEY_APP_ICON = "app_icon"
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"

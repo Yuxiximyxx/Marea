@@ -82,6 +82,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉 */
+    override fun onStop() {
+        super.onStop()
+        val wanted = AppSettings(this).appIcon
+        if (AppIconManager.current(this) != wanted) AppIconManager.apply(this, wanted)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
