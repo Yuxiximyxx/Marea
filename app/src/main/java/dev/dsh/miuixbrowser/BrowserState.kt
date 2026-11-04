@@ -793,6 +793,24 @@ class BrowserState(private val context: Context) {
         tab.load(target)
     }
 
+    /**
+     * 清空某一栏的标签：[incognito] 为 true 清无痕栏，false 清普通栏，另一栏不受影响。
+     * 当前标签被清掉时：清无痕栏且还有普通标签 → 回到最后一个普通标签；
+     * 否则在被清空的那一栏新建一个空白标签。
+     */
+    fun closeAllOf(incognito: Boolean) {
+        val removed = tabs.filter { it.incognito == incognito }
+        if (removed.isEmpty()) return
+        val keep = activeTab.takeIf { it.incognito != incognito }
+        removed.forEach { it.close() }
+        tabs.removeAll(removed)
+        when {
+            keep != null -> activeIndex = tabs.indexOf(keep).coerceAtLeast(0)
+            incognito && tabs.isNotEmpty() -> activeIndex = tabs.lastIndex
+            else -> newTab(incognito = incognito)
+        }
+    }
+
     fun closeAll() {
         tabs.forEach { it.close() }
         tabs.clear()
