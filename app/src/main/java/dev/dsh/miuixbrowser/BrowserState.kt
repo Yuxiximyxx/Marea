@@ -681,7 +681,7 @@ class BrowserTab(private val appContext: Context) {
     private var blockTrackers = false
 
     @Volatile
-    @Volatile private var pageHost = ""
+    private var pageHost = ""
 
     private var lastDntUrl = ""
 

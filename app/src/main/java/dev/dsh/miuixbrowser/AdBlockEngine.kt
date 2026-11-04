@@ -4,7 +4,7 @@ package dev.dsh.miuixbrowser
  * 去广告引擎（纯 Kotlin，不依赖 Android）。
  *
  * 支持 Adblock Plus / uBlock Origin / AdGuard 订阅源里最常用的那部分语法：
- * - 网络规则：`||domain^`、`|http://`、`/path/*.js`、`*` 与 `^` 通配、`@@` 例外、
+ * - 网络规则：`||domain^`、`|http://`、路径通配、`*` 与 `^` 通配、`@@` 例外、
  *   `$third-party / $domain= / $script,image,... / $important`
  * - 元素隐藏：`##selector`、`site.com##selector`、`~site.com`、`#@#` 例外
  * - hosts 格式：`0.0.0.0 ads.example.com`

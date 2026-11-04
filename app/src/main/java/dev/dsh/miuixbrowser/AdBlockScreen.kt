@@ -137,6 +137,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -330,40 +331,6 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
             onDismiss = { showAllow = false },
         )
 
-        GlassPopup(
-            show = showMore,
-            onDismissRequest = { showMore = false },
-            anchorBounds = Rect(moreAnchor.left, moreAnchor.bottom, moreAnchor.right, moreAnchor.bottom),
-            backdrop = if (glass) backdrop else null,
-        ) {
-            GlassPopupItem(
-                text = "添加订阅",
-                onClick = {
-                    showMore = false
-                    showAdd = true
-                },
-                icon = MiuixIcons.Glass.Add,
-            )
-            GlassPopupItem(
-                text = if (refreshingAll) "更新中…" else "全部更新",
-                enabled = !refreshingAll,
-                onClick = {
-                    showMore = false
-                    if (AdBlock.subs.none { it.enabled && it.url.isNotBlank() }) {
-                        toast("没有可更新的订阅")
-                    } else {
-                        refreshingAll = true
-                        scope.launch {
-                            val (ok, total) = AdBlock.refreshAll()
-                            refreshingAll = false
-                            toast("已更新 $ok/$total 个订阅")
-                        }
-                    }
-                },
-                icon = MiuixIcons.Glass.Refresh,
-            )
-        }
-
         val target = deleting
         GlassDialog(
             show = target != null,
@@ -388,6 +355,40 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                 }
             }
         }
+    }
+    GlassPopup(
+        show = showMore,
+        onDismissRequest = { showMore = false },
+        anchorBounds = Rect(moreAnchor.left, moreAnchor.bottom, moreAnchor.right, moreAnchor.bottom),
+        backdrop = if (glass) backdrop else null,
+    ) {
+        GlassPopupItem(
+            text = "添加订阅",
+            onClick = {
+                showMore = false
+                showAdd = true
+            },
+            icon = MiuixIcons.Glass.Add,
+        )
+        GlassPopupItem(
+            text = if (refreshingAll) "更新中…" else "全部更新",
+            enabled = !refreshingAll,
+            onClick = {
+                showMore = false
+                if (AdBlock.subs.none { it.enabled && it.url.isNotBlank() }) {
+                    toast("没有可更新的订阅")
+                } else {
+                    refreshingAll = true
+                    scope.launch {
+                        val (ok, total) = AdBlock.refreshAll()
+                        refreshingAll = false
+                        toast("已更新 $ok/$total 个订阅")
+                    }
+                }
+            },
+            icon = MiuixIcons.Glass.Refresh,
+        )
+    }
     }
 }
 
