@@ -55,6 +55,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -70,6 +71,7 @@ import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Add
+import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -108,6 +110,8 @@ fun LibraryScreen(
     var showMenu by remember { mutableStateOf(false) }
     var editingFav by remember { mutableStateOf<Favorite?>(null) }
     var creatingFav by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -143,20 +147,46 @@ fun LibraryScreen(
                         IconTextAction(
                             icon = MiuixIcons.Glass.Delete,
                             label = "清空",
-                            modifier = Modifier.padding(end = 8.dp),
+                            modifier = Modifier.padding(end = 4.dp),
                         ) { store.clear() }
+                    }
+                    HapticGlassIconButton(
+                        onClick = {
+                            searching = !searching
+                            if (!searching) query = ""
+                        },
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Glass.Search,
+                            contentDescription = "搜索",
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 },
                 bottomContent = {
-                    GlassTabRow(
-                        tabs = listOf("书签", "历史"),
-                        selectedIndex = pagerState.currentPage,
-                        onSelect = { index ->
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        backdrop = if (glass) backdrop else null,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+                    Column {
+                        if (searching) {
+                            TextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                label = if (pagerState.currentPage == TAB_BOOKMARKS) "搜索书签" else "搜索历史",
+                                singleLine = true,
+                            )
+                        }
+                        GlassTabRow(
+                            tabs = listOf("书签", "历史"),
+                            selectedIndex = pagerState.currentPage,
+                            onSelect = { index ->
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            },
+                            backdrop = if (glass) backdrop else null,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
                 },
             )
         },
@@ -182,6 +212,7 @@ fun LibraryScreen(
                             scrollBehavior = scrollBehavior,
                             onOpen = onOpen,
                             onEdit = { editingFav = it },
+                            query = query,
                         )
 
                         else -> HistoryPage(
@@ -189,6 +220,7 @@ fun LibraryScreen(
                             listState = historyListState,
                             scrollBehavior = scrollBehavior,
                             onOpen = onOpen,
+                            query = query,
                         )
                     }
                 }
@@ -307,8 +339,13 @@ private fun BookmarksPage(
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     onOpen: (String) -> Unit,
     onEdit: (Favorite) -> Unit,
+    query: String = "",
 ) {
     val groups = favorites.groups()
+    val q = query.trim()
+    val noMatch = q.isNotEmpty() && favorites.items.none {
+        it.name.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -326,8 +363,20 @@ private fun BookmarksPage(
                 )
             }
         }
+        if (noMatch) {
+            item {
+                Text(
+                    text = "没有匹配的书签",
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(24.dp),
+                )
+            }
+        }
         groups.forEach { group ->
-            val list = favorites.itemsIn(group)
+            val list = favorites.itemsIn(group).filter {
+                q.isEmpty() || it.name.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
+            }
             if (list.isEmpty()) return@forEach
             item(key = "g-$group") {
                 SmallTitle(text = group)
@@ -401,10 +450,15 @@ private fun HistoryPage(
     listState: androidx.compose.foundation.lazy.LazyListState,
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     onOpen: (String) -> Unit,
+    query: String = "",
 ) {
-    if (store.items.isEmpty()) {
+    val q = query.trim()
+    val entries = store.items.filter {
+        q.isEmpty() || it.title.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
+    }
+    if (entries.isEmpty()) {
         Text(
-            text = "还没有浏览记录",
+            text = if (store.items.isEmpty()) "还没有浏览记录" else "没有匹配的历史记录",
             fontSize = 13.sp,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(24.dp),
@@ -419,8 +473,8 @@ private fun HistoryPage(
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
     ) {
         item { SmallTitle(text = "最近访问") }
-        items(store.items.size) { index ->
-            val entry = store.items[index]
+        items(entries.size) { index ->
+            val entry = entries[index]
             Card(
                 modifier = Modifier
                     .fillMaxWidth()

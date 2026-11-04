@@ -7,7 +7,10 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceResponse
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -91,13 +94,7 @@ class BrowserTab(private val appContext: Context) {
     fun applyIncognito(value: Boolean) {
         if (incognito == value) return
         incognito = value
-        // 无痕：不持久化 Cookie / 缓存写入偏好简化为关闭第三方 Cookie 接受
-        val cm = CookieManager.getInstance()
-        if (value) {
-            cm.setAcceptCookie(false)
-        } else {
-            cm.setAcceptCookie(true)
-        }
+        // Cookie 开关是进程级的，不能在这里改；改为在该标签成为当前标签时由 applyPrivacy 设置
     }
 
     private val defaultUserAgent: String by lazy { webView.settings.userAgentString }
@@ -123,6 +120,11 @@ class BrowserTab(private val appContext: Context) {
 
     /** 页面增强总开关：关闭后不再注入任何脚本 / 规则 / 长按逻辑，用于排查 */
     var pageEnhancements: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            syncUserScripts()
+        }
 
     /** 搜索模板，由设置注入 */
     var searchTemplate: String = "https://www.baidu.com/s?wd=%s"
@@ -212,6 +214,7 @@ class BrowserTab(private val appContext: Context) {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, pageUrl: String?, favicon: Bitmap?) {
                 pageUrl?.let { url = it }
+                pageHost = runCatching { Uri.parse(pageUrl).host }.getOrNull().orEmpty()
                 loading = true
                 errorText = null
                 syncNav()
@@ -237,6 +240,19 @@ class BrowserTab(private val appContext: Context) {
                 syncNav()
             }
 
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                if (blockTrackers && pageEnhancements && !request.isForMainFrame) {
+                    val host = request.url.host
+                    val page = pageHost
+                    if (host != null && TrackerList.matches(host) &&
+                        !(host == page || host.endsWith(".$page") || page.endsWith(".$host"))
+                    ) {
+                        return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
+                }
+                return null
+            }
+
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) errorText = error.description?.toString()
             }
@@ -248,6 +264,15 @@ class BrowserTab(private val appContext: Context) {
                     return true
                 }
                 val scheme = request.url.scheme ?: return false
+                // DNT / Sec-GPC：点击链接产生的主框架 GET 导航也带上请求头
+                if (dntEnabled && (scheme == "http" || scheme == "https") && request.isForMainFrame &&
+                    request.method == "GET" && !request.isRedirect &&
+                    request.requestHeaders["DNT"] == null && target != lastDntUrl
+                ) {
+                    lastDntUrl = target
+                    view.loadUrl(target, extraRequestHeaders())
+                    return true
+                }
                 return when (scheme) {
                     "http", "https", "file", "about", "data", "javascript" -> false
                     else -> {
@@ -273,6 +298,28 @@ class BrowserTab(private val appContext: Context) {
 
             override fun onReceivedTitle(view: WebView, pageTitle: String?) {
                 if (!pageTitle.isNullOrBlank()) title = pageTitle
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                webView.post { handleWebPermission(request) }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: GeolocationPermissions.Callback,
+            ) {
+                webView.post {
+                    decide(
+                        locationMode,
+                        Uri.parse(origin).host ?: origin,
+                        "获取你的位置",
+                        arrayOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                        ),
+                        anyOk = true,
+                    ) { allow -> callback.invoke(origin, allow, false) }
+                }
             }
         }
 
@@ -555,25 +602,164 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /**
-     * 应用隐私设置：第三方 Cookie、DNT 请求头、WebRTC 禁用。
-     * DNT 通过附加请求头实现；WebRTC 通过关闭媒体源间接限制（WebView 无直接开关时尽力而为）。
+     * 应用隐私与权限设置（当前标签成为活动标签、或设置变化时调用）。
+     * - 第三方 Cookie：CookieManager 按 WebView 设置；Cookie 总开关随标签是否无痕切换。
+     * - DNT：请求头（地址栏 / 链接点击的主框架导航）+ navigator.doNotTrack / globalPrivacyControl。
+     * - WebRTC / 剪贴板 / 媒体静音：document-start 脚本注入所有框架，刷新页面后生效。
+     * - 摄像头 / 麦克风 / 定位：在 WebChromeClient 里按「询问 / 允许 / 拒绝」处理。
+     * - 跟踪脚本：shouldInterceptRequest 拦截第三方统计域名（需开启页面增强）。
      */
     fun applyPrivacy(
         thirdPartyCookiesAllowed: Boolean,
         sendDnt: Boolean,
         webrtcDisabled: Boolean,
+        clipboardMode: Int = 0,
+        mediaMode: Int = 1,
+        cameraMode: Int = 0,
+        micMode: Int = 0,
+        locationMode: Int = 0,
+        blockTrackers: Boolean = false,
     ) {
         runCatching {
+            CookieManager.getInstance().setAcceptCookie(!incognito)
             CookieManager.getInstance().setAcceptThirdPartyCookies(webView, thirdPartyCookiesAllowed)
         }
         dntEnabled = sendDnt
-        // WebRTC：关闭混合内容与媒体播放授权，降低 IP 泄露面
-        runCatching {
+        this.webrtcDisabledFlag = webrtcDisabled
+        this.cameraMode = cameraMode
+        this.micMode = micMode
+        this.locationMode = locationMode
+        this.blockTrackers = blockTrackers
+        // 询问 / 拒绝：需要用户手势才能出声；允许：自动播放
+        runCatching { webView.settings.mediaPlaybackRequiresUserGesture = mediaMode != 1 }
+
+        val script = buildString {
             if (webrtcDisabled) {
-                webView.settings.mediaPlaybackRequiresUserGesture = true
+                runCatching {
+                    append(appContext.assets.open("mafari_no_webrtc.js").bufferedReader(Charsets.UTF_8).use { it.readText() })
+                    append('\n')
+                }
+            }
+            if (clipboardMode == 2) {
+                append(
+                    "(function(){try{var d=function(){return Promise.reject(new DOMException('Permission denied','NotAllowedError'))};" +
+                        "if(navigator.clipboard){['read','readText','write','writeText'].forEach(function(m){try{navigator.clipboard[m]=d}catch(e){}})}}catch(e){}})();\n",
+                )
+            }
+            if (sendDnt) {
+                append(
+                    "(function(){try{Object.defineProperty(Navigator.prototype,'doNotTrack',{get:function(){return '1'},configurable:true});" +
+                        "Object.defineProperty(Navigator.prototype,'globalPrivacyControl',{get:function(){return true},configurable:true})}catch(e){}})();\n",
+                )
+            }
+            if (mediaMode == 2) {
+                append(
+                    "(function(){try{Object.defineProperty(HTMLMediaElement.prototype,'muted',{get:function(){return true},set:function(v){},configurable:true});" +
+                        "var p=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{this.volume=0}catch(e){}return p.apply(this,arguments)}}catch(e){}})();\n",
+                )
             }
         }
-        this.webrtcDisabledFlag = webrtcDisabled
+        runCatching { privacyHandler?.remove() }
+        privacyHandler = null
+        if (script.isNotBlank() &&
+            androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
+            runCatching {
+                privacyHandler = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+            }.onFailure { Diag.log("privacy script install failed: ${it.message}") }
+        }
+    }
+
+    private var privacyHandler: androidx.webkit.ScriptHandler? = null
+
+    @Volatile
+    private var blockTrackers = false
+
+    @Volatile
+    private var pageHost = ""
+
+    private var lastDntUrl = ""
+
+    private var cameraMode = 0
+    private var micMode = 0
+    private var locationMode = 0
+
+    /** 网页权限「询问」：由界面弹窗，decide(true/false) 只能调用一次 */
+    var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
+
+    /** 申请 Android 运行时权限，完成后回调（调用方再自行检查授予结果） */
+    var requestAndroidPermissions: ((Array<String>, () -> Unit) -> Unit)? = null
+
+    private fun hasPermission(permission: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(appContext, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun ensureAndroid(perms: Array<String>, anyOk: Boolean, result: (Boolean) -> Unit) {
+        fun granted() = if (anyOk) perms.any { hasPermission(it) } else perms.all { hasPermission(it) }
+        if (granted()) {
+            result(true)
+            return
+        }
+        val request = requestAndroidPermissions
+        if (request == null) {
+            result(false)
+        } else {
+            request(perms.filter { !hasPermission(it) }.toTypedArray()) { result(granted()) }
+        }
+    }
+
+    private fun decide(
+        mode: Int,
+        origin: String,
+        what: String,
+        perms: Array<String>,
+        anyOk: Boolean = false,
+        result: (Boolean) -> Unit,
+    ) {
+        when (mode) {
+            2 -> result(false)
+            1 -> ensureAndroid(perms, anyOk, result)
+            else -> {
+                val prompt = onPermissionPrompt
+                if (prompt == null) {
+                    result(false)
+                } else {
+                    prompt(origin, what) { allow ->
+                        if (allow) ensureAndroid(perms, anyOk, result) else result(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleWebPermission(request: PermissionRequest) {
+        val res = request.resources.toSet()
+        val keep = mutableListOf<String>()
+        if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in res) keep += PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+        val camOk = PermissionRequest.RESOURCE_VIDEO_CAPTURE in res && cameraMode != 2
+        val micOk = PermissionRequest.RESOURCE_AUDIO_CAPTURE in res && micMode != 2
+        fun finish(extra: List<String>) {
+            val all = keep + extra
+            if (all.isEmpty()) request.deny() else request.grant(all.toTypedArray())
+        }
+        if (!camOk && !micOk) {
+            finish(emptyList())
+            return
+        }
+        val perms = buildList {
+            if (camOk) add(android.Manifest.permission.CAMERA)
+            if (micOk) add(android.Manifest.permission.RECORD_AUDIO)
+        }.toTypedArray()
+        val what = listOfNotNull(if (camOk) "摄像头" else null, if (micOk) "麦克风" else null).joinToString("、")
+        val mustAsk = (camOk && cameraMode == 0) || (micOk && micMode == 0)
+        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms) { ok ->
+            finish(
+                if (ok) buildList {
+                    if (camOk) add(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                    if (micOk) add(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                } else emptyList(),
+            )
+        }
     }
 
     @Volatile

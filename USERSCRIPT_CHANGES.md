@@ -31,3 +31,22 @@
 - 脚本命令只收集主框架注册的命令。
 - 桥接对象对页面可见（`addJavascriptInterface` 的固有限制），与旧版一致。
 - Kotlin 部分在无 Android SDK 的环境里改写，未能编译，请在本地 `./gradlew assembleDebug` 验证。
+
+## 1.3.0 后续修复
+- 无痕标签不再写入历史记录（`onVisited` 仅普通标签触发）。
+- 「页面增强」开关：同步到所有标签页（此前从未传给 `BrowserTab`），并联动脚本管理里的全部脚本一起启用 / 停用。
+- 「更多」菜单：长按图标进入编辑，面板自动拉长，底部出现高光分割线，线下方为「隐藏的功能」区；拖到线下即从菜单隐藏，拖回线上恢复，点「完成」退出。「设置」不可隐藏。隐藏项持久化。
+- 书签 / 历史页右上角新增搜索图标（miuix-glass 图标按钮），点开出现搜索框，按名称 / 标题 / 网址实时过滤。
+- 「禁用 WebRTC」此前无效（只改了媒体自动播放开关）。现用 `assets/mafari_no_webrtc.js` 经 document-start 注入全部框架，移除 RTCPeerConnection / RTCDataChannel 等并拒绝 getUserMedia；Chromium 实测顶层与 iframe 均生效。刷新页面后生效。
+
+## 隐私与安全逐项检查与修复
+| 项 | 原状态 | 现状 |
+| --- | --- | --- |
+| 第三方 Cookie | 有效（按 WebView 设置） | 保持 |
+| 无痕 Cookie | `setAcceptCookie` 是进程级，开无痕后普通标签也失去 Cookie，且切回不恢复 | 改为当前标签变化时按是否无痕设置 |
+| DNT | 仅地址栏 `loadUrl` 带头；点链接、重定向不带 | 链接点击的主框架 GET 也带 DNT/Sec-GPC；另设 `navigator.doNotTrack` / `globalPrivacyControl`（子资源请求头 WebView 无法修改） |
+| 禁用 WebRTC | 无效 | document-start 注入移除 RTC* 接口（已实测） |
+| 摄像头 / 麦克风 / 定位 | 完全无实现，清单也没声明权限 | 实现 `onPermissionRequest` / `onGeolocationPermissionsShowPrompt`：询问（弹窗）/ 允许 / 拒绝，并申请 Android 运行时权限；Manifest 补权限 |
+| 剪贴板 | 无实现 | 「拒绝」时 `navigator.clipboard` 读写被拒（已实测）；「询问」等同允许（WebView 无法逐次询问） |
+| 网站媒体发声 | 无实现 | 询问 / 拒绝：需用户手势才能播放；拒绝：额外强制静音；允许：自动播放 |
+| 拦截跟踪脚本 | 无实现 | `shouldInterceptRequest` 拦截第三方统计 / 广告域名（`TrackerList.kt`，需开启页面增强） |

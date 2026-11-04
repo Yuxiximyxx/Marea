@@ -71,6 +71,7 @@ fun SettingsScreen(
     onOpenScripts: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenAbout: () -> Unit,
+    onPageEnhancementsChange: (Boolean) -> Unit = {},
     blurEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
@@ -229,19 +230,19 @@ fun SettingsScreen(
                     )
                     SwitchPreference(
                         title = "发送禁止跟踪请求",
-                        summary = "页面请求附带 DNT / Sec-GPC 头",
+                        summary = "地址栏与链接导航附带 DNT / Sec-GPC 头，并设置 navigator.doNotTrack",
                         checked = settings.sendDnt,
                         onCheckedChange = { settings.updateSendDnt(it) },
                     )
                     SwitchPreference(
                         title = "禁用 WebRTC",
-                        summary = "防止通过 WebRTC 泄露真实 IP",
+                        summary = "移除 RTCPeerConnection 等接口，防止泄露真实 IP（刷新页面后生效）",
                         checked = settings.webrtcDisabled,
                         onCheckedChange = { settings.updateWebrtcDisabled(it) },
                     )
                     SwitchPreference(
                         title = "拦截跟踪脚本",
-                        summary = "结合页面增强，尽量阻断追踪器",
+                        summary = "拦截第三方统计 / 追踪域名的请求（需开启页面增强）",
                         checked = settings.blockTrackingScripts,
                         onCheckedChange = { settings.updateBlockTrackingScripts(it) },
                     )
@@ -261,9 +262,12 @@ fun SettingsScreen(
                     )
                     SwitchPreference(
                         title = "页面增强",
-                        summary = "关闭后不注入油猴脚本、去广告规则和长按标记",
+                        summary = "开关会同步启用 / 停用全部油猴脚本；关闭后也不注入去广告规则和长按标记",
                         checked = settings.pageEnhancements,
-                        onCheckedChange = { settings.updatePageEnhancements(it) },
+                        onCheckedChange = {
+                            settings.updatePageEnhancements(it)
+                            onPageEnhancementsChange(it)
+                        },
                     )
                 }
 

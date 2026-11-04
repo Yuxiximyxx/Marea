@@ -126,6 +126,18 @@ class ExtensionStore(context: Context) {
         persist()
     }
 
+    /** 页面增强总开关联动：全部脚本一起开 / 关 */
+    fun setAllEnabled(enabled: Boolean) {
+        var changed = false
+        items.forEachIndexed { index, script ->
+            if (script.enabled != enabled) {
+                items[index] = script.copy(enabled = enabled)
+                changed = true
+            }
+        }
+        if (changed) persist()
+    }
+
     fun remove(id: String) {
         items.removeAll { it.id == id }
         persist()

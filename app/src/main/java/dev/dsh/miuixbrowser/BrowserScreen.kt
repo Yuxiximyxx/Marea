@@ -62,6 +62,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -167,6 +168,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private enum class Sheet { None, Tabs, Menu, Link, Image, Element }
 
+private class WebPermPrompt(val origin: String, val what: String, val decide: (Boolean) -> Unit)
+
 private data class DownloadRequest(
     val url: String,
     val userAgent: String?,
@@ -263,9 +266,14 @@ fun BrowserScreen(
         }
     }
 
+    // 页面增强总开关 → 所有标签页
+    LaunchedEffect(settings.pageEnhancements, state.tabs.size) {
+        state.tabs.forEach { it.pageEnhancements = settings.pageEnhancements }
+    }
+
     LaunchedEffect(tab.id, extensions.items.toList()) {
         tab.userScripts = extensions.items.toList()
-        tab.onVisited = { url, title -> history.record(url, title) }
+        tab.onVisited = { url, title -> if (!tab.incognito) history.record(url, title) }
     }
 
     LaunchedEffect(tab.id, settings.searchTemplate) {
@@ -345,16 +353,47 @@ fun BrowserScreen(
     }
     DisposableEffect(tab.id) { onDispose { tab.onLongPressLink = null } }
 
+    // 网页权限「询问」弹窗 + Android 运行时权限申请
+    var webPermPrompt by remember { mutableStateOf<WebPermPrompt?>(null) }
+    var androidPermDone by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val androidPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        val done = androidPermDone
+        androidPermDone = null
+        done?.invoke()
+    }
+    LaunchedEffect(tab.id) {
+        tab.onPermissionPrompt = { origin, what, decide -> webPermPrompt = WebPermPrompt(origin, what, decide) }
+        tab.requestAndroidPermissions = { perms, done ->
+            androidPermDone = done
+            androidPermLauncher.launch(perms)
+        }
+    }
+
     LaunchedEffect(
         tab.id,
+        tab.incognito,
         settings.thirdPartyCookie,
         settings.sendDnt,
         settings.webrtcDisabled,
+        settings.clipboardPermission,
+        settings.mediaAutoplay,
+        settings.cameraPermission,
+        settings.micPermission,
+        settings.locationPermission,
+        settings.blockTrackingScripts,
     ) {
         tab.applyPrivacy(
             thirdPartyCookiesAllowed = settings.thirdPartyCookie == 0,
             sendDnt = settings.sendDnt,
             webrtcDisabled = settings.webrtcDisabled,
+            clipboardMode = settings.clipboardPermission,
+            mediaMode = settings.mediaAutoplay,
+            cameraMode = settings.cameraPermission,
+            micMode = settings.micPermission,
+            locationMode = settings.locationPermission,
+            blockTrackers = settings.blockTrackingScripts,
         )
     }
 
@@ -362,7 +401,7 @@ fun BrowserScreen(
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.toList()) {
         tab.userScripts = extensions.items.toList()
-        tab.onVisited = { url, title -> history.record(url, title) }
+        tab.onVisited = { url, title -> if (!tab.incognito) history.record(url, title) }
     }
 
     LaunchedEffect(tab.id, settings.searchTemplate) {
@@ -1107,6 +1146,7 @@ fun BrowserScreen(
                         }
                     },
                     order = menuOrder.order,
+                    hidden = menuOrder.hidden,
                     onAction = { action ->
                         sheet = Sheet.None
                         when (action) {
@@ -1154,7 +1194,7 @@ fun BrowserScreen(
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
                         }
                     },
-                    onMove = { from, to -> menuOrder.move(from, to) },
+                    onMove = { action, toHidden, toIndex -> menuOrder.place(action, toHidden, toIndex) },
                     incognitoActive = tab.incognito,
                 )
             }
@@ -1334,6 +1374,40 @@ fun BrowserScreen(
             }
         }
 
+        val permPrompt = webPermPrompt
+        GlassDialog(
+            show = permPrompt != null,
+            title = "允许网站" + (permPrompt?.what ?: "") + "？",
+            summary = permPrompt?.origin,
+            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            onDismissRequest = {
+                webPermPrompt = null
+                permPrompt?.decide?.invoke(false)
+            },
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                GlassDialogButton(
+                    onClick = {
+                        webPermPrompt = null
+                        permPrompt?.decide?.invoke(false)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = "拒绝", style = MiuixTheme.textStyles.button)
+                }
+                GlassDialogButton(
+                    onClick = {
+                        webPermPrompt = null
+                        permPrompt?.decide?.invoke(true)
+                    },
+                    modifier = Modifier.weight(1f),
+                    role = GlassDialogButtonRole.Primary,
+                ) {
+                    Text(text = "允许", style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
+
         val scriptImportUrl = pendingScript
         GlassDialog(
             show = scriptImportUrl != null,
@@ -1451,6 +1525,7 @@ fun BrowserScreen(
             onOpenScripts = { pushPage(AppRoute.Extensions) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
+            onPageEnhancementsChange = { extensions.setAllEnabled(it) },
             blurEnabled = settings.blurEnabled,
         )
     }
@@ -2398,105 +2473,211 @@ private fun FindDialog(
 }
 
 
-/** 更多面板：图标 + 文字宫格，长按拖动排序 */
+/**
+ * 更多面板：图标 + 文字宫格。长按任一图标进入编辑：面板自动拉长，底部出现高光分割线，
+ * 线下方是「隐藏的功能」区；把图标拖到线下方即从菜单隐藏，再拖回线上方即恢复。
+ */
 @Composable
 private fun MenuGrid(
     labelFor: (MenuAction) -> String,
     order: List<MenuAction>,
+    hidden: List<MenuAction>,
     onAction: (MenuAction) -> Unit,
-    onMove: (Int, Int) -> Unit,
+    onMove: (MenuAction, Boolean, Int) -> Unit,
     incognitoActive: Boolean = false,
 ) {
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val cellHeight = 88.dp
-    var dragIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val dividerHeight = 30.dp
     val columns = 4
     val purple = Color(0xFF9C27B0)
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val cellWidth = maxWidth / columns
-        val cellWidthPx = with(density) { cellWidth.toPx() }
-        val cellHeightPx = with(density) { cellHeight.toPx() }
+    var editing by remember { mutableStateOf(false) }
+    var dragAction by remember { mutableStateOf<MenuAction?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
-        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            order.chunked(columns).forEachIndexed { row, rowItems ->
-                Row(modifier = Modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cellWidthPx = with(density) { (maxWidth / columns).toPx() }
+        val cellHeightPx = with(density) { cellHeight.toPx() }
+        val dividerPx = with(density) { dividerHeight.toPx() }
+        val visibleRows = ((order.size + columns - 1) / columns).coerceAtLeast(1)
+        val hiddenRows = ((hidden.size + columns - 1) / columns).coerceAtLeast(1)
+
+        // 拖拽结束时按「图标中心落在哪」决定去哪个区、第几格（用最新的列表尺寸）
+        val finishDrag by rememberUpdatedState { action: MenuAction, fromHidden: Boolean, row: Int, col: Int ->
+            val visibleBottom = visibleRows * cellHeightPx
+            val hiddenTop = visibleBottom + dividerPx
+            val originY = if (fromHidden) hiddenTop + row * cellHeightPx else row * cellHeightPx
+            val cx = col * cellWidthPx + cellWidthPx / 2 + dragOffset.x
+            val cy = originY + cellHeightPx / 2 + dragOffset.y
+            val toHidden = cy >= visibleBottom + dividerPx / 2
+            val rowT = ((if (toHidden) cy - hiddenTop else cy) / cellHeightPx).toInt().coerceAtLeast(0)
+            val colT = (cx / cellWidthPx).toInt().coerceIn(0, columns - 1)
+            onMove(action, toHidden, rowT * columns + colT)
+        }
+        val startDrag by rememberUpdatedState { fromHidden: Boolean ->
+            // 底部弹层向上生长：第一次进入编辑时补偿增加的高度，图标才不会脱离手指
+            dragOffset = if (!editing && !fromHidden) {
+                Offset(0f, dividerPx + hiddenRows * cellHeightPx)
+            } else {
+                Offset.Zero
+            }
+            editing = true
+        }
+
+        @Composable
+        fun Cells(items: List<MenuAction>, inHidden: Boolean) {
+            items.chunked(columns).forEachIndexed { row, rowItems ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(if (rowItems.any { it == dragAction }) 1f else 0f),
+                ) {
                     rowItems.forEachIndexed { col, action ->
-                        val index = row * columns + col
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(cellHeight)
-                                .graphicsLayer {
-                                    if (index == dragIndex) {
-                                        translationX = dragOffset.x
-                                        translationY = dragOffset.y
-                                        scaleX = 1.08f
-                                        scaleY = 1.08f
-                                    }
-                                    alpha = if (dragIndex >= 0 && index != dragIndex) 0.6f else 1f
-                                }
-                                .pointerInput(action, order.size) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            dragIndex = index
-                                            dragOffset = Offset.Zero
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
-                                        onDrag = { change, delta ->
-                                            change.consume()
-                                            dragOffset += delta
-                                        },
-                                        onDragEnd = {
-                                            val dCol = (dragOffset.x / cellWidthPx).roundToInt()
-                                            val dRow = (dragOffset.y / cellHeightPx).roundToInt()
-                                            val target = (row + dRow) * columns + (col + dCol)
-                                            if (target != index) {
-                                                onMove(index, target.coerceIn(0, order.lastIndex))
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            }
-                                            dragIndex = -1
-                                            dragOffset = Offset.Zero
-                                        },
-                                        onDragCancel = {
-                                            dragIndex = -1
-                                            dragOffset = Offset.Zero
-                                        },
-                                    )
-                                }
-                                .clickable { onAction(action) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = action.icon,
-                                    contentDescription = labelFor(action),
-                                    tint = when {
-                                        action == MenuAction.Incognito && incognitoActive -> purple
-                                        else -> MiuixTheme.colorScheme.onSurface
-                                    },
-                                    modifier = Modifier.size(26.dp),
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    text = labelFor(action),
-                                    fontSize = 11.sp,
-                                    color = when {
-                                        action == MenuAction.Incognito && incognitoActive -> purple
-                                        else -> MiuixTheme.colorScheme.onSurface
-                                    },
-                                    maxLines = 1,
-                                )
-                            }
-                        }
+                        MenuCell(
+                            modifier = Modifier.weight(1f),
+                            action = action,
+                            label = labelFor(action),
+                            cellHeight = cellHeight,
+                            tint = if (action == MenuAction.Incognito && incognitoActive) purple
+                            else MiuixTheme.colorScheme.onSurface,
+                            dragged = dragAction == action,
+                            dragOffset = dragOffset,
+                            dimmed = (dragAction != null && dragAction != action) || (inHidden && dragAction == null),
+                            onClick = { if (!editing) onAction(action) },
+                            onDragStart = {
+                                dragAction = action
+                                startDrag(inHidden)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onDrag = { dragOffset += it },
+                            onDragEnd = {
+                                finishDrag(action, inHidden, row, col)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                dragAction = null
+                                dragOffset = Offset.Zero
+                            },
+                            onDragCancel = {
+                                dragAction = null
+                                dragOffset = Offset.Zero
+                            },
+                        )
                     }
-                    repeat(columns - rowItems.size) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+                    repeat(columns - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
                 }
             }
+        }
+
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Cells(order, inHidden = false)
+            if (editing) {
+                Box(modifier = Modifier.fillMaxWidth().height(dividerHeight)) {
+                    Text(
+                        text = "隐藏的功能（拖到线下方隐藏）",
+                        fontSize = 11.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 6.dp),
+                    )
+                    Text(
+                        text = "完成",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .clickable { editing = false }
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.95f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            ),
+                    )
+                }
+                if (hidden.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(cellHeight),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "把不常用的功能拖到这里",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                } else {
+                    Cells(hidden, inHidden = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuCell(
+    modifier: Modifier,
+    action: MenuAction,
+    label: String,
+    cellHeight: androidx.compose.ui.unit.Dp,
+    tint: Color,
+    dragged: Boolean,
+    dragOffset: Offset,
+    dimmed: Boolean,
+    onClick: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+) {
+    val start by rememberUpdatedState(onDragStart)
+    val drag by rememberUpdatedState(onDrag)
+    val end by rememberUpdatedState(onDragEnd)
+    val cancel by rememberUpdatedState(onDragCancel)
+    Box(
+        modifier = modifier
+            .height(cellHeight)
+            .graphicsLayer {
+                if (dragged) {
+                    translationX = dragOffset.x
+                    translationY = dragOffset.y
+                    scaleX = 1.08f
+                    scaleY = 1.08f
+                }
+                alpha = if (dimmed) 0.6f else 1f
+            }
+            .pointerInput(action) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { start() },
+                    onDrag = { change, delta ->
+                        change.consume()
+                        drag(delta)
+                    },
+                    onDragEnd = { end() },
+                    onDragCancel = { cancel() },
+                )
+            }
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(text = label, fontSize = 11.sp, color = tint, maxLines = 1)
         }
     }
 }

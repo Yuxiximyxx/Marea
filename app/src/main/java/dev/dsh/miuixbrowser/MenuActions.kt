@@ -42,35 +42,45 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),
 }
 
-/** 更多面板的图标顺序，可拖动排序并持久化 */
+/** 更多面板的图标顺序与隐藏项，可拖动排序 / 拖到下方隐藏并持久化 */
 class MenuOrderStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_menu", Context.MODE_PRIVATE)
 
+    /** 菜单里显示的功能（有序） */
     val order = mutableStateListOf<MenuAction>()
 
+    /** 已隐藏的功能 */
+    val hidden = mutableStateListOf<MenuAction>()
+
     init {
-        val saved = prefs.getString(KEY, null)
-        val ids = saved?.split(",")?.filter { it.isNotBlank() }.orEmpty()
-        val restored = ids.mapNotNull { id -> MenuAction.entries.firstOrNull { it.id == id } }
-        order.addAll(restored)
-        MenuAction.entries.forEach { if (it !in order) order.add(it) }
+        fun read(key: String): List<MenuAction> =
+            prefs.getString(key, null)?.split(",")?.filter { it.isNotBlank() }.orEmpty()
+                .mapNotNull { id -> MenuAction.entries.firstOrNull { it.id == id } }
+        hidden.addAll(read(KEY_HIDDEN).filter { it != MenuAction.Settings }.distinct())
+        order.addAll(read(KEY).filter { it !in hidden }.distinct())
+        MenuAction.entries.forEach { if (it !in order && it !in hidden) order.add(it) }
     }
 
-    fun move(from: Int, to: Int) {
-        if (from !in order.indices) return
-        val target = to.coerceIn(0, order.lastIndex)
-        if (from == target) return
-        val item = order.removeAt(from)
-        order.add(target, item)
+    /** 把 [action] 放到显示区 / 隐藏区的第 [toIndex] 位；「设置」不允许隐藏，避免找不到入口 */
+    fun place(action: MenuAction, toHidden: Boolean, toIndex: Int) {
+        if (toHidden && action == MenuAction.Settings) return
+        val target = if (toHidden) hidden else order
+        order.remove(action)
+        hidden.remove(action)
+        target.add(toIndex.coerceIn(0, target.size), action)
         persist()
     }
 
     private fun persist() {
-        prefs.edit().putString(KEY, order.joinToString(",") { it.id }).apply()
+        prefs.edit()
+            .putString(KEY, order.joinToString(",") { it.id })
+            .putString(KEY_HIDDEN, hidden.joinToString(",") { it.id })
+            .apply()
     }
 
     private companion object {
         const val KEY = "order"
+        const val KEY_HIDDEN = "hidden"
     }
 }
