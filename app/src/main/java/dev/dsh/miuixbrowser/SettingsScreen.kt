@@ -61,6 +61,8 @@ import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassPopupDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.icon.basic.Check
+import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -500,7 +502,17 @@ private fun SearchSheet(
                         } else {
                             MiuixTheme.colorScheme.onSurface
                         },
+                        modifier = Modifier.weight(1f),
                     )
+                    if (index == current) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = MiuixIcons.Basic.Check,
+                            contentDescription = "已选中",
+                            tint = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))

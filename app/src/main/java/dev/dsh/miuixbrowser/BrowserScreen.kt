@@ -133,6 +133,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.glass.Settings
 import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.icon.glass.Refresh
@@ -2448,9 +2449,22 @@ internal fun UaDialog(
                     Text(
                         text = preset.name,
                         fontSize = 15.sp,
-                        color = MiuixTheme.colorScheme.onSurface,
+                        color = if (preset.value == initial) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurface
+                        },
                         modifier = Modifier.weight(1f),
                     )
+                    if (preset.value == initial) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = MiuixIcons.Basic.Check,
+                            contentDescription = "已选中",
+                            tint = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))

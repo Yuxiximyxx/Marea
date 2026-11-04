@@ -59,6 +59,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
@@ -78,6 +79,25 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** 清除历史的时间范围；millis 为 null 表示全部 */
+private enum class ClearRange(val label: String, val millis: Long?) {
+    Day("清除最近 1 天", 24L * 60 * 60 * 1000),
+    Week("清除最近一周", 7L * 24 * 60 * 60 * 1000),
+    Month("清除最近一月", 30L * 24 * 60 * 60 * 1000),
+    All("全部清除", null),
+}
+
+/**
+ * 菜单锚点：位于按钮顶部再往上一小段距离。
+ * GlassPopup 在空间不足以向下展开时会以锚点 bottom 为底边向上展开，
+ * 所以 bottom 取按钮顶部上方，top 取按钮底部以强制向上展开。
+ */
+@Composable
+private fun rememberAboveAnchor(bounds: Rect): Rect {
+    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+    return Rect(bounds.left, bounds.bottom, bounds.right, bounds.top - gap)
+}
 
 private const val TAB_BOOKMARKS = 0
 private const val TAB_HISTORY = 1
@@ -112,7 +132,10 @@ fun LibraryScreen(
     var showMenu by remember { mutableStateOf(false) }
     var editingFav by remember { mutableStateOf<Favorite?>(null) }
     var creatingFav by remember { mutableStateOf(false) }
-    var confirmClear by remember { mutableStateOf(false) }
+    var showClearMenu by remember { mutableStateOf(false) }
+    var clearAnchor by remember { mutableStateOf(Rect.Zero) }
+    var clearRange by remember { mutableStateOf(ClearRange.All) }
+    var showClearConfirm by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
@@ -258,7 +281,7 @@ fun LibraryScreen(
                 GlassPopup(
                     show = showMenu,
                     onDismissRequest = { showMenu = false },
-                    anchorBounds = menuAnchor,
+                    anchorBounds = rememberAboveAnchor(menuAnchor),
                     backdrop = backdrop,
                 ) {
                     GlassPopupItem(
@@ -305,11 +328,12 @@ fun LibraryScreen(
                             .shadow(6.dp, CircleShape)
                             .clip(CircleShape)
                             .background(MiuixTheme.colorScheme.surfaceContainer)
+                            .onGloballyPositioned { clearAnchor = it.boundsInRoot() }
                             .clickable {
                                 haptic.performHapticFeedback(
                                     androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
                                 )
-                                confirmClear = true
+                                showClearMenu = true
                             },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -321,18 +345,56 @@ fun LibraryScreen(
                         )
                     }
                 }
+                GlassPopup(
+                    show = showClearMenu,
+                    onDismissRequest = { showClearMenu = false },
+                    anchorBounds = rememberAboveAnchor(clearAnchor),
+                    backdrop = backdrop,
+                ) {
+                    ClearRange.entries.forEach { range ->
+                        GlassPopupItem(
+                            text = range.label,
+                            onClick = {
+                                showClearMenu = false
+                                clearRange = range
+                                showClearConfirm = true
+                            },
+                            icon = MiuixIcons.Glass.Delete,
+                            contentColor = if (range == ClearRange.All) {
+                                MiuixTheme.colorScheme.error
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceContainer
+                            },
+                        )
+                    }
+                }
             }
         }
 
-        GlassDialog(
-            show = confirmClear,
-            title = "清空历史",
+        // 底部弹窗确认
+        val confirmCount = if (showClearConfirm) {
+            clearRange.millis?.let { store.countWithin(it) } ?: store.items.size
+        } else {
+            0
+        }
+        GlassBottomSheet(
+            show = showClearConfirm,
+            title = "清除历史记录",
             backdrop = backdrop,
-            onDismissRequest = { confirmClear = false },
+            onDismissRequest = { showClearConfirm = false },
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp),
+            ) {
                 Text(
-                    text = "确定要清空全部 ${store.items.size} 条历史记录吗？此操作无法撤销。",
+                    text = if (confirmCount > 0) {
+                        "将删除${clearRange.label.removePrefix("清除")}共 $confirmCount 条历史记录，此操作无法撤销。"
+                    } else {
+                        "${clearRange.label.removePrefix("清除")}没有可删除的历史记录。"
+                    },
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 6.dp),
@@ -343,20 +405,22 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     GlassDialogButton(
-                        onClick = { confirmClear = false },
+                        onClick = { showClearConfirm = false },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(text = "取消", style = MiuixTheme.textStyles.button)
                     }
                     GlassDialogButton(
                         onClick = {
-                            store.clear()
-                            confirmClear = false
+                            val within = clearRange.millis
+                            if (within == null) store.clear() else store.clearWithin(within)
+                            showClearConfirm = false
                         },
                         modifier = Modifier.weight(1f),
+                        enabled = confirmCount > 0,
                         role = GlassDialogButtonRole.Destructive,
                     ) {
-                        Text(text = "清空", style = MiuixTheme.textStyles.button)
+                        Text(text = "确认删除", style = MiuixTheme.textStyles.button)
                     }
                 }
             }

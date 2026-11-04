@@ -44,6 +44,18 @@ class HistoryStore(context: Context) {
         if (items.removeAll { it.url == url }) persist()
     }
 
+    /** 记录数：最近 [withinMillis] 毫秒内的条数 */
+    fun countWithin(withinMillis: Long): Int {
+        val cutoff = System.currentTimeMillis() - withinMillis
+        return items.count { it.time >= cutoff }
+    }
+
+    /** 清除最近 [withinMillis] 毫秒内的记录 */
+    fun clearWithin(withinMillis: Long) {
+        val cutoff = System.currentTimeMillis() - withinMillis
+        if (items.removeAll { it.time >= cutoff }) persist()
+    }
+
     fun clear() {
         items.clear()
         persist()
