@@ -181,7 +181,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                                 } else {
                                     val current = BuildConfig.VERSION_NAME.removePrefix("v")
                                     val latest = result.version.removePrefix("v")
-                                    if (latest == current) {
+                                    if (!isNewerVersion(result.version, BuildConfig.VERSION_NAME)) {
                                         Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
                                     } else if (result.apkUrl.isNullOrBlank()) {
                                         // 无 APK 资产时仍打开发布页
@@ -322,6 +322,7 @@ data class AppRelease(
     val version: String,
     val pageUrl: String,
     val apkUrl: String?,
+    val notes: String = "",
 )
 
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
@@ -344,7 +345,8 @@ internal fun fetchLatestRelease(): AppRelease? = runCatching {
             ?: PROJECT_URL + "/releases"
         val apkUrl = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"")
             .find(text)?.groupValues?.get(1)
-        AppRelease(version = tag, pageUrl = pageUrl, apkUrl = apkUrl)
+        val notes = runCatching { org.json.JSONObject(text).optString("body", "") }.getOrDefault("").trim()
+        AppRelease(version = tag, pageUrl = pageUrl, apkUrl = apkUrl, notes = notes)
     } finally {
         connection.disconnect()
     }

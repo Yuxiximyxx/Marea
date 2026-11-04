@@ -12,6 +12,15 @@ class AppSettings(context: Context) {
     var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
         private set
 
+    /** 用户点了“忽略此版本”的版本号；只有出现比它更新的版本才会再次提示 */
+    var ignoredUpdate by mutableStateOf(prefs.getString(KEY_IGNORED_UPDATE, "") ?: "")
+        private set
+
+    fun updateIgnoredUpdate(version: String) {
+        ignoredUpdate = version
+        prefs.edit().putString(KEY_IGNORED_UPDATE, version).apply()
+    }
+
     /** 应用图标：0=默认 1=多彩 2=立体 3=深色（对应 AppIconManager.ICONS） */
     var appIcon by mutableStateOf(prefs.getInt(KEY_APP_ICON, 0).coerceIn(0, 3))
         private set
@@ -207,6 +216,7 @@ class AppSettings(context: Context) {
     private companion object {
         const val KEY_BLUR = "blur"
         const val KEY_APP_ICON = "app_icon"
+        const val KEY_IGNORED_UPDATE = "ignored_update"
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"

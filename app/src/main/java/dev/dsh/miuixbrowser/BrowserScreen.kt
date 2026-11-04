@@ -264,6 +264,23 @@ fun BrowserScreen(
     // 标签列表当前栏：0 = 标签页，1 = 无痕浏览页
     var tabsPage by remember { mutableIntStateOf(0) }
 
+    // 启动自动检查更新：每个进程只查一次；有新版本且未被忽略时弹底部提示
+    var updateRelease by remember { mutableStateOf<AppRelease?>(null) }
+    var lastUpdateRelease by remember { mutableStateOf<AppRelease?>(null) }
+    LaunchedEffect(Unit) {
+        if (UpdateChecker.checkedThisProcess) return@LaunchedEffect
+        UpdateChecker.checkedThisProcess = true
+        // 稍等首屏稳定再请求，避免和启动渲染抢资源
+        kotlinx.coroutines.delay(1500)
+        val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            UpdateChecker.findPending(settings.ignoredUpdate)
+        }
+        if (found != null) {
+            lastUpdateRelease = found
+            updateRelease = found
+        }
+    }
+
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
             pushPage(AppRoute.Downloads)
@@ -1243,6 +1260,21 @@ fun BrowserScreen(
             }
         }
 
+
+        UpdateSheet(
+            show = updateRelease != null,
+            release = updateRelease ?: lastUpdateRelease,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            onDismiss = { updateRelease = null },
+            onIgnore = {
+                settings.updateIgnoredUpdate(it.version)
+                updateRelease = null
+            },
+            onDownload = {
+                UpdateChecker.download(context, it)
+                updateRelease = null
+            },
+        )
 
         val downloadRequest = pendingDownload
         GlassDialog(
