@@ -1286,12 +1286,8 @@ fun BrowserScreen(
                 null
             },
             endAction = null,
-            // 更多 / 标签列表：不做页面取样模糊（卡顿来源），走不透明底；其余弹层仍可采样
-            backdrop = when (lastActiveSheet) {
-                Sheet.Menu, Sheet.Tabs -> null
-                else -> if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null
-            },
-            enableWindowDim = lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs,
+            // 与清除模糊前一致：主页可采样时所有弹层（含更多/标签）都走 backdrop
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
             onDismissRequest = { sheet = Sheet.None },
         ) {
             Column(

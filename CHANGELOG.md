@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.22-dev]
+
+- 回退：恢复标签列表 / 更多菜单 sheet 的页面取样模糊与窗口遮罩（撤销 1.5.17 的去模糊）
+
 ## [1.5.21-dev]
 
 - 修复：`GlassBackButton` 中 `Icon` 误用 `description` 应为 `contentDescription`，消除 1.5.20 编译失败
