@@ -221,7 +221,7 @@ internal fun GlassPopupSurface(
             .clip(shape)
             .drawWithContent {
                 drawContent()
-                with(deform) { drawHighlight(shape) }
+                with(deform) { drawHighlight() }
                 overlay()
             }
             .then(

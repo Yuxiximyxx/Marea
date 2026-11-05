@@ -14,13 +14,13 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -125,29 +125,28 @@ internal class GlassDragDeform(private val scope: CoroutineScope) {
                 (height / width).coerceAtMost(1f)
         }
 
-    /** Draws the touch highlight within [shape]. Call after the panel content is drawn. */
-    fun DrawScope.drawHighlight(shape: Shape) {
+    /** Draws the touch highlight over the whole bounds; the caller clips to the panel shape. */
+    fun DrawScope.drawHighlight() {
         val progress = press.value
         if (progress <= 0f) return
-        val outline = shape.createOutline(size, layoutDirection, this)
         val shader = highlightShader
         if (shader != null) {
-            drawOutline(outline, Color.White.copy(0.08f * progress), blendMode = BlendMode.Plus)
+            drawRect(Color.White.copy(0.08f * progress), blendMode = BlendMode.Plus)
             val p = position.value
             shader.setFloatUniform("size", size.width, size.height)
             shader.setColorUniform("color", Color.White.copy(0.15f * progress))
             shader.setFloatUniform("radius", size.minDimension * 1.5f)
             shader.setFloatUniform("position", p.x.coerceIn(0f, size.width), p.y.coerceIn(0f, size.height))
-            drawOutline(outline, brush = shader.asBrush(), blendMode = BlendMode.Plus)
+            drawRect(brush = shader.asBrush(), blendMode = BlendMode.Plus)
         } else {
-            drawOutline(outline, Color.White.copy(0.25f * progress), blendMode = BlendMode.Plus)
+            drawRect(Color.White.copy(0.25f * progress), blendMode = BlendMode.Plus)
         }
     }
 
-    /** [drawHighlight] as a modifier, drawn above the content it wraps. */
-    fun highlight(shape: Shape): Modifier = Modifier.drawWithContent {
+    /** [drawHighlight] as a modifier, clipped to [shape] and drawn above the content it wraps. */
+    fun highlight(shape: Shape): Modifier = Modifier.clip(shape).drawWithContent {
         drawContent()
-        drawHighlight(shape)
+        drawHighlight()
     }
 
     private fun begin(down: Offset) {
