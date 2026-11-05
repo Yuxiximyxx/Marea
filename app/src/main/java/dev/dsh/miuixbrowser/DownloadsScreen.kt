@@ -74,6 +74,8 @@ import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.AppRecording
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
@@ -160,17 +162,20 @@ fun DownloadsScreen(
     blurEnabled: Boolean = true,
     threads: Int = 4,
     onThreadsChange: (Int) -> Unit = {},
-    multiThreadMinMb: Int = 1,
+    multiThreadMinMb: Int = 10,
     onMultiThreadMinMbChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
     val tasks = Downloader.tasks
     val backdrop = rememberLayerBackdrop()
+    val liquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)
+    val liquid = if (glass) liquidBackdrop else null
     var pendingDelete by remember { mutableStateOf<DownloadTask?>(null) }
     val deleteTask = pendingDelete
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -182,6 +187,9 @@ fun DownloadsScreen(
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = {
+                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                },
             )
         },
     ) { innerPadding ->
@@ -191,6 +199,7 @@ fun DownloadsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding(),
@@ -221,8 +230,8 @@ fun DownloadsScreen(
                             )
                             GlassDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
-                                title = "超过多少 MB 使用多线程",
-                                items = minMbOptions.map { "$it MB" },
+                                title = "多线程阈值",
+                                items = minMbOptions.map { downloadThresholdLabel(it) },
                                 selectedIndex = minMbOptions.indexOf(multiThreadMinMb).coerceAtLeast(0),
                                 onSelectedIndexChange = { onMultiThreadMinMbChange(minMbOptions[it]) },
                             )

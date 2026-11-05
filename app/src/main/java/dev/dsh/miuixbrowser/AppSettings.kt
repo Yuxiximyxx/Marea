@@ -8,8 +8,11 @@ import androidx.compose.runtime.setValue
 /** 下载页可选的线程数 */
 val DOWNLOAD_THREAD_OPTIONS = listOf(4, 8, 16, 32, 64)
 
-/** 下载页可选的“超过多少 MB 使用多线程”档位 */
-val DOWNLOAD_MIN_MB_OPTIONS = listOf(1, 5, 10, 20, 50, 100)
+/** 下载页「多线程阈值」档位（MB）：10 / 50 / 100 / 200 / 500 / 1G */
+val DOWNLOAD_MIN_MB_OPTIONS = listOf(10, 50, 100, 200, 500, 1024)
+
+/** 阈值档位的显示文字 */
+fun downloadThresholdLabel(mb: Int): String = if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
 
 class AppSettings(context: Context) {
 
@@ -54,14 +57,14 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_DL_THREADS, downloadThreads).apply()
     }
 
-    /** 文件超过多少 MB 才使用多线程下载 */
+    /** 多线程阈值：文件超过该大小（MB）才使用多线程下载 */
     var downloadMultiThreadMinMb by mutableStateOf(
-        prefs.getInt(KEY_DL_MIN_MB, 1).let { if (it in DOWNLOAD_MIN_MB_OPTIONS) it else 1 },
+        prefs.getInt(KEY_DL_MIN_MB, 10).let { if (it in DOWNLOAD_MIN_MB_OPTIONS) it else 10 },
     )
         private set
 
     fun updateDownloadMultiThreadMinMb(mb: Int) {
-        downloadMultiThreadMinMb = if (mb in DOWNLOAD_MIN_MB_OPTIONS) mb else 1
+        downloadMultiThreadMinMb = if (mb in DOWNLOAD_MIN_MB_OPTIONS) mb else 10
         Downloader.segmentMinBytes = downloadMultiThreadMinMb * 1024L * 1024L
         prefs.edit().putInt(KEY_DL_MIN_MB, downloadMultiThreadMinMb).apply()
     }
