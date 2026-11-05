@@ -57,6 +57,8 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -88,6 +90,9 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
     val backdrop = rememberLayerBackdrop()
     val glass = rememberGlassActive(blurEnabled)
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
+    val liquidBackdrop = rememberKyantBackdrop()
+    val liquid = if (glass) liquidBackdrop else null
     val listState = rememberLazyListState()
 
     var showAdd by remember { mutableStateOf(false) }
@@ -148,9 +153,14 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = {
+                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                },
                 actions = {
-                    HapticGlassIconButton(
+                    LiquidGlassButton(
                         onClick = { showMore = true },
+                        backdrop = liquid,
+                        surfaceVisible = topScrolled,
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .onGloballyPositioned { moreAnchor = it.boundsInRoot() },
@@ -159,6 +169,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                             imageVector = MiuixIcons.Glass.More,
                             contentDescription = "更多",
                             modifier = Modifier.size(22.dp),
+                            tint = MiuixTheme.colorScheme.onSurface,
                         )
                     }
                 },
@@ -171,6 +182,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding(),

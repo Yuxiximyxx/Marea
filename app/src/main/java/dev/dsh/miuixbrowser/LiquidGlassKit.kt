@@ -1,14 +1,20 @@
 package dev.dsh.miuixbrowser
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -34,6 +40,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tanh
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
@@ -58,11 +65,19 @@ fun LiquidGlassSurface(
     tint: Color = MiuixTheme.colorScheme.surfaceContainer,
     tintAlpha: Float = 0.35f,
     enabled: Boolean = true,
+    /** 玻璃底板是否显示。顶栏按钮传「内容已上滑」：与 miuix GlassTopAppBar 一致，未滚动时只有图标没有圆形背景。 */
+    surfaceVisible: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     val animationScope = rememberCoroutineScope()
     val highlight = remember(animationScope) { InteractiveHighlight(animationScope = animationScope) }
+    // 与 miuix 顶栏按钮同一条淡入曲线：350ms 线性
+    val surfaceAlpha by animateFloatAsState(
+        targetValue = if (surfaceVisible) 1f else 0f,
+        animationSpec = tween(durationMillis = 350, easing = LinearEasing),
+        label = "liquidSurfaceAlpha",
+    )
     // 官方写法：按压放大 + 拖拽时按钮跟手形变，全部走 layerBlock
     val liquidLayer: GraphicsLayerScope.() -> Unit = {
         val width = size.width
@@ -85,45 +100,77 @@ fun LiquidGlassSurface(
             maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
             (height / width).fastCoerceAtMost(1f)
     }
+    val showSurface = surfaceAlpha > 0.001f
 
     Box(
-        modifier = modifier
-            .alpha(if (enabled) 1f else 0.4f)
-            .then(
-                if (backdrop != null) {
-                    Modifier.drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { CircleShape },
-                        effects = {
-                            vibrancy()
-                            blur(2f.dp.toPx())
-                            lens(12f.dp.toPx(), 24f.dp.toPx())
-                        },
-                        layerBlock = liquidLayer,
-                        onDrawSurface = { drawRect(tint.copy(alpha = tintAlpha)) },
-                    )
-                } else {
-                    // 关闭模糊 / 网页态：实色底，同样跟手形变
-                    Modifier
-                        .graphicsLayer(block = liquidLayer)
-                        .clip(CircleShape)
-                        .background(tint)
-                },
-            )
-            .clickable(
-                interactionSource = null,
-                indication = null,
-                enabled = enabled,
-                role = Role.Button,
-            ) {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onClick()
-            }
-            .then(if (enabled) highlight.modifier.then(highlight.gestureModifier) else Modifier),
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f),
         contentAlignment = Alignment.Center,
     ) {
-        content()
+        // 玻璃底板与图标分层：底板可以单独淡入淡出，图标始终可见；两层用同一个 liquidLayer，形变一致。
+        if (showSurface) {
+            if (backdrop != null) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { CircleShape },
+                            effects = {
+                                vibrancy()
+                                blur(2f.dp.toPx())
+                                lens(12f.dp.toPx(), 24f.dp.toPx())
+                            },
+                            layerBlock = {
+                                liquidLayer()
+                                alpha = surfaceAlpha
+                            },
+                            onDrawSurface = { drawRect(tint.copy(alpha = tintAlpha)) },
+                        ),
+                )
+            } else {
+                // 关闭模糊 / 网页态：实色底
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            liquidLayer()
+                            alpha = surfaceAlpha
+                        }
+                        .clip(CircleShape)
+                        .background(tint),
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer(block = liquidLayer)
+                .clip(CircleShape)
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Button,
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }
+                // 底板不可见时不画按下高光，避免出现一块没有底的亮斑
+                .then(if (enabled && showSurface) highlight.modifier else Modifier)
+                .then(if (enabled) highlight.gestureModifier else Modifier),
+            contentAlignment = Alignment.Center,
+            content = { content() },
+        )
     }
+}
+
+/** 顶栏是否已被内容顶起（上滑）：与 GlassTopAppBar 内部判断相同，contentOffset < 0。 */
+@Composable
+fun rememberTopBarScrolled(scrollBehavior: ScrollBehavior): Boolean {
+    val scrolled by remember(scrollBehavior) {
+        derivedStateOf { scrollBehavior.state.contentOffset < 0f }
+    }
+    return scrolled
 }
 
 /** 圆形液态玻璃图标按钮（顶栏按钮用 40dp）。 */
@@ -136,6 +183,7 @@ fun LiquidGlassButton(
     tint: Color = MiuixTheme.colorScheme.surfaceContainer,
     tintAlpha: Float = 0.35f,
     enabled: Boolean = true,
+    surfaceVisible: Boolean = true,
     content: @Composable () -> Unit,
 ) = LiquidGlassSurface(
     onClick = onClick,
@@ -144,6 +192,7 @@ fun LiquidGlassButton(
     tint = tint,
     tintAlpha = tintAlpha,
     enabled = enabled,
+    surfaceVisible = surfaceVisible,
     content = content,
 )
 
@@ -167,8 +216,13 @@ fun LiquidGlassFab(
 
 /** 顶栏返回键（液态玻璃版）。 */
 @Composable
-fun LiquidGlassBackButton(backdrop: Backdrop?, onClick: () -> Unit) {
-    LiquidGlassButton(onClick = onClick, backdrop = backdrop, size = 40.dp) {
+fun LiquidGlassBackButton(backdrop: Backdrop?, surfaceVisible: Boolean, onClick: () -> Unit) {
+    LiquidGlassButton(
+        onClick = onClick,
+        backdrop = backdrop,
+        size = 40.dp,
+        surfaceVisible = surfaceVisible,
+    ) {
         Icon(
             imageVector = MiuixIcons.Glass.ChevronBackward,
             contentDescription = "返回",

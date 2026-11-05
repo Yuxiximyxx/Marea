@@ -106,6 +106,7 @@ fun SettingsScreen(
     val glass = rememberGlassActive(blurEnabled)
     val popupVisuals = GlassPopupDefaults.visuals()
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -120,6 +121,7 @@ fun SettingsScreen(
                 backButton = {
                     LiquidGlassBackButton(
                         backdrop = if (glass) liquidBackdrop else null,
+                        surfaceVisible = topScrolled,
                         onClick = onBack,
                     )
                 },

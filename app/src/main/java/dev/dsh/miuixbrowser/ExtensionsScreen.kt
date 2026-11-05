@@ -93,6 +93,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val deleteTarget = deleting
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
     var showMore by remember { mutableStateOf(false) }
     var moreAnchor by remember { mutableStateOf(Rect.Zero) }
     val updateAll: () -> Unit = {
@@ -136,11 +137,14 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
-                backButton = { LiquidGlassBackButton(backdrop = liquid, onClick = onBack) },
+                backButton = {
+                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                },
                 actions = {
                     LiquidGlassButton(
                         onClick = { showMore = true },
                         backdrop = liquid,
+                        surfaceVisible = topScrolled,
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .onGloballyPositioned { moreAnchor = it.boundsInRoot() },

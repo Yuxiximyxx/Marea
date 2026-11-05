@@ -128,6 +128,7 @@ fun LibraryScreen(
         pageCount = { 2 },
     )
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
     // 分页内容各自的滚动状态，避免两栏互相干扰
     val bookmarkListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val historyListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -172,7 +173,9 @@ fun LibraryScreen(
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
-                backButton = { LiquidGlassBackButton(backdrop = liquid, onClick = onBack) },
+                backButton = {
+                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                },
                 actions = {
                     LiquidGlassButton(
                         onClick = {
@@ -180,6 +183,7 @@ fun LibraryScreen(
                             if (!searching) query = ""
                         },
                         backdrop = liquid,
+                        surfaceVisible = topScrolled,
                         modifier = Modifier.padding(end = 8.dp),
                     ) {
                         Icon(
