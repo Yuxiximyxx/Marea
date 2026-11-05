@@ -497,15 +497,15 @@ class BrowserTab(private val appContext: Context) {
             /** HTTP 代理认证：挑战主机等于代理主机时自动提交设置里的账号密码 */
             override fun onReceivedHttpAuthRequest(
                 view: WebView?,
+                handler: android.webkit.HttpAuthHandler?,
                 host: String?,
                 realm: String?,
-                callback: android.webkit.HttpAuthHandler?,
             ) {
-                if (callback == null) return
+                if (handler == null) return
                 if (host != null && WebViewProxy.shouldAutoAuth(host)) {
-                    callback.onProceed(WebViewProxy.authUser, WebViewProxy.authPass)
+                    handler.proceed(WebViewProxy.authUser, WebViewProxy.authPass)
                 } else {
-                    callback.onCancel()
+                    handler.cancel()
                 }
             }
 

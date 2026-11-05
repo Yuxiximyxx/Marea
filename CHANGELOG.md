@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.13-dev]
+
+- 修复：`onReceivedHttpAuthRequest` 参数顺序与 `HttpAuthHandler.proceed/cancel` 方法名，消除 1.5.12 编译失败
+
 ## [1.5.12-dev]
 
 - 代理弹窗：去掉副标题说明；主机/端口同行；新增认证开关（展开用户名/密码，HTTP 挑战自动提交）
