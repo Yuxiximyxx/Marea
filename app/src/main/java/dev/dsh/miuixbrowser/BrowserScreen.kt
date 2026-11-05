@@ -3318,8 +3318,6 @@ private fun TabAddButton(
         onClick = onClick,
         backdrop = backdrop,
         modifier = modifier,
-        tint = MiuixTheme.colorScheme.primary,
-        tintAlpha = 0.28f,
         enabled = canAdd,
     ) {
         Icon(
