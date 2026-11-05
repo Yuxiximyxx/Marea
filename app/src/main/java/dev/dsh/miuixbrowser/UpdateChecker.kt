@@ -50,14 +50,21 @@ object UpdateChecker {
             }
             return
         }
-        Downloader.start(
-            context = context,
-            url = apk,
-            userAgent = null,
-            fileName = "mafari-${rel.version.removePrefix("v")}.apk",
-            mimeType = "application/vnd.android.package-archive",
-        )
-        Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()
+        // 直连 + GitHub 加速并发探测，连通者优先；探测在后台，回主线程再入下载队列
+        Thread {
+            val url = GitHubAccelerate.pickDownloadUrl(apk)
+            android.os.Handler(context.mainLooper).post {
+                Downloader.start(
+                    context = context,
+                    url = url,
+                    userAgent = null,
+                    fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                    mimeType = "application/vnd.android.package-archive",
+                )
+                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 }
 

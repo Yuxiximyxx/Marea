@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.14-dev]
+
+- 检查更新与 APK 下载：直连 + 公共 GitHub 加速镜像并发探测，连通者优先
+
 ## [1.5.13-dev]
 
 - 修复：`onReceivedHttpAuthRequest` 参数顺序与 `HttpAuthHandler.proceed/cancel` 方法名，消除 1.5.12 编译失败

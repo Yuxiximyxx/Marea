@@ -296,14 +296,20 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                             val rel = update ?: return@GlassDialogButton
                             val apk = rel.apkUrl
                             if (apk != null) {
-                                Downloader.start(
-                                    context = context,
-                                    url = apk,
-                                    userAgent = null,
-                                    fileName = "mafari-${rel.version.removePrefix("v")}.apk",
-                                    mimeType = "application/vnd.android.package-archive",
-                                )
-                                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()
+                                Thread {
+                                    val url = GitHubAccelerate.pickDownloadUrl(apk)
+                                    android.os.Handler(context.mainLooper).post {
+                                        Downloader.start(
+                                            context = context,
+                                            url = url,
+                                            userAgent = null,
+                                            fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                                            mimeType = "application/vnd.android.package-archive",
+                                        )
+                                        Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+                                    }
+                                }.start()
                             }
                             pendingUpdate = null
                         },
@@ -328,11 +334,25 @@ data class AppRelease(
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
 private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
 
-/** 拉取最新 release：版本号、页面地址、APK 直链（优先 assets 中的 .apk） */
-internal fun fetchLatestRelease(): AppRelease? = runCatching {
-    val connection = (java.net.URL(RELEASE_API).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 8000
-        readTimeout = 8000
+/**
+ * 拉取最新 release：版本号、页面地址、APK 直链。
+ * 直连 + 公共 GitHub 加速镜像并发探测，连通者优先。
+ */
+internal fun fetchLatestRelease(): AppRelease? {
+    val fetchers: List<() -> AppRelease?> = GitHubAccelerate.MirrorPrefixes.map { prefix ->
+        {
+            val api = GitHubAccelerate.map(RELEASE_API, prefix)
+            fetchReleaseFrom(api)
+        }
+    }
+    return GitHubAccelerate.raceFirst(8000, fetchers)
+}
+
+private fun fetchReleaseFrom(apiUrl: String): AppRelease? = runCatching {
+    val connection = (java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
+        connectTimeout = 6000
+        readTimeout = 6000
+        instanceFollowRedirects = true
         setRequestProperty("User-Agent", "mafari")
         setRequestProperty("Accept", "application/vnd.github+json")
     }
