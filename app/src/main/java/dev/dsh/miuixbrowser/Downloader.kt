@@ -335,17 +335,22 @@ object Downloader {
         if (index >= 0) tasks[index] = transform(tasks[index])
     }
 
-    /** 保存 data:image/...;base64 的内嵌图片到系统下载目录 */
+    /** 保存 data:...;base64 的内嵌 / blob 抽取结果到系统下载目录 */
     fun saveDataUri(context: Context, dataUri: String, fileName: String): Boolean = runCatching {
         val comma = dataUri.indexOf(',')
         if (comma < 0) return@runCatching false
         val meta = dataUri.substringAfter("data:").substringBefore(',')
         if (!meta.contains("base64", ignoreCase = true)) return@runCatching false
         val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
-        val mime = meta.substringBefore(';').ifBlank { "image/png" }
+        saveBytes(context, bytes, fileName, meta.substringBefore(';').ifBlank { null })
+        true
+    }.getOrDefault(false)
+
+    /** 直接把字节写入 Download/mafari（blob / data URL 共用） */
+    fun saveBytes(context: Context, bytes: ByteArray, fileName: String, mime: String?): Boolean = runCatching {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
             put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }

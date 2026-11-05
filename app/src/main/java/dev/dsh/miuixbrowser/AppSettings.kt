@@ -204,13 +204,74 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_MEDIA, mediaAutoplay).apply()
     }
 
+    /** 网页权限：网站通知 0=询问 1=允许 2=拒绝 */
+    var notificationPermission by mutableStateOf(prefs.getInt(KEY_NOTIFY, 0))
+        private set
+
+    fun updateNotificationPermission(mode: Int) {
+        notificationPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_NOTIFY, notificationPermission).apply()
+    }
+
     /** 启用「请勿追踪」类隐私增强：合并 DNT + 禁第三方跟踪脚本提示 */
     var blockTrackingScripts by mutableStateOf(prefs.getBoolean(KEY_TRACK, true))
         private set
 
     fun updateBlockTrackingScripts(enabled: Boolean) {
         blockTrackingScripts = enabled
-        prefs.edit().putBoolean(KEY_TRACK, enabled).apply()
+        prefs.edit().putBoolean(KEY_TRACK, blockTrackingScripts).apply()
+    }
+
+    /** 代理开关（WebView ProxyController，进程内全部标签） */
+    var proxyEnabled by mutableStateOf(prefs.getBoolean(KEY_PROXY_ON, false))
+        private set
+
+    /** 0 = HTTP，1 = SOCKS5 */
+    var proxyType by mutableStateOf(prefs.getInt(KEY_PROXY_TYPE, 0).coerceIn(0, 1))
+        private set
+
+    var proxyHost by mutableStateOf(prefs.getString(KEY_PROXY_HOST, "").orEmpty())
+        private set
+
+    var proxyPort by mutableStateOf(prefs.getInt(KEY_PROXY_PORT, 0))
+        private set
+
+    /** 代理认证（HTTP 挑战时提交；SOCKS5 官方 ProxyConfig 不支持） */
+    var proxyAuth by mutableStateOf(prefs.getBoolean(KEY_PROXY_AUTH, false))
+        private set
+
+    var proxyUser by mutableStateOf(prefs.getString(KEY_PROXY_USER, "").orEmpty())
+        private set
+
+    var proxyPass by mutableStateOf(prefs.getString(KEY_PROXY_PASS, "").orEmpty())
+        private set
+
+    fun updateProxy(
+        enabled: Boolean,
+        type: Int,
+        host: String,
+        port: Int,
+        auth: Boolean = proxyAuth,
+        user: String = proxyUser,
+        pass: String = proxyPass,
+    ) {
+        proxyEnabled = enabled
+        proxyType = type.coerceIn(0, 1)
+        proxyHost = host.trim()
+        proxyPort = port.coerceIn(0, 65535)
+        proxyAuth = auth
+        proxyUser = user
+        proxyPass = pass
+        prefs.edit()
+            .putBoolean(KEY_PROXY_ON, proxyEnabled)
+            .putInt(KEY_PROXY_TYPE, proxyType)
+            .putString(KEY_PROXY_HOST, proxyHost)
+            .putInt(KEY_PROXY_PORT, proxyPort)
+            .putBoolean(KEY_PROXY_AUTH, proxyAuth)
+            .putString(KEY_PROXY_USER, proxyUser)
+            .putString(KEY_PROXY_PASS, proxyPass)
+            .apply()
+        WebViewProxy.applyFrom(this)
     }
 
     private companion object {
@@ -235,7 +296,15 @@ class AppSettings(context: Context) {
         const val KEY_LOC = "perm_location"
         const val KEY_CLIP = "perm_clipboard"
         const val KEY_MEDIA = "perm_media_autoplay"
+        const val KEY_NOTIFY = "perm_notification"
         const val KEY_TRACK = "block_tracking"
+        const val KEY_PROXY_ON = "proxy_enabled"
+        const val KEY_PROXY_TYPE = "proxy_type"
+        const val KEY_PROXY_HOST = "proxy_host"
+        const val KEY_PROXY_PORT = "proxy_port"
+        const val KEY_PROXY_AUTH = "proxy_auth"
+        const val KEY_PROXY_USER = "proxy_user"
+        const val KEY_PROXY_PASS = "proxy_pass"
     }
 }
 

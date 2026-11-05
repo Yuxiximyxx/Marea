@@ -65,7 +65,11 @@ import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    onOpenUrl: (String) -> Unit = {},
+    blurEnabled: Boolean = true,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val kernel = webViewVersion() ?: "未知"
@@ -184,13 +188,9 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                                     if (!isNewerVersion(result.version, BuildConfig.VERSION_NAME)) {
                                         Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
                                     } else if (result.apkUrl.isNullOrBlank()) {
-                                        // 无 APK 资产时仍打开发布页
+                                        // 无 APK 资产时在应用内浏览页打开发布页
                                         Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(result.pageUrl)),
-                                            )
-                                        }
+                                        onOpenUrl(result.pageUrl)
                                     } else {
                                         pendingUpdate = result
                                     }
@@ -242,13 +242,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)),
-                                    )
-                                }
-                            }
+                            .clickable { onOpenUrl(PROJECT_URL) }
                             .padding(16.dp),
                     ) {
                         Text("项目地址", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
@@ -296,14 +290,20 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                             val rel = update ?: return@GlassDialogButton
                             val apk = rel.apkUrl
                             if (apk != null) {
-                                Downloader.start(
-                                    context = context,
-                                    url = apk,
-                                    userAgent = null,
-                                    fileName = "mafari-${rel.version.removePrefix("v")}.apk",
-                                    mimeType = "application/vnd.android.package-archive",
-                                )
-                                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()
+                                Thread {
+                                    val url = GitHubAccelerate.pickDownloadUrl(apk)
+                                    android.os.Handler(context.mainLooper).post {
+                                        Downloader.start(
+                                            context = context,
+                                            url = url,
+                                            userAgent = null,
+                                            fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                                            mimeType = "application/vnd.android.package-archive",
+                                        )
+                                        Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
+                                    }
+                                }.start()
                             }
                             pendingUpdate = null
                         },
@@ -328,11 +328,25 @@ data class AppRelease(
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
 private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
 
-/** 拉取最新 release：版本号、页面地址、APK 直链（优先 assets 中的 .apk） */
-internal fun fetchLatestRelease(): AppRelease? = runCatching {
-    val connection = (java.net.URL(RELEASE_API).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 8000
-        readTimeout = 8000
+/**
+ * 拉取最新 release：版本号、页面地址、APK 直链。
+ * 直连 + 公共 GitHub 加速镜像并发探测，连通者优先。
+ */
+internal fun fetchLatestRelease(): AppRelease? {
+    val fetchers: List<() -> AppRelease?> = GitHubAccelerate.MirrorPrefixes.map { prefix ->
+        {
+            val api = GitHubAccelerate.map(RELEASE_API, prefix)
+            fetchReleaseFrom(api)
+        }
+    }
+    return GitHubAccelerate.raceFirst(8000, fetchers)
+}
+
+private fun fetchReleaseFrom(apiUrl: String): AppRelease? = runCatching {
+    val connection = (java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
+        connectTimeout = 6000
+        readTimeout = 6000
+        instanceFollowRedirects = true
         setRequestProperty("User-Agent", "mafari")
         setRequestProperty("Accept", "application/vnd.github+json")
     }

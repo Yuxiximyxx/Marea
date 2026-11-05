@@ -86,6 +86,7 @@ fun SettingsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
+    var showProxyDialog by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -241,7 +242,7 @@ fun SettingsScreen(
                     )
                     SettingsRow(
                         title = "网页权限",
-                        summary = "摄像头 · 麦克风 · 定位 · 剪贴板 · 媒体发声",
+                        summary = "摄像头 · 麦克风 · 定位 · 网站通知 · 剪贴板 · 媒体发声",
                         onClick = { showPermSheet = true },
                     )
                     SwitchPreference(
@@ -288,6 +289,17 @@ fun SettingsScreen(
                         title = "脚本管理",
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
+                    )
+                    SettingsRow(
+                        title = "代理",
+                        summary = if (settings.proxyEnabled && settings.proxyHost.isNotBlank()) {
+                            val kind = if (settings.proxyType == 1) "SOCKS5" else "HTTP"
+                            val auth = if (settings.proxyAuth) " · 认证" else ""
+                            "已开启 · $kind ${settings.proxyHost}:${settings.proxyPort}$auth"
+                        } else {
+                            "关闭 · 支持 HTTP / SOCKS5"
+                        },
+                        onClick = { showProxyDialog = true },
                     )
                 }
 
@@ -380,6 +392,159 @@ fun SettingsScreen(
                 }
             }
 
+            // 代理：官方 ProxyController，HTTP / SOCKS5
+            var proxyOn by remember(showProxyDialog) { mutableStateOf(settings.proxyEnabled) }
+            var proxyType by remember(showProxyDialog) { mutableStateOf(settings.proxyType) }
+            var proxyHost by remember(showProxyDialog) { mutableStateOf(settings.proxyHost) }
+            var proxyPort by remember(showProxyDialog) {
+                mutableStateOf(if (settings.proxyPort > 0) settings.proxyPort.toString() else "")
+            }
+            var proxyAuth by remember(showProxyDialog) { mutableStateOf(settings.proxyAuth) }
+            var proxyUser by remember(showProxyDialog) { mutableStateOf(settings.proxyUser) }
+            var proxyPass by remember(showProxyDialog) { mutableStateOf(settings.proxyPass) }
+            // SOCKS5 官方 API 不支持账密：认证开关置灰；代理关闭时仍可先配好认证
+            val authSwitchEnabled = proxyType != 1
+            GlassDialog(
+                show = showProxyDialog,
+                title = "代理",
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { showProxyDialog = false },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "启用代理",
+                            fontSize = 16.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = proxyOn, onCheckedChange = { proxyOn = it })
+                    }
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
+                        title = "类型",
+                        items = listOf("HTTP", "SOCKS5"),
+                        selectedIndex = proxyType.coerceIn(0, 1),
+                        onSelectedIndexChange = { proxyType = it },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextField(
+                            value = proxyHost,
+                            onValueChange = { proxyHost = it },
+                            modifier = Modifier.weight(2f),
+                            label = "主机",
+                            singleLine = true,
+                        )
+                        TextField(
+                            value = proxyPort,
+                            onValueChange = { proxyPort = it.filter { c -> c.isDigit() }.take(5) },
+                            modifier = Modifier.weight(1f),
+                            label = "端口",
+                            singleLine = true,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "认证",
+                            fontSize = 16.sp,
+                            color = if (authSwitchEnabled) {
+                                MiuixTheme.colorScheme.onSurface
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = proxyAuth,
+                            onCheckedChange = { proxyAuth = it },
+                            enabled = authSwitchEnabled,
+                        )
+                    }
+                    if (proxyAuth && authSwitchEnabled) {
+                        TextField(
+                            value = proxyUser,
+                            onValueChange = { proxyUser = it },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            label = "用户名",
+                            singleLine = true,
+                        )
+                        TextField(
+                            value = proxyPass,
+                            onValueChange = { proxyPass = it },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            label = "密码",
+                            singleLine = true,
+                        )
+                        Text(
+                            text = "代理关闭时也可先保存认证；仅 HTTP 代理挑战会自动提交。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                    if (proxyType == 1) {
+                        Text(
+                            text = "SOCKS5 不支持账密认证，认证开关已禁用。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        GlassDialogButton(
+                            onClick = { showProxyDialog = false },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        GlassDialogButton(
+                            onClick = {
+                                val port = proxyPort.toIntOrNull() ?: 0
+                                settings.updateProxy(
+                                    enabled = proxyOn,
+                                    type = proxyType,
+                                    host = proxyHost,
+                                    port = port,
+                                    // 关闭代理时也保存认证配置，便于下次直接启用
+                                    auth = proxyAuth,
+                                    user = proxyUser,
+                                    pass = proxyPass,
+                                )
+                                showProxyDialog = false
+                                Toast.makeText(
+                                    context,
+                                    if (proxyOn && proxyHost.isNotBlank() && port in 1..65535) {
+                                        "代理已${if (proxyType == 1) "（SOCKS5）" else "（HTTP）"}生效"
+                                    } else {
+                                        "代理已关闭${if (proxyAuth) "（认证配置已保存）" else ""}"
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "保存", style = MiuixTheme.textStyles.button)
+                        }
+                    }
+                }
+            }
+
             GlassBottomSheet(
                 show = showPermSheet,
                 title = "网页权限",
@@ -392,6 +557,7 @@ fun SettingsScreen(
                         Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
                         Triple("麦克风", settings.micPermission, settings::updateMicPermission),
                         Triple("定位", settings.locationPermission, settings::updateLocationPermission),
+                        Triple("网站通知", settings.notificationPermission, settings::updateNotificationPermission),
                         Triple("剪贴板读写", settings.clipboardPermission, settings::updateClipboardPermission),
                         Triple("网站媒体发声", settings.mediaAutoplay, settings::updateMediaAutoplay),
                     ).forEach { (label, current, update) ->

@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceResponse
 import android.webkit.WebResourceError
@@ -16,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -133,8 +135,26 @@ class BrowserTab(private val appContext: Context) {
     var pullProgress by mutableFloatStateOf(0f)
         private set
 
-    /** 下载请求回调（交给界面弹确认框） */
+    /** 下载请求回调（交给界面弹确认框）。blob/data 由 extractBlob 抽取后走 onBlobReady。 */
     var onDownload: ((url: String, userAgent: String?, disposition: String?, mime: String?) -> Unit)? = null
+
+    /** 页面要求选文件 / 拍照 / 录像：由界面拉起系统选择器或相机 */
+    var onShowFileChooser: (
+        params: WebChromeClient.FileChooserParams,
+        callback: ValueCallback<Array<Uri>>,
+    ) -> Unit = { _, callback -> callback.onReceiveValue(null) }
+
+    /** HTML5 视频全屏：把 WebView 给的 View 挂到全屏容器 */
+    var onShowCustomView: ((view: View, callback: WebChromeClient.CustomViewCallback) -> Unit)? = null
+
+    /** 退出全屏（视频结束 / 返回键） */
+    var onHideCustomView: (() -> Unit)? = null
+
+    /** blob / data URL 抽取完成：dataUri 或 tempPath 二选一（大文件走 tempPath） */
+    var onBlobReady: ((dataUrl: String?, fileName: String, mime: String?, tempPath: String?) -> Unit)? = null
+
+    /** blob 抽取失败 */
+    var onBlobError: ((message: String) -> Unit)? = null
 
     /** 下拉刷新回调 */
     var onPullRefresh: (() -> Unit)? = null
@@ -156,6 +176,78 @@ class BrowserTab(private val appContext: Context) {
         }
     }
 
+    /**
+     * blob 分片接收：evaluateJavascript 返回值有大小上限，大文件必须走 JS→桥接分片。
+     * begin/appendChunk/end/fail 由页面脚本调用（binder 线程，内部用锁写缓存文件）。
+     */
+    private val blobLock = Any()
+    private var blobStream: java.io.FileOutputStream? = null
+    private var blobFile: java.io.File? = null
+    private var blobName = ""
+    private var blobMime: String? = null
+
+    private val blobBridge = object {
+        @android.webkit.JavascriptInterface
+        fun begin(name: String, mime: String) {
+            synchronized(blobLock) {
+                runCatching { blobStream?.close() }
+                blobStream = null
+                runCatching { blobFile?.delete() }
+                val f = java.io.File(appContext.cacheDir, "mafari_blob_${System.currentTimeMillis()}.part")
+                blobFile = f
+                blobStream = java.io.FileOutputStream(f)
+                blobName = name.ifBlank { "download" }
+                blobMime = mime.ifBlank { null }
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun appendChunk(b64: String) {
+            try {
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                synchronized(blobLock) {
+                    blobStream?.write(bytes)
+                    blobStream?.flush()
+                }
+            } catch (e: Exception) {
+                Diag.log("blob append failed: ${e.message}")
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun end() {
+            val file: java.io.File?
+            val name: String
+            val mime: String?
+            synchronized(blobLock) {
+                runCatching { blobStream?.flush(); blobStream?.close() }
+                blobStream = null
+                file = blobFile
+                name = blobName
+                mime = blobMime
+                blobFile = null
+            }
+            if (file == null || !file.exists() || file.length() <= 0L) {
+                webView.post { onBlobError?.invoke("blob 为空或写入失败") }
+                return
+            }
+            webView.post {
+                onBlobReady?.invoke(null, name, mime, file.absolutePath)
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun fail(msg: String) {
+            synchronized(blobLock) {
+                runCatching { blobStream?.close() }
+                blobStream = null
+                runCatching { blobFile?.delete() }
+                blobFile = null
+            }
+            webView.post { onBlobError?.invoke("无法读取 blob：$msg") }
+        }
+    }
+
     /** 打开新标签页（GM_openInTab 用） */
     var onOpenNewTab: ((String) -> Unit)? = null
 
@@ -163,13 +255,165 @@ class BrowserTab(private val appContext: Context) {
     private var installedScriptsSignature = ""
     private var prefetchingScripts = false
 
+    /** 文件选择器：WebView 持有的回调，界面拉起选择器后必须回传（null = 取消） */
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+
+    /** HTML5 视频全屏中的 View 与回调 */
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    /** 界面取消文件选择（返回键 / 关闭弹层） */
+    fun cancelFileChooser() {
+        val cb = pendingFileCallback
+        pendingFileCallback = null
+        runCatching { cb?.onReceiveValue(null) }
+    }
+
+    /** 是否正在全屏自定义视图 */
+    val isCustomViewShowing: Boolean get() = customView != null
+
+    /** 退出视频全屏（返回键调用） */
+    fun exitCustomView() {
+        val cb = customViewCallback
+        if (cb == null && customView == null) return
+        customView = null
+        customViewCallback = null
+        restoreOrientation()
+        onHideCustomView?.invoke()
+        runCatching { cb?.onCustomViewHidden() }
+    }
+
+    /** 全屏视频：强制横屏 */
+    private fun lockLandscape() {
+        val activity = resolveActivity() ?: return
+        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
+    /** 退出全屏：恢复系统方向 */
+    private fun restoreOrientation() {
+        val activity = resolveActivity() ?: return
+        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    /** LocalContext 可能是 ContextThemeWrapper，逐层解开找 Activity */
+    private fun resolveActivity(): android.app.Activity? {
+        var c: Context? = appContext
+        while (c != null) {
+            if (c is android.app.Activity) return c
+            c = (c as? android.content.ContextWrapper)?.baseContext
+        }
+        return null
+    }
+
+    /**
+     * 把 blob 分片写入缓存文件（不经 evaluateJavascript 返回大字符串）。
+     * 取 Blob 顺序：createObjectURL 缓存（含同源 iframe）→ XHR → fetch。
+     * 完成后回调 onBlobReady(tempPath=...)。
+     */
+    fun extractBlob(
+        url: String,
+        userAgent: String? = null,
+        disposition: String? = null,
+        mime: String? = null,
+    ) {
+        val fileName = Downloader.fileNameFrom(url, disposition)
+        val preferredMime = mime ?: "application/octet-stream"
+        // 分片 256KB 二进制 → base64 约 350KB，避开 JS 桥接/字符串上限
+        val js = """
+            (function(){
+              var url = ${org.json.JSONObject.quote(url)};
+              var fileName = ${org.json.JSONObject.quote(fileName)};
+              var preferredMime = ${org.json.JSONObject.quote(preferredMime)};
+              var CHUNK = 256 * 1024;
+
+              function findCached(u) {
+                try {
+                  if (window.__mafariBlobCache && window.__mafariBlobCache[u]) {
+                    return window.__mafariBlobCache[u];
+                  }
+                } catch (e) {}
+                try {
+                  var list = document.querySelectorAll('iframe');
+                  for (var i = 0; i < list.length; i++) {
+                    try {
+                      var w = list[i].contentWindow;
+                      if (w && w.__mafariBlobCache && w.__mafariBlobCache[u]) {
+                        return w.__mafariBlobCache[u];
+                      }
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+                return null;
+              }
+
+              function viaXhr(u) {
+                return new Promise(function(resolve, reject) {
+                  try {
+                    var x = new XMLHttpRequest();
+                    x.open('GET', u, true);
+                    x.responseType = 'blob';
+                    x.onload = function() {
+                      if (x.response && x.response.size >= 0) resolve(x.response);
+                      else reject(new Error('xhr empty'));
+                    };
+                    x.onerror = function() { reject(new Error('xhr error')); };
+                    x.send();
+                  } catch (e) { reject(e); }
+                });
+              }
+
+              function viaFetch(u) {
+                return fetch(u).then(function(r){ return r.blob(); });
+              }
+
+              function getBlob(u) {
+                var c = findCached(u);
+                if (c) return Promise.resolve(c);
+                return viaXhr(u).catch(function(){ return viaFetch(u); });
+              }
+
+              return getBlob(url).then(function(b){
+                if (!b || !b.size) throw new Error('empty blob');
+                MafariBlob.begin(fileName, b.type || preferredMime);
+                var i = 0;
+                function next(){
+                  if (i >= b.size) { MafariBlob.end(); return; }
+                  var end = Math.min(i + CHUNK, b.size);
+                  var slice = b.slice(i, end);
+                  i = end;
+                  return slice.arrayBuffer().then(function(buf){
+                    var bytes = new Uint8Array(buf);
+                    var bin = '';
+                    var BL = 0x8000;
+                    for (var j = 0; j < bytes.length; j += BL) {
+                      bin += String.fromCharCode.apply(null, bytes.subarray(j, j + BL));
+                    }
+                    MafariBlob.appendChunk(btoa(bin));
+                    return next();
+                  });
+                }
+                return next();
+              }).catch(function(e){ MafariBlob.fail(String(e && e.message || e)); });
+            })()
+        """.trimIndent()
+        // 结果由 blobBridge 回调，这里不解析返回值
+        webView.evaluateJavascript(js, null)
+    }
+
     /** 去广告元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面加载回调兜底注入） */
     private var adblockDocStart = false
 
     init {
         runCatching { webView.addJavascriptInterface(AdBlockBridge(), "MafariAdblock") }
+        runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                // 社区通用：缓存 createObjectURL 的 Blob，extractBlob 直接读，避免 fetch blob: 失败
+                runCatching {
+                    val cacheJs = appContext.assets.open("mafari_blob_cache.js")
+                        .bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, cacheJs, setOf("*"))
+                }.onFailure { Diag.log("blob cache install failed: ${it.message}") }
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
                 adblockDocStart = true
             }
@@ -234,6 +478,7 @@ class BrowserTab(private val appContext: Context) {
                 Diag.log("passkey: WEB_AUTHENTICATION not supported by this WebView")
             }
         }.onFailure { Diag.log("passkey: enable failed ${it.message}") }
+        // 默认浅色底；深浅色由 applyDisplayTheme 按应用主题覆盖
         webView.setBackgroundColor(0xFFFFFFFF.toInt())
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -247,6 +492,21 @@ class BrowserTab(private val appContext: Context) {
                 syncNav()
                 syncUserScripts()
                 if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+            }
+
+            /** HTTP 代理认证：挑战主机等于代理主机时自动提交设置里的账号密码 */
+            override fun onReceivedHttpAuthRequest(
+                view: WebView?,
+                handler: android.webkit.HttpAuthHandler?,
+                host: String?,
+                realm: String?,
+            ) {
+                if (handler == null) return
+                if (host != null && WebViewProxy.shouldAutoAuth(host)) {
+                    handler.proceed(WebViewProxy.authUser, WebViewProxy.authPass)
+                } else {
+                    handler.cancel()
+                }
             }
 
             override fun onPageFinished(view: WebView, pageUrl: String?) {
@@ -318,6 +578,41 @@ class BrowserTab(private val appContext: Context) {
                 if (!pageTitle.isNullOrBlank()) title = pageTitle
             }
 
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?,
+            ): Boolean {
+                if (filePathCallback == null || fileChooserParams == null) return false
+                // WebView 可能在上一次未回调时再次请求，先取消上一次
+                cancelFileChooser()
+                pendingFileCallback = filePathCallback
+                this@BrowserTab.onShowFileChooser.invoke(fileChooserParams, filePathCallback)
+                return true
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || callback == null) return
+                if (customView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                lockLandscape()
+                this@BrowserTab.onShowCustomView?.invoke(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                val cb = customViewCallback
+                customView = null
+                customViewCallback = null
+                restoreOrientation()
+                this@BrowserTab.onHideCustomView?.invoke()
+                // 界面摘掉 View 后必须通知 WebView
+                cb?.onCustomViewHidden()
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 webView.post { handleWebPermission(request) }
             }
@@ -343,10 +638,17 @@ class BrowserTab(private val appContext: Context) {
 
         webView.setDownloadListener { link, userAgent, contentDisposition, mimeType, _ ->
             // 一些站点把 .user.js 以附件形式返回，会走到下载回调；这里改成「导入脚本」
-            if (isUserScriptUrl(link)) {
-                onUserScriptLink?.invoke(link)
-            } else {
-                onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            when {
+                isUserScriptUrl(link) -> onUserScriptLink?.invoke(link)
+                // blob：HTTP 下载器拉不到，走页面内抽取
+                link.startsWith("blob:", ignoreCase = true) ->
+                    extractBlob(link, userAgent, contentDisposition, mimeType)
+                // data URL 附件：直接交给界面落盘
+                link.startsWith("data:", ignoreCase = true) -> {
+                    val name = Downloader.fileNameFrom(link, contentDisposition)
+                    onBlobReady?.invoke(link, name, mimeType, null)
+                }
+                else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
             }
         }
 
@@ -607,6 +909,35 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /**
+     * 显示模式深浅色同步到 WebView（公开 API，不自造 CSS 覆盖）：
+     * 1. `WebSettings.setAlgorithmicDarkeningAllowed` — 系统/WebView 官方深色适配（API 33+）
+     * 2. `setBackgroundColor` — 空白/加载底色跟随应用主题
+     * 3. 对齐 Activity `Configuration.uiMode` — 让算法深色跟随应用内「深色/浅色/跟随系统」
+     */
+    fun applyDisplayTheme(dark: Boolean) {
+        runCatching { webView.settings.setAlgorithmicDarkeningAllowed(true) }
+        webView.setBackgroundColor(
+            if (dark) 0xFF1A1A1A.toInt() else 0xFFFFFFFF.toInt(),
+        )
+        val activity = resolveActivity() ?: return
+        runCatching {
+            val res = activity.resources
+            val conf = res.configuration
+            val night = if (dark) {
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            } else {
+                android.content.res.Configuration.UI_MODE_NIGHT_NO
+            }
+            if ((conf.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != night) {
+                val next = android.content.res.Configuration(conf)
+                next.uiMode = (next.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+                @Suppress("DEPRECATION")
+                res.updateConfiguration(next, res.displayMetrics)
+            }
+        }
+    }
+
+    /**
      * 应用隐私与权限设置（当前标签成为活动标签、或设置变化时调用）。
      * - 第三方 Cookie：CookieManager 按 WebView 设置；Cookie 总开关随标签是否无痕切换。
      * - DNT：请求头（地址栏 / 链接点击的主框架导航）+ navigator.doNotTrack / globalPrivacyControl。
@@ -623,6 +954,7 @@ class BrowserTab(private val appContext: Context) {
         cameraMode: Int = 0,
         micMode: Int = 0,
         locationMode: Int = 0,
+        notificationMode: Int = 0,
         blockTrackers: Boolean = false,
     ) {
         runCatching {
@@ -634,8 +966,9 @@ class BrowserTab(private val appContext: Context) {
         this.cameraMode = cameraMode
         this.micMode = micMode
         this.locationMode = locationMode
+        this.notificationMode = notificationMode
         this.blockTrackers = blockTrackers
-        // 询问 / 拒绝：需要用户手势才能出声；允许：自动播放
+        // 媒体发声：允许=可自动播放；询问/拒绝=需用户手势才能出声
         runCatching { webView.settings.mediaPlaybackRequiresUserGesture = mediaMode != 1 }
 
         val script = buildString {
@@ -663,6 +996,15 @@ class BrowserTab(private val appContext: Context) {
                         "var p=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{this.volume=0}catch(e){}return p.apply(this,arguments)}}catch(e){}})();\n",
                 )
             }
+            // 网站通知拒绝：JS Notification 权限固定为 denied
+            if (notificationMode == 2) {
+                append(
+                    "(function(){try{" +
+                        "if(window.Notification){Object.defineProperty(Notification,'permission',{get:function(){return 'denied'},configurable:true});" +
+                        "Notification.requestPermission=function(){return Promise.resolve('denied')}}}" +
+                        "}catch(e){}})();\n",
+                )
+            }
         }
         runCatching { privacyHandler?.remove() }
         privacyHandler = null
@@ -688,6 +1030,7 @@ class BrowserTab(private val appContext: Context) {
     private var cameraMode = 0
     private var micMode = 0
     private var locationMode = 0
+    private var notificationMode = 0
 
     /** 网页权限「询问」：由界面弹窗，decide(true/false) 只能调用一次 */
     var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
@@ -700,16 +1043,21 @@ class BrowserTab(private val appContext: Context) {
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun ensureAndroid(perms: Array<String>, anyOk: Boolean, result: (Boolean) -> Unit) {
-        fun granted() = if (anyOk) perms.any { hasPermission(it) } else perms.all { hasPermission(it) }
-        if (granted()) {
-            result(true)
+        val need = perms.filter { it.isNotBlank() && !hasPermission(it) }.toTypedArray()
+        fun granted() = if (anyOk) {
+            perms.filter { it.isNotBlank() }.any { hasPermission(it) }
+        } else {
+            perms.filter { it.isNotBlank() }.all { hasPermission(it) }
+        }
+        if (need.isEmpty()) {
+            result(granted())
             return
         }
         val request = requestAndroidPermissions
         if (request == null) {
             result(false)
         } else {
-            request(perms.filter { !hasPermission(it) }.toTypedArray()) { result(granted()) }
+            request(need) { result(granted()) }
         }
     }
 
@@ -738,6 +1086,9 @@ class BrowserTab(private val appContext: Context) {
     }
 
     private fun handleWebPermission(request: PermissionRequest) {
+        // Android SDK 的 PermissionRequest 仅有：
+        // RESOURCE_AUDIO_CAPTURE / RESOURCE_VIDEO_CAPTURE / RESOURCE_PROTECTED_MEDIA_ID / RESOURCE_MIDI_SYSEX
+        // 定位走 onGeolocationPermissionsShowPrompt；网站通知 WebView 不走 PermissionRequest（设置里用 JS 拒绝生效）
         val res = request.resources.toSet()
         val keep = mutableListOf<String>()
         if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in res) keep += PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
@@ -902,6 +1253,14 @@ class BrowserTab(private val appContext: Context) {
     fun destroyNow() {
         if (destroyed) return
         destroyed = true
+        cancelFileChooser()
+        exitCustomView()
+        synchronized(blobLock) {
+            runCatching { blobStream?.close() }
+            blobStream = null
+            runCatching { blobFile?.delete() }
+            blobFile = null
+        }
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()
@@ -946,6 +1305,8 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTab(target: String = "", incognito: Boolean = false) {
+        // 同一站点已有标签：切过去并加载，避免重复卡片
+        if (target.isNotBlank() && reuseTabFor(target, incognito)) return
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -961,6 +1322,30 @@ class BrowserState(private val context: Context) {
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
+    }
+
+    /**
+     * 若已有同 host、同无痕状态的标签则选中并（URL 不同时）加载，返回 true。
+     * 仅对看起来像网址的目标生效，搜索词仍新开标签。
+     */
+    private fun reuseTabFor(target: String, incognito: Boolean): Boolean {
+        if (!looksLikeUrl(target)) return false
+        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
+        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
+        if (host.isNullOrBlank()) return false
+        val idx = tabs.indexOfFirst { tab ->
+            tab.incognito == incognito &&
+                runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
+        }
+        if (idx < 0) return false
+        select(idx)
+        val existing = tabs[idx]
+        if (!existing.url.equals(normalized, ignoreCase = true) &&
+            !existing.url.equals(target, ignoreCase = true)
+        ) {
+            existing.load(target)
+        }
+        return true
     }
 
     /** 当前标签是否无痕 */
@@ -1007,6 +1392,8 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTabInBackground(target: String) {
+        // 同站已有标签：在该标签加载，不抢当前焦点、不新建卡片
+        if (target.isNotBlank() && reuseTabForBackground(target)) return
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -1018,6 +1405,21 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tabs.add(tab)
         tab.load(target)
+    }
+
+    /** 后台打开：同 host 已有标签则只 load，不切换 active */
+    private fun reuseTabForBackground(target: String): Boolean {
+        if (!looksLikeUrl(target)) return false
+        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
+        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
+        if (host.isNullOrBlank()) return false
+        val existing = tabs.firstOrNull { tab ->
+            runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
+        } ?: return false
+        if (!existing.url.equals(normalized, ignoreCase = true)) {
+            existing.load(target)
+        }
+        return true
     }
 
     /**
