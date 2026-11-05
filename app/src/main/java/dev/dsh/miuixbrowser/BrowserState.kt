@@ -1305,6 +1305,8 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTab(target: String = "", incognito: Boolean = false) {
+        // 同一站点已有标签：切过去并加载，避免重复卡片
+        if (target.isNotBlank() && reuseTabFor(target, incognito)) return
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -1320,6 +1322,30 @@ class BrowserState(private val context: Context) {
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
+    }
+
+    /**
+     * 若已有同 host、同无痕状态的标签则选中并（URL 不同时）加载，返回 true。
+     * 仅对看起来像网址的目标生效，搜索词仍新开标签。
+     */
+    private fun reuseTabFor(target: String, incognito: Boolean): Boolean {
+        if (!looksLikeUrl(target)) return false
+        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
+        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
+        if (host.isNullOrBlank()) return false
+        val idx = tabs.indexOfFirst { tab ->
+            tab.incognito == incognito &&
+                runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
+        }
+        if (idx < 0) return false
+        select(idx)
+        val existing = tabs[idx]
+        if (!existing.url.equals(normalized, ignoreCase = true) &&
+            !existing.url.equals(target, ignoreCase = true)
+        ) {
+            existing.load(target)
+        }
+        return true
     }
 
     /** 当前标签是否无痕 */
@@ -1366,6 +1392,8 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTabInBackground(target: String) {
+        // 同站已有标签：在该标签加载，不抢当前焦点、不新建卡片
+        if (target.isNotBlank() && reuseTabForBackground(target)) return
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -1377,6 +1405,21 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tabs.add(tab)
         tab.load(target)
+    }
+
+    /** 后台打开：同 host 已有标签则只 load，不切换 active */
+    private fun reuseTabForBackground(target: String): Boolean {
+        if (!looksLikeUrl(target)) return false
+        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
+        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
+        if (host.isNullOrBlank()) return false
+        val existing = tabs.firstOrNull { tab ->
+            runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
+        } ?: return false
+        if (!existing.url.equals(normalized, ignoreCase = true)) {
+            existing.load(target)
+        }
+        return true
     }
 
     /**

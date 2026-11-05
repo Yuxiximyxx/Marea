@@ -1285,7 +1285,12 @@ fun BrowserScreen(
                 null
             },
             endAction = null,
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            // 更多 / 标签列表：不做页面取样模糊（卡顿来源），走不透明底；其余弹层仍可采样
+            backdrop = when (lastActiveSheet) {
+                Sheet.Menu, Sheet.Tabs -> null
+                else -> if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null
+            },
+            enableWindowDim = lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs,
             onDismissRequest = { sheet = Sheet.None },
         ) {
             Column(
@@ -3001,14 +3006,25 @@ private fun MenuGrid(
                             dimmed = (dragAction != null && dragAction != action) || (inHidden && dragAction == null),
                             onClick = { if (!editing) onAction(action) },
                             onDragStart = {
-                                dragAction = action
-                                startDrag(inHidden)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                // 长按不进编辑；等 onDrag 出现真实位移再展开隐藏区
                             },
-                            onDrag = { dragOffset += it },
+                            onDrag = { delta ->
+                                if (delta.x != 0f || delta.y != 0f) {
+                                    if (dragAction == null) {
+                                        dragAction = action
+                                        if (!editing) {
+                                            startDrag(inHidden)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    }
+                                    dragOffset += delta
+                                }
+                            },
                             onDragEnd = {
-                                finishDrag(action, inHidden, row, col)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (editing && dragAction == action) {
+                                    finishDrag(action, inHidden, row, col)
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
                                 dragAction = null
                                 dragOffset = Offset.Zero
                             },
