@@ -423,18 +423,11 @@ fun SettingsScreen(
                 onDismissRequest = { showProxyDialog = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "启用代理",
-                            fontSize = 16.sp,
-                            color = MiuixTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Switch(checked = proxyOn, onCheckedChange = { proxyOn = it })
-                    }
+                    SwitchPreference(
+                        title = "启用代理",
+                        checked = proxyOn,
+                        onCheckedChange = { proxyOn = it },
+                    )
                     GlassDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "类型",
@@ -462,28 +455,12 @@ fun SettingsScreen(
                             singleLine = true,
                         )
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 6.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "认证",
-                            fontSize = 16.sp,
-                            color = if (authSwitchEnabled) {
-                                MiuixTheme.colorScheme.onSurface
-                            } else {
-                                MiuixTheme.colorScheme.onSurfaceVariantSummary
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        Switch(
-                            checked = proxyAuth,
-                            onCheckedChange = { proxyAuth = it },
-                            enabled = authSwitchEnabled,
-                        )
-                    }
+                    SwitchPreference(
+                        title = "认证",
+                        checked = proxyAuth,
+                        onCheckedChange = { proxyAuth = it },
+                        enabled = authSwitchEnabled,
+                    )
                     if (proxyAuth && authSwitchEnabled) {
                         TextField(
                             value = proxyUser,
@@ -498,20 +475,6 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             label = "密码",
                             singleLine = true,
-                        )
-                        Text(
-                            text = "代理关闭时也可先保存认证；仅 HTTP 代理挑战会自动提交。",
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(bottom = 6.dp),
-                        )
-                    }
-                    if (proxyType == 1) {
-                        Text(
-                            text = "SOCKS5 不支持账密认证，认证开关已禁用。",
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(bottom = 6.dp),
                         )
                     }
                     Row(

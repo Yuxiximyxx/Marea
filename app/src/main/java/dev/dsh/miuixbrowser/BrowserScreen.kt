@@ -3004,6 +3004,9 @@ private fun MenuGrid(
     var editing by remember { mutableStateOf(false) }
     var dragAction by remember { mutableStateOf<MenuAction?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    // 长按后、尚未拖够距离时的累计位移：超过阈值才真正进入编辑，避免手指轻微抖动误触发
+    var pendingDrag by remember { mutableStateOf(Offset.Zero) }
+    val enterEditThresholdPx = with(density) { 24.dp.toPx() }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val cellWidthPx = with(density) { (maxWidth / columns).toPx() }
@@ -3060,13 +3063,20 @@ private fun MenuGrid(
                             onDrag = { delta ->
                                 if (delta.x != 0f || delta.y != 0f) {
                                     if (dragAction == null) {
-                                        dragAction = action
-                                        if (!editing) {
-                                            startDrag(inHidden)
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        // 已在编辑态：直接跟手；否则累计位移，拖过阈值才进入编辑
+                                        pendingDrag += delta
+                                        if (editing || pendingDrag.getDistance() >= enterEditThresholdPx) {
+                                            dragAction = action
+                                            if (!editing) {
+                                                startDrag(inHidden)
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
+                                            dragOffset += pendingDrag
+                                            pendingDrag = Offset.Zero
                                         }
+                                    } else {
+                                        dragOffset += delta
                                     }
-                                    dragOffset += delta
                                 }
                             },
                             onDragEnd = {
@@ -3076,10 +3086,12 @@ private fun MenuGrid(
                                 }
                                 dragAction = null
                                 dragOffset = Offset.Zero
+                                pendingDrag = Offset.Zero
                             },
                             onDragCancel = {
                                 dragAction = null
                                 dragOffset = Offset.Zero
+                                pendingDrag = Offset.Zero
                             },
                         )
                     }
