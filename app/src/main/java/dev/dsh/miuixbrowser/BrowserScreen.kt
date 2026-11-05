@@ -158,6 +158,7 @@ import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Back
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import com.kyant.backdrop.highlight.Highlight as LiquidHighlight
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
@@ -1975,7 +1976,11 @@ fun BrowserScreen(
 
 /* ------------------------------ 玻璃 ------------------------------ */
 
-/** MIUIX Glass 底板：主页用 glassPanel 真玻璃；无采样/关模糊时回退到渐变底板。 */
+/**
+ * 底栏底板：
+ * - 主页有 miuix LayerBackdrop 时：继续用 glassPanel 真采样模糊
+ * - 网页态 / 关模糊采样：改用 AndroidLiquidGlass（kyant backdrop）液态折射玻璃
+ */
 @Composable
 private fun Modifier.glassBar(
     backdrop: LayerBackdrop?,
@@ -1988,33 +1993,44 @@ private fun Modifier.glassBar(
     val rounded = RoundedCornerShape(corner)
     val canUseGlass = blurEnabled && textureBlurEnabled && backdrop != null &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    // 关闭模糊时使用接近不透明的纯色底板；网页态（无采样）提高不透明度，避免内容透出干扰。
-    val tint = when {
-        !blurEnabled -> Brush.verticalGradient(
-            listOf(
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
-            ),
+
+    if (canUseGlass) {
+        return this.glassPanel(
+            backdrop = backdrop,
+            shape = glassShape,
+            style = GlassDefaults.style(dark),
+            material = GlassMaterials.puredThinGlass(dark),
+            stroke = GlassStrokes.forTheme(dark),
+            shading = false,
+            fallback = Modifier
+                .clip(rounded)
+                .background(
+                    if (dark) Color(0xF02B2B31) else Color(0xF0FFFFFF),
+                    rounded,
+                ),
         )
-        dark -> Brush.verticalGradient(listOf(Color(0xF02B2B31), Color(0xE81A1A20)))
-        else -> Brush.verticalGradient(listOf(Color(0xF0FFFFFF), Color(0xE8E7EAF0)))
     }
 
-    return this.glassPanel(
-        backdrop = if (canUseGlass) backdrop else null,
-        shape = glassShape,
-        style = GlassDefaults.style(dark),
-        material = if (canUseGlass) GlassMaterials.puredThinGlass(dark) else null,
-        stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
-        shading = false,
-        fallback = Modifier
+    if (!blurEnabled) {
+        // 用户关闭模糊：不透明底，避免内容透出
+        val solid = if (dark) Color(0xF51A1A20) else Color(0xF5F5F7FA)
+        return this
             .clip(rounded)
-            .background(tint, rounded)
-            .border(
-                width = 1.dp,
-                color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
-                shape = rounded,
-            ),
+            .background(solid, rounded)
+            .border(1.dp, Color.White.copy(alpha = if (dark) 0.14f else 0.85f), rounded)
+    }
+
+    // 液态玻璃：WebView 页无法采样，用主题渐变 + lens 折射
+    val liquid = rememberLiquidBackdrop(dark)
+    return this.liquidGlass(
+        backdrop = liquid,
+        shape = liquidBarShape(corner),
+        refractionHeight = 12.dp,
+        refractionAmount = 24.dp,
+        blurRadius = 2.dp,
+        tint = if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.45f),
+        highlight = LiquidHighlight(width = 1.dp, alpha = if (dark) 0.35f else 0.9f),
+        shadow = null,
     )
 }
 
@@ -2197,10 +2213,20 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
         label = "tabPress",
     )
     val color = MiuixTheme.colorScheme.onSurface
+    val dark = isAppDarkTheme()
+    val liquid = rememberLiquidBackdrop(dark)
     Box(
         modifier = Modifier
             .size(44.dp)
-            .clip(CircleShape)
+            .liquidGlass(
+                backdrop = liquid,
+                shape = liquidCircleShape,
+                refractionHeight = 6.dp,
+                refractionAmount = 12.dp,
+                blurRadius = 1.5.dp,
+                tint = liquidButtonTint(dark),
+                highlight = LiquidHighlight(width = 0.75.dp, alpha = if (dark) 0.3f else 0.85f),
+            )
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
@@ -2266,10 +2292,20 @@ private fun PressIcon(
     } else {
         MiuixTheme.colorScheme.onSurface.copy(alpha = 0.25f)
     }
+    val dark = isAppDarkTheme()
+    val liquid = rememberLiquidBackdrop(dark)
     Box(
         modifier = Modifier
             .size(44.dp)
-            .clip(CircleShape)
+            .liquidGlass(
+                backdrop = liquid,
+                shape = liquidCircleShape,
+                refractionHeight = 6.dp,
+                refractionAmount = 12.dp,
+                blurRadius = 1.5.dp,
+                tint = liquidButtonTint(dark),
+                highlight = LiquidHighlight(width = 0.75.dp, alpha = if (dark) 0.3f else 0.85f),
+            )
             .clickable(
                 interactionSource = interaction,
                 indication = null,

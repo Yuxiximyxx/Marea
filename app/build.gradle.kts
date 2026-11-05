@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 167
-        versionName = "v1.5.17-dev"
+        versionCode = 168
+        versionName = "v1.5.18-dev"
     }
 
     buildFeatures {
@@ -85,4 +85,6 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
+    // Liquid Glass（AndroidLiquidGlass / Kyant0）：底栏与按钮的折射玻璃
+    implementation("io.github.kyant0:backdrop:2.0.1")
 }
