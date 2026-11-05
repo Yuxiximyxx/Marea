@@ -153,6 +153,9 @@ class BrowserTab(private val appContext: Context) {
     /** blob / data URL 抽取完成：dataUri 或 tempPath 二选一（大文件走 tempPath） */
     var onBlobReady: ((dataUrl: String?, fileName: String, mime: String?, tempPath: String?) -> Unit)? = null
 
+    /** 大 blob 开始读取（界面可提示“正在读取”） */
+    var onBlobStart: ((fileName: String) -> Unit)? = null
+
     /** blob 抽取失败 */
     var onBlobError: ((message: String) -> Unit)? = null
 
@@ -178,73 +181,102 @@ class BrowserTab(private val appContext: Context) {
 
     /**
      * blob 分片接收：evaluateJavascript 返回值有大小上限，大文件必须走 JS→桥接分片。
-     * begin/appendChunk/end/fail 由页面脚本调用（binder 线程，内部用锁写缓存文件）。
+     *
+     * 每次 [extractBlob] 在原生侧创建一个独立会话（一次性 token + 独立缓存文件）：
+     * - 桥接方法全部要求 token，网页自己调用 MafariBlob 拿不到 token，无法伪造下载或写缓存文件；
+     * - 多个 blob 并发抽取互不干扰；
+     * - 写入出错会记入会话，end 时校验总字节数，残缺文件不会被当成成功。
      */
-    private val blobLock = Any()
-    private var blobStream: java.io.FileOutputStream? = null
-    private var blobFile: java.io.File? = null
-    private var blobName = ""
-    private var blobMime: String? = null
+    private class BlobSession(
+        val file: java.io.File,
+        val stream: java.io.FileOutputStream,
+        var name: String,
+        var mime: String?,
+    ) {
+        var written = 0L
+        var failed = false
+        var finished = false
+    }
+
+    private val blobSessions = java.util.concurrent.ConcurrentHashMap<String, BlobSession>()
+
+    private fun discardBlobSession(token: String) {
+        val session = blobSessions.remove(token) ?: return
+        synchronized(session) {
+            runCatching { session.stream.close() }
+            runCatching { session.file.delete() }
+        }
+    }
+
+    private fun discardAllBlobSessions() {
+        blobSessions.keys.toList().forEach { discardBlobSession(it) }
+    }
+
+    private fun reportBlobError(message: String) {
+        webView.post { onBlobError?.invoke(message) }
+    }
 
     private val blobBridge = object {
+        /** 返回 false 表示原生侧已拒绝（token 无效 / 空间不足），JS 端应直接停止。 */
         @android.webkit.JavascriptInterface
-        fun begin(name: String, mime: String) {
-            synchronized(blobLock) {
-                runCatching { blobStream?.close() }
-                blobStream = null
-                runCatching { blobFile?.delete() }
-                val f = java.io.File(appContext.cacheDir, "mafari_blob_${System.currentTimeMillis()}.part")
-                blobFile = f
-                blobStream = java.io.FileOutputStream(f)
-                blobName = name.ifBlank { "download" }
-                blobMime = mime.ifBlank { null }
+        fun begin(token: String, mime: String, size: Double): Boolean {
+            val session = blobSessions[token] ?: return false
+            if (size > 0 && size > appContext.cacheDir.usableSpace - MIN_FREE_BYTES) {
+                discardBlobSession(token)
+                reportBlobError("存储空间不足，无法读取该文件")
+                return false
             }
+            if (mime.isNotBlank()) session.mime = mime
+            if (size >= LARGE_BLOB_NOTICE_BYTES) {
+                val label = session.name
+                webView.post { onBlobStart?.invoke(label) }
+            }
+            return true
         }
 
         @android.webkit.JavascriptInterface
-        fun appendChunk(b64: String) {
+        fun appendChunk(token: String, b64: String) {
+            val session = blobSessions[token] ?: return
             try {
                 val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                synchronized(blobLock) {
-                    blobStream?.write(bytes)
-                    blobStream?.flush()
+                synchronized(session) {
+                    if (session.finished || session.failed) return
+                    session.stream.write(bytes)
+                    session.written += bytes.size
                 }
             } catch (e: Exception) {
+                session.failed = true
                 Diag.log("blob append failed: ${e.message}")
             }
         }
 
         @android.webkit.JavascriptInterface
-        fun end() {
-            val file: java.io.File?
-            val name: String
-            val mime: String?
-            synchronized(blobLock) {
-                runCatching { blobStream?.flush(); blobStream?.close() }
-                blobStream = null
-                file = blobFile
-                name = blobName
-                mime = blobMime
-                blobFile = null
+        fun end(token: String, total: Double) {
+            val session = blobSessions.remove(token) ?: return
+            val ok: Boolean
+            synchronized(session) {
+                session.finished = true
+                runCatching { session.stream.flush(); session.stream.close() }
+                ok = !session.failed && session.written > 0L &&
+                    (total < 0 || session.written == total.toLong()) &&
+                    session.file.exists() && session.file.length() == session.written
             }
-            if (file == null || !file.exists() || file.length() <= 0L) {
-                webView.post { onBlobError?.invoke("blob 为空或写入失败") }
+            if (!ok) {
+                runCatching { session.file.delete() }
+                reportBlobError("文件读取不完整或写入失败")
                 return
             }
-            webView.post {
-                onBlobReady?.invoke(null, name, mime, file.absolutePath)
-            }
+            val name = Downloader.withExtension(session.name, session.mime)
+            val mime = session.mime
+            val path = session.file.absolutePath
+            webView.post { onBlobReady?.invoke(null, name, mime, path) }
         }
 
         @android.webkit.JavascriptInterface
-        fun fail(msg: String) {
-            synchronized(blobLock) {
-                runCatching { blobStream?.close() }
-                blobStream = null
-                runCatching { blobFile?.delete() }
-                blobFile = null
-            }
-            webView.post { onBlobError?.invoke("无法读取 blob：$msg") }
+        fun fail(token: String, msg: String) {
+            if (!blobSessions.containsKey(token)) return
+            discardBlobSession(token)
+            reportBlobError("无法读取 blob：$msg")
         }
     }
 
@@ -318,13 +350,22 @@ class BrowserTab(private val appContext: Context) {
     ) {
         val fileName = Downloader.fileNameFrom(url, disposition)
         val preferredMime = mime ?: "application/octet-stream"
+        val token = java.util.UUID.randomUUID().toString()
+        val file = java.io.File(appContext.cacheDir, "mafari_blob_${token}.part")
+        val stream = runCatching { java.io.FileOutputStream(file) }.getOrElse {
+            reportBlobError("无法创建缓存文件")
+            return
+        }
+        blobSessions[token] = BlobSession(file, stream, fileName, mime?.takeIf { it.isNotBlank() && it != "application/octet-stream" })
         // 分片 256KB 二进制 → base64 约 350KB，避开 JS 桥接/字符串上限
         val js = """
             (function(){
+              var B = window.MafariBlob;
+              var token = ${org.json.JSONObject.quote(token)};
               var url = ${org.json.JSONObject.quote(url)};
-              var fileName = ${org.json.JSONObject.quote(fileName)};
               var preferredMime = ${org.json.JSONObject.quote(preferredMime)};
               var CHUNK = 256 * 1024;
+              if (!B) return;
 
               function findCached(u) {
                 try {
@@ -372,12 +413,12 @@ class BrowserTab(private val appContext: Context) {
                 return viaXhr(u).catch(function(){ return viaFetch(u); });
               }
 
-              return getBlob(url).then(function(b){
+              getBlob(url).then(function(b){
                 if (!b || !b.size) throw new Error('empty blob');
-                MafariBlob.begin(fileName, b.type || preferredMime);
+                if (!B.begin(token, b.type || preferredMime, b.size)) return;
                 var i = 0;
                 function next(){
-                  if (i >= b.size) { MafariBlob.end(); return; }
+                  if (i >= b.size) { B.end(token, b.size); return; }
                   var end = Math.min(i + CHUNK, b.size);
                   var slice = b.slice(i, end);
                   i = end;
@@ -388,12 +429,12 @@ class BrowserTab(private val appContext: Context) {
                     for (var j = 0; j < bytes.length; j += BL) {
                       bin += String.fromCharCode.apply(null, bytes.subarray(j, j + BL));
                     }
-                    MafariBlob.appendChunk(btoa(bin));
+                    B.appendChunk(token, btoa(bin));
                     return next();
                   });
                 }
                 return next();
-              }).catch(function(e){ MafariBlob.fail(String(e && e.message || e)); });
+              }).catch(function(e){ B.fail(token, String(e && e.message || e)); });
             })()
         """.trimIndent()
         // 结果由 blobBridge 回调，这里不解析返回值
@@ -406,6 +447,7 @@ class BrowserTab(private val appContext: Context) {
     init {
         runCatching { webView.addJavascriptInterface(AdBlockBridge(), "MafariAdblock") }
         runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
+        cleanStaleBlobFiles(appContext)
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 // 社区通用：缓存 createObjectURL 的 Blob，extractBlob 直接读，避免 fetch blob: 失败
@@ -645,8 +687,13 @@ class BrowserTab(private val appContext: Context) {
                     extractBlob(link, userAgent, contentDisposition, mimeType)
                 // data URL 附件：直接交给界面落盘
                 link.startsWith("data:", ignoreCase = true) -> {
-                    val name = Downloader.fileNameFrom(link, contentDisposition)
-                    onBlobReady?.invoke(link, name, mimeType, null)
+                    val dataMime = link.substringAfter("data:").substringBefore(',').substringBefore(';')
+                        .ifBlank { null }
+                    val name = Downloader.withExtension(
+                        Downloader.fileNameFrom(link, contentDisposition),
+                        mimeType?.takeIf { it.isNotBlank() } ?: dataMime,
+                    )
+                    onBlobReady?.invoke(link, name, mimeType ?: dataMime, null)
                 }
                 else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
             }
@@ -1272,12 +1319,7 @@ class BrowserTab(private val appContext: Context) {
         destroyed = true
         cancelFileChooser()
         exitCustomView()
-        synchronized(blobLock) {
-            runCatching { blobStream?.close() }
-            blobStream = null
-            runCatching { blobFile?.delete() }
-            blobFile = null
-        }
+        discardAllBlobSessions()
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()
@@ -1500,5 +1542,21 @@ class BrowserState(private val context: Context) {
 
     companion object {
         const val MAX_TABS = 99
+    }
+}
+
+
+private const val MIN_FREE_BYTES = 64L * 1024 * 1024
+private const val LARGE_BLOB_NOTICE_BYTES = 8L * 1024 * 1024
+
+@Volatile
+private var staleBlobFilesCleaned = false
+
+/** 进程内第一次创建标签页时，清掉上次进程被杀 / 页面中途跳转遗留的 blob 缓存文件 */
+private fun cleanStaleBlobFiles(context: Context) {
+    if (staleBlobFilesCleaned) return
+    staleBlobFilesCleaned = true
+    runCatching {
+        context.cacheDir.listFiles { f -> f.name.startsWith("mafari_blob_") }?.forEach { it.delete() }
     }
 }

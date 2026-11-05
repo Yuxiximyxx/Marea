@@ -52,7 +52,24 @@ object Downloader {
         val name = runCatching { URLDecoder.decode(raw ?: "", "UTF-8") }
             .getOrDefault(raw ?: "")
             .ifBlank { "download_${System.currentTimeMillis()}" }
-        return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80)
+        return truncateName(name.replace(Regex("[\\\\/:*?\"<>|]"), "_"), 80)
+    }
+
+    /** 超长文件名截断时保留扩展名 */
+    private fun truncateName(name: String, max: Int): String {
+        if (name.length <= max) return name
+        val dot = name.lastIndexOf('.')
+        val ext = if (dot > 0 && name.length - dot <= 10) name.substring(dot) else ""
+        return name.substring(0, (max - ext.length).coerceAtLeast(1)) + ext
+    }
+
+    /** 文件名没有扩展名时，按 MIME 补一个（blob 地址的文件名常常只是一串 UUID） */
+    fun withExtension(name: String, mime: String?): String {
+        if (Regex("\\.[A-Za-z0-9]{1,8}$").containsMatchIn(name)) return name
+        val type = mime?.substringBefore(';')?.trim()?.lowercase()
+        if (type.isNullOrBlank() || type == "application/octet-stream") return name
+        val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type)
+        return if (ext.isNullOrBlank()) name else truncateName("$name.$ext", 80)
     }
 
     fun start(context: Context, url: String, userAgent: String?, fileName: String, mimeType: String?) {
@@ -345,6 +362,48 @@ object Downloader {
         saveBytes(context, bytes, fileName, meta.substringBefore(';').ifBlank { null })
         true
     }.getOrDefault(false)
+
+    /** 把缓存文件流式复制到 Download/mafari（大 blob 用，不把整个文件读进内存） */
+    fun saveFile(context: Context, file: java.io.File, fileName: String, mime: String?): Boolean {
+        var uri: Uri? = null
+        return runCatching {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val target = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return@runCatching false
+            uri = target
+            val out = context.contentResolver.openOutputStream(target) ?: error("no output stream")
+            out.use { o -> file.inputStream().use { it.copyTo(o, 64 * 1024) } }
+            context.contentResolver.update(
+                target,
+                ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) },
+                null,
+                null,
+            )
+            val size = file.length()
+            tasks.add(
+                0,
+                DownloadTask(
+                    name = fileName,
+                    url = "",
+                    mime = mime,
+                    uri = target,
+                    bytes = size,
+                    total = size,
+                    state = DownloadState.DONE,
+                ),
+            )
+            true
+        }.getOrElse {
+            // 写到一半失败：删掉未完成的条目，避免留下残缺文件
+            uri?.let { u -> runCatching { context.contentResolver.delete(u, null, null) } }
+            false
+        }
+    }
 
     /** 直接把字节写入 Download/mafari（blob / data URL 共用） */
     fun saveBytes(context: Context, bytes: ByteArray, fileName: String, mime: String?): Boolean = runCatching {

@@ -449,6 +449,7 @@ fun BrowserScreen(
             tab.requestAndroidPermissions = null
             tab.onBlobReady = null
             tab.onBlobError = null
+            tab.onBlobStart = null
             fileChooserChoice = null
             customView = null
             webPermPrompt = null
@@ -715,7 +716,12 @@ fun BrowserScreen(
                 )
             }
         }
+        tab.onBlobStart = {
+            android.widget.Toast.makeText(context, "正在读取文件…", android.widget.Toast.LENGTH_SHORT).show()
+        }
         tab.onBlobReady = { dataUri, fileName, mime, tempPath ->
+            // 上一个还没确认的 blob 被新的顶替：先删它的缓存文件，避免泄漏
+            pendingDownload?.tempPath?.let { p -> runCatching { java.io.File(p).delete() } }
             pendingDownload = DownloadRequest(
                 url = "",
                 userAgent = null,
@@ -1656,9 +1662,9 @@ fun BrowserScreen(
                                         when {
                                             req.tempPath != null -> {
                                                 val f = java.io.File(req.tempPath)
-                                                val ok = f.exists() && Downloader.saveBytes(
+                                                val ok = f.exists() && Downloader.saveFile(
                                                     context,
-                                                    f.readBytes(),
+                                                    f,
                                                     req.fileName,
                                                     req.mime,
                                                 )
