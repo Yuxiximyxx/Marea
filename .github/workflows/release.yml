@@ -120,9 +120,34 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+      # 优先用 CHANGELOG.md 中该 tag 对应小节作为 Release 正文；没有则退回自动 notes
+      - name: Prepare release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          python3 - <<'PY'
+          import os, re, pathlib
+          tag = os.environ.get("GITHUB_REF_NAME", "")
+          ver = tag[1:] if tag.startswith("v") else tag
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8") if pathlib.Path("CHANGELOG.md").exists() else ""
+          # 匹配 ## [1.5.8-dev] 或 ## 1.5.8-dev 或 ## [v1.5.8-dev]
+          pat = re.compile(
+              rf"^##\s*\[?v?{re.escape(ver)}\]?[^\n]*\n(.*?)(?=^##\s|\Z)",
+              re.M | re.S,
+          )
+          m = pat.search(text)
+          body = (m.group(1).strip() if m else "").strip()
+          header = f"## {tag}\n\n"
+          out = header + (body if body else "见 CHANGELOG.md 与提交历史。")
+          pathlib.Path("dist/RELEASE_NOTES.md").write_text(out + "\n", encoding="utf-8")
+          print(out)
+          PY
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.apk
+          body_path: dist/RELEASE_NOTES.md
           generate_release_notes: true
