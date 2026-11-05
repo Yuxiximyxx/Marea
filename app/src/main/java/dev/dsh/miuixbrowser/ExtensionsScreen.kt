@@ -63,6 +63,8 @@ import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
@@ -85,6 +87,8 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val scope = rememberCoroutineScope()
 
     val backdrop = rememberLayerBackdrop()
+    val liquidBackdrop = rememberKyantBackdrop()
+    val liquid = if (rememberGlassActive(blurEnabled)) liquidBackdrop else null
     val glass = rememberGlassActive(blurEnabled)
     val deleteTarget = deleting
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -132,9 +136,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = { LiquidGlassBackButton(backdrop = liquid, onClick = onBack) },
                 actions = {
-                    HapticGlassIconButton(
+                    LiquidGlassButton(
                         onClick = { showMore = true },
+                        backdrop = liquid,
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .onGloballyPositioned { moreAnchor = it.boundsInRoot() },
@@ -143,6 +149,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                             imageVector = MiuixIcons.Glass.More,
                             contentDescription = "更多",
                             modifier = Modifier.size(22.dp),
+                            tint = MiuixTheme.colorScheme.onSurface,
                         )
                     }
                 },
@@ -155,6 +162,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding(),
@@ -276,16 +284,14 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             }
 
             // 右下圆形添加按钮
-            Box(
+            LiquidGlassFab(
+                onClick = { creating = true },
+                backdrop = liquid,
+                primary = true,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
-                    .padding(20.dp)
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(MiuixTheme.colorScheme.primary)
-                    .clickable { creating = true },
-                contentAlignment = Alignment.Center,
+                    .padding(20.dp),
             ) {
                 Icon(
                     imageVector = MiuixIcons.Glass.Add,

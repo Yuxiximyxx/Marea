@@ -56,6 +56,8 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -100,6 +102,7 @@ fun SettingsScreen(
     }
 
     val backdrop = rememberLayerBackdrop()
+    val liquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)
     val popupVisuals = GlassPopupDefaults.visuals()
     val scrollBehavior = MiuixScrollBehavior()
@@ -114,6 +117,12 @@ fun SettingsScreen(
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = {
+                    LiquidGlassBackButton(
+                        backdrop = if (glass) liquidBackdrop else null,
+                        onClick = onBack,
+                    )
+                },
             )
         },
     ) { innerPadding ->
@@ -123,6 +132,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding()

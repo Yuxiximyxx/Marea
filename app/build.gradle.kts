@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 173
-        versionName = "v1.5.23-stable"
+        versionCode = 174
+        versionName = "v1.5.24-stable"
     }
 
     buildFeatures {
@@ -76,6 +76,8 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-glass-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-glass-icons-android:$miuix")
     implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuix")
+    // Kyant0/AndroidLiquidGlass（KMP 版 2.x，Android 变体）
+    implementation("io.github.kyant0:backdrop-android:2.0.1")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")

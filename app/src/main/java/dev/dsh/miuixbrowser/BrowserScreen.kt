@@ -168,6 +168,8 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDefaults
@@ -227,6 +229,11 @@ fun BrowserScreen(
     val browserSurfaceColor = MiuixTheme.colorScheme.surface
     val browserBackdrop = rememberLayerBackdrop {
         // 给采集层补一层不透明底色，避免网页透明区域出现模糊采样伪影。
+        drawRect(browserSurfaceColor)
+        drawContent()
+    }
+    // Kyant 液态玻璃的采集层（只给标签页 sheet 头部的左右按钮用）
+    val liquidBackdrop = rememberKyantBackdrop {
         drawRect(browserSurfaceColor)
         drawContent()
     }
@@ -856,7 +863,13 @@ fun BrowserScreen(
                 .fillMaxSize()
                 // MIUIX backdrop 仅在主页采集 Compose 内容；网页状态不采集 WebView，
                 // 避免 AndroidView / SurfaceView 与 RuntimeShader 组合时出现闪烁或崩溃。
-                .then(if (homeBlurAvailable) Modifier.layerBackdrop(browserBackdrop) else Modifier),
+                .then(
+                    if (homeBlurAvailable) {
+                        Modifier.layerBackdrop(browserBackdrop).kyantLayerBackdrop(liquidBackdrop)
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
 
         // ---- 首页壁纸：铺满全屏，盖住状态栏 ----
@@ -1289,8 +1302,10 @@ fun BrowserScreen(
                 {
                     val pageCount = state.tabs.count { it.incognito == (tabsPage == 1) }
                     Box(modifier = Modifier.fillMaxWidth()) {
+                        val liquid = if (homeBlurAvailable && settings.blurEnabled) liquidBackdrop else null
                         TabAddButton(
                             canAdd = state.tabs.size < 99,
+                            backdrop = liquid,
                             modifier = Modifier.align(Alignment.CenterStart),
                             onClick = {
                                 state.newTab(incognito = tabsPage == 1)
@@ -1303,20 +1318,18 @@ fun BrowserScreen(
                             onSelect = { tabsPage = it },
                             modifier = Modifier.align(Alignment.Center),
                         )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .graphicsLayer { alpha = if (pageCount > 0) 1f else 0.4f },
+                        LiquidGlassButton(
+                            onClick = { showClearTabsConfirm = true },
+                            backdrop = liquid,
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                            enabled = pageCount > 0,
                         ) {
-                            HapticGlassIconButton(
-                                onClick = { if (pageCount > 0) showClearTabsConfirm = true },
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Glass.Delete,
-                                    contentDescription = "全部删除",
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
+                            Icon(
+                                imageVector = MiuixIcons.Glass.Delete,
+                                contentDescription = "全部删除",
+                                modifier = Modifier.size(22.dp),
+                                tint = MiuixTheme.colorScheme.onSurface,
+                            )
                         }
                     }
                 }
@@ -3298,19 +3311,16 @@ private fun TabCard(
 private fun TabAddButton(
     canAdd: Boolean,
     onClick: () -> Unit,
+    backdrop: com.kyant.backdrop.Backdrop?,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = LocalHapticFeedback.current
-    Box(
-        modifier = modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
-            .clickable(enabled = canAdd) {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
+    LiquidGlassButton(
+        onClick = onClick,
+        backdrop = backdrop,
+        modifier = modifier,
+        tint = MiuixTheme.colorScheme.primary,
+        tintAlpha = 0.28f,
+        enabled = canAdd,
     ) {
         Icon(
             imageVector = MiuixIcons.Glass.Add,

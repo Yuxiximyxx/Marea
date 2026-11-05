@@ -58,6 +58,8 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
 import top.yukonga.miuix.kmp.glass.GlassDialog
@@ -118,7 +120,9 @@ fun LibraryScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val backdrop = rememberLayerBackdrop()
+    val liquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)
+    val liquid = if (glass) liquidBackdrop else null
     val pagerState = rememberPagerState(
         initialPage = initialTab.coerceIn(0, 1),
         pageCount = { 2 },
@@ -168,18 +172,21 @@ fun LibraryScreen(
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = { LiquidGlassBackButton(backdrop = liquid, onClick = onBack) },
                 actions = {
-                    HapticGlassIconButton(
+                    LiquidGlassButton(
                         onClick = {
                             searching = !searching
                             if (!searching) query = ""
                         },
+                        backdrop = liquid,
                         modifier = Modifier.padding(end = 8.dp),
                     ) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Search,
                             contentDescription = "搜索",
                             modifier = Modifier.size(22.dp),
+                            tint = MiuixTheme.colorScheme.onSurface,
                         )
                     }
                 },
@@ -216,6 +223,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .layerBackdrop(backdrop)
+                    .kyantLayerBackdrop(liquidBackdrop)
                     .background(MiuixTheme.colorScheme.surface),
             ) {
                 HorizontalPager(
@@ -248,26 +256,17 @@ fun LibraryScreen(
 
             // 书签栏右下角 FAB：GlassPopup 放在全屏 Box 根坐标系，锚点用 boundsInRoot
             if (pagerState.currentPage == TAB_BOOKMARKS) {
-                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
                         .padding(end = 20.dp, bottom = 96.dp),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(MiuixTheme.colorScheme.primary)
-                            .onGloballyPositioned { menuAnchor = it.boundsInRoot() }
-                            .clickable {
-                                haptic.performHapticFeedback(
-                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
-                                )
-                                showMenu = true
-                            },
-                        contentAlignment = Alignment.Center,
+                    LiquidGlassFab(
+                        onClick = { showMenu = true },
+                        backdrop = liquid,
+                        primary = true,
+                        modifier = Modifier.onGloballyPositioned { menuAnchor = it.boundsInRoot() },
                     ) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Add,
@@ -315,27 +314,16 @@ fun LibraryScreen(
 
             // 历史栏右下角清空 FAB：位置 / 大小 / 形状与书签 FAB 一致，图标为红色垃圾桶
             if (pagerState.currentPage == TAB_HISTORY && store.items.isNotEmpty()) {
-                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
                         .padding(end = 20.dp, bottom = 96.dp),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .shadow(6.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(MiuixTheme.colorScheme.surfaceContainer)
-                            .onGloballyPositioned { clearAnchor = it.boundsInRoot() }
-                            .clickable {
-                                haptic.performHapticFeedback(
-                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
-                                )
-                                showClearMenu = true
-                            },
-                        contentAlignment = Alignment.Center,
+                    LiquidGlassFab(
+                        onClick = { showClearMenu = true },
+                        backdrop = liquid,
+                        modifier = Modifier.onGloballyPositioned { clearAnchor = it.boundsInRoot() },
                     ) {
                         Icon(
                             imageVector = MiuixIcons.Glass.Delete,
@@ -404,24 +392,24 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    GlassDialogButton(
+                    LiquidGlassPillButton(
+                        text = "取消",
                         onClick = { showClearConfirm = false },
+                        backdrop = liquid,
                         modifier = Modifier.weight(1f),
-                    ) {
-                        Text(text = "取消", style = MiuixTheme.textStyles.button)
-                    }
-                    GlassDialogButton(
+                    )
+                    LiquidGlassPillButton(
+                        text = "确认删除",
                         onClick = {
                             val within = clearRange.millis
                             if (within == null) store.clear() else store.clearWithin(within)
                             showClearConfirm = false
                         },
+                        backdrop = liquid,
                         modifier = Modifier.weight(1f),
                         enabled = confirmCount > 0,
-                        role = GlassDialogButtonRole.Destructive,
-                    ) {
-                        Text(text = "确认删除", style = MiuixTheme.textStyles.button)
-                    }
+                        role = LiquidRole.Destructive,
+                    )
                 }
             }
         }
@@ -430,6 +418,7 @@ fun LibraryScreen(
             show = creatingFav || editingFav != null,
             initial = editingFav,
             backdrop = backdrop,
+            liquidBackdrop = liquid,
             onDismiss = {
                 creatingFav = false
                 editingFav = null
@@ -705,6 +694,7 @@ private fun FavoriteEditorDialog(
     show: Boolean,
     initial: Favorite?,
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String) -> Unit,
     onDelete: (() -> Unit)? = null,
@@ -741,28 +731,28 @@ private fun FavoriteEditorDialog(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (initial != null && onDelete != null) {
-                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                    LiquidGlassPillButton(
+                        text = "删除",
                         onClick = onDelete,
+                        backdrop = liquidBackdrop,
                         modifier = Modifier.weight(1f),
-                        role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Destructive,
-                    ) {
-                        Text(text = "删除", style = MiuixTheme.textStyles.button)
-                    }
+                        role = LiquidRole.Destructive,
+                    )
                 } else {
-                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                    LiquidGlassPillButton(
+                        text = "取消",
                         onClick = onDismiss,
+                        backdrop = liquidBackdrop,
                         modifier = Modifier.weight(1f),
-                    ) {
-                        Text(text = "取消", style = MiuixTheme.textStyles.button)
-                    }
+                    )
                 }
-                top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                LiquidGlassPillButton(
+                    text = "保存",
                     onClick = { if (url.isNotBlank()) onConfirm(name, url) },
+                    backdrop = liquidBackdrop,
                     modifier = Modifier.weight(1f),
-                    role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
-                ) {
-                    Text(text = "保存", style = MiuixTheme.textStyles.button)
-                }
+                    role = LiquidRole.Primary,
+                )
             }
         }
     }

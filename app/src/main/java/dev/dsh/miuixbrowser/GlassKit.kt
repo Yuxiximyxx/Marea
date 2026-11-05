@@ -121,6 +121,8 @@ fun PageGlassTopBar(
     onBack: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
     bottomContent: @Composable () -> Unit = {},
+    /** 自定义返回键；为 null 时用默认的 miuix 玻璃返回键 */
+    backButton: (@Composable () -> Unit)? = null,
 ) {
     val blurActive = glass && isRuntimeShaderSupported()
     val fadeDistancePx = with(LocalDensity.current) { 48.dp.toPx() }
@@ -146,7 +148,7 @@ fun PageGlassTopBar(
             } else {
                 GlassTopAppBarDefaults.bandBrush(MiuixTheme.colorScheme.surface)
             },
-            navigationIcon = { GlassBackButton(onClick = onBack) },
+            navigationIcon = backButton ?: { GlassBackButton(onClick = onBack) },
             actions = actions,
             bottomContent = bottomContent,
         )
