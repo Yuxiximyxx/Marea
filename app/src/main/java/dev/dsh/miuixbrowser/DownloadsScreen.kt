@@ -203,8 +203,8 @@ fun DownloadsScreen(
                         SmallTitle(text = "下载配置")
                     }
                     item {
-                        val threadOptions = AppSettings.DOWNLOAD_THREAD_OPTIONS
-                        val minMbOptions = AppSettings.DOWNLOAD_MIN_MB_OPTIONS
+                        val threadOptions = DOWNLOAD_THREAD_OPTIONS
+                        val minMbOptions = DOWNLOAD_MIN_MB_OPTIONS
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()

@@ -5,6 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+/** 下载页可选的线程数 */
+val DOWNLOAD_THREAD_OPTIONS = listOf(4, 8, 16, 32, 64)
+
+/** 下载页可选的“超过多少 MB 使用多线程”档位 */
+val DOWNLOAD_MIN_MB_OPTIONS = listOf(1, 5, 10, 20, 50, 100)
+
 class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_settings", Context.MODE_PRIVATE)
@@ -326,8 +332,6 @@ class AppSettings(context: Context) {
         const val KEY_UPDATE_CHANNEL = "update_channel"
         const val KEY_DL_THREADS = "download_threads"
         const val KEY_DL_MIN_MB = "download_multithread_min_mb"
-        val DOWNLOAD_THREAD_OPTIONS = listOf(4, 8, 16, 32, 64)
-        val DOWNLOAD_MIN_MB_OPTIONS = listOf(1, 5, 10, 20, 50, 100)
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"
