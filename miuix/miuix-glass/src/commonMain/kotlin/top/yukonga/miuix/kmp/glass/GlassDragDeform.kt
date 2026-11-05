@@ -18,10 +18,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -126,25 +125,22 @@ internal class GlassDragDeform(private val scope: CoroutineScope) {
                 (height / width).coerceAtMost(1f)
         }
 
-    /** Draws the touch highlight, clipped to [shape]. Call after the panel content is drawn. */
+    /** Draws the touch highlight within [shape]. Call after the panel content is drawn. */
     fun DrawScope.drawHighlight(shape: Shape) {
         val progress = press.value
         if (progress <= 0f) return
         val outline = shape.createOutline(size, layoutDirection, this)
-        val path = Path().apply { addOutline(outline) }
-        clipPath(path) {
-            val shader = highlightShader
-            if (shader != null) {
-                drawRect(Color.White.copy(0.08f * progress), blendMode = BlendMode.Plus)
-                val p = position.value
-                shader.setFloatUniform("size", size.width, size.height)
-                shader.setColorUniform("color", Color.White.copy(0.15f * progress))
-                shader.setFloatUniform("radius", size.minDimension * 1.5f)
-                shader.setFloatUniform("position", p.x.coerceIn(0f, size.width), p.y.coerceIn(0f, size.height))
-                drawRect(brush = shader.asBrush(), blendMode = BlendMode.Plus)
-            } else {
-                drawRect(Color.White.copy(0.25f * progress), blendMode = BlendMode.Plus)
-            }
+        val shader = highlightShader
+        if (shader != null) {
+            drawOutline(outline, Color.White.copy(0.08f * progress), blendMode = BlendMode.Plus)
+            val p = position.value
+            shader.setFloatUniform("size", size.width, size.height)
+            shader.setColorUniform("color", Color.White.copy(0.15f * progress))
+            shader.setFloatUniform("radius", size.minDimension * 1.5f)
+            shader.setFloatUniform("position", p.x.coerceIn(0f, size.width), p.y.coerceIn(0f, size.height))
+            drawOutline(outline, brush = shader.asBrush(), blendMode = BlendMode.Plus)
+        } else {
+            drawOutline(outline, Color.White.copy(0.25f * progress), blendMode = BlendMode.Plus)
         }
     }
 
