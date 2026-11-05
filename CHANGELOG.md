@@ -2,6 +2,15 @@
 
 本文件记录 mafari 的用户可见变更。发版时在对应版本下追加条目；GitHub Release 正文优先读取本文件该版本小节。
 
+## [1.5.9-dev]
+
+### Added
+- 设置 → 高级 → **DNS 管理**：展示系统私人 DNS（DoT/自定义主机名）状态，一键跳转系统设置
+- 说明 WebView 无法单独改写 DNS 的原因与可用公共方案（系统私人 DNS / VPN / 代理限制）
+
+### Notes
+- Android WebView 无公开 HostResolver/DoH API，应用内自定义 DNS、按标签 DoH 不可用
+
 ## [1.5.8-dev]
 
 ### Added
