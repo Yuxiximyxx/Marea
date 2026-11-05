@@ -308,6 +308,8 @@ fun BrowserScreen(
 
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>?>(null) }
+    // 菜单面板右上角蓝标：当前页面运行的脚本数
+    var scriptRunCount by remember { mutableIntStateOf(0) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
     var showFind by remember { mutableStateOf(false) }
     var editingFavIndex by remember { mutableStateOf(-1) }
@@ -1262,6 +1264,14 @@ fun BrowserScreen(
         // 隐藏状态不放置透明热区：底部网页区域完全交给 WebView 处理点击、长按和滚动。
         // 通过 WebView 的 scrollY 方向判断下拉恢复，不通过点击底部区域恢复。
 
+    // 打开更多菜单时刷新「当前页面运行的脚本数」
+    LaunchedEffect(sheet, state.activeIndex) {
+        if (sheet == Sheet.Menu) {
+            scriptRunCount = 0
+            state.activeTab.queryRunningScripts { scriptRunCount = it }
+        }
+    }
+
     // 标签页列表：打开时自动滚到当前标签并高亮
     val tabsListState = rememberLazyListState()
     var tabsOpenScrolled by remember { mutableStateOf(false) }
@@ -1451,6 +1461,14 @@ fun BrowserScreen(
                             if (tab.desktopMode) "移动版" else "桌面版"
                         } else {
                             action.label
+                        }
+                    },
+                    badgeFor = { action ->
+                        when (action) {
+                            MenuAction.Downloads ->
+                                Downloader.tasks.count { it.state == DownloadState.RUNNING }
+                            MenuAction.ScriptMenu -> scriptRunCount
+                            else -> 0
                         }
                     },
                     order = menuOrder.order,
@@ -1791,7 +1809,7 @@ fun BrowserScreen(
         val menuItems = scriptMenuItems
         GlassDialog(
             show = menuItems != null,
-            title = "脚本命令",
+            title = "脚本快捷菜单",
             summary = if (menuItems.isNullOrEmpty()) "当前页面没有脚本注册菜单命令" else null,
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
             onDismissRequest = { scriptMenuItems = null },
@@ -2197,6 +2215,7 @@ private fun IconWithContourShadow(
     tint: Color,
     scale: Float,
     flip: Boolean = false,
+    boxSize: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
     val shadowAlpha = if (tint.alpha < 0.5f) 0.12f else 0.28f
     Box(contentAlignment = Alignment.Center) {
@@ -2206,7 +2225,7 @@ private fun IconWithContourShadow(
             contentDescription = null,
             tint = Color.Black.copy(alpha = shadowAlpha),
             modifier = Modifier
-                .size(24.dp)
+                .size(boxSize)
                 .offset(x = 0.8.dp, y = 1.0.dp)
                 .blur(2.2.dp)
                 .graphicsLayer {
@@ -2221,7 +2240,7 @@ private fun IconWithContourShadow(
             contentDescription = null,
             tint = Color.White.copy(alpha = if (tint.alpha < 0.5f) 0.10f else 0.24f),
             modifier = Modifier
-                .size(24.dp)
+                .size(boxSize)
                 .offset(x = (-0.6).dp, y = (-0.6).dp)
                 .blur(1.6.dp)
                 .graphicsLayer {
@@ -2236,12 +2255,33 @@ private fun IconWithContourShadow(
             contentDescription = description,
             tint = tint,
             modifier = Modifier
-                .size(21.dp)
+                .size(boxSize - 3.dp)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     if (flip) rotationZ = 180f
                 },
+        )
+    }
+}
+
+/** 右上角蓝色数字标（与标签页图标上的数字标同款） */
+@Composable
+private fun CountBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .height(15.dp)
+            .widthIn(min = 15.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MiuixTheme.colorScheme.primary)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (count > 99) "99+" else count.toString(),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
         )
     }
 }
@@ -2275,12 +2315,13 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(31.dp), contentAlignment = Alignment.Center) {
             IconWithContourShadow(
                 imageVector = AppIcons.Tabs,
                 description = "标签页",
                 tint = color,
                 scale = scale,
+                boxSize = 30.dp,
             )
             if (count > 1) {
                 Box(
@@ -3004,6 +3045,7 @@ private fun MenuGrid(
     onAction: (MenuAction) -> Unit,
     onMove: (MenuAction, Boolean, Int) -> Unit,
     incognitoActive: Boolean = false,
+    badgeFor: (MenuAction) -> Int = { 0 },
 ) {
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
@@ -3061,6 +3103,7 @@ private fun MenuGrid(
                             modifier = Modifier.weight(1f),
                             action = action,
                             label = labelFor(action),
+                            badge = badgeFor(action),
                             cellHeight = cellHeight,
                             tint = if (action == MenuAction.Incognito && incognitoActive) purple
                             else MiuixTheme.colorScheme.onSurface,
@@ -3170,6 +3213,7 @@ private fun MenuCell(
     modifier: Modifier,
     action: MenuAction,
     label: String,
+    badge: Int,
     cellHeight: androidx.compose.ui.unit.Dp,
     tint: Color,
     dragged: Boolean,
@@ -3213,13 +3257,24 @@ private fun MenuCell(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = action.icon,
-                contentDescription = label,
-                tint = tint,
-                modifier = Modifier.size(26.dp),
-            )
-            Spacer(Modifier.height(6.dp))
+            // 统一 32dp 的图标槽，各格子文字基线一致；脚本图标本身线条偏细偏小，单独放大
+            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = action.icon,
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(if (action == MenuAction.Extensions) 31.dp else 26.dp),
+                )
+                if (badge > 0) {
+                    CountBadge(
+                        count = badge,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 7.dp, y = (-4).dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             Text(text = label, fontSize = 11.sp, color = tint, maxLines = 1)
         }
     }

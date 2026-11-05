@@ -36,7 +36,7 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
     Extensions("extensions", "脚本", AppIcons.Script),
-    ScriptMenu("script_menu", "脚本命令", MiuixIcons.Glass.File),
+    ScriptMenu("script_menu", "脚本菜单", MiuixIcons.Glass.File),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),
 }

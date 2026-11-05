@@ -116,6 +116,14 @@ object Downloader {
     private fun segFile(context: Context, id: Long) =
         java.io.File(context.cacheDir, "mafari_dl_$id.seg")
 
+    /** 下载在 IO 线程里完成，Toast 必须切回主线程 */
+    private fun toast(context: Context, message: String) {
+        val app = context.applicationContext
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(app, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun launch(context: Context, id: Long) {
         jobs.remove(id)?.cancel()
         jobs[id] = scope.launch {
@@ -126,6 +134,7 @@ object Downloader {
                     val finished = tasks.firstOrNull { it.id == id }
                     update(id) { it.copy(state = DownloadState.DONE) }
                     DownloadService.instance?.finish(finished?.name ?: "文件")
+                    toast(context, "下载完成：${finished?.name ?: "文件"}")
                     return@launch
                 } catch (e: CancellationException) {
                     return@launch

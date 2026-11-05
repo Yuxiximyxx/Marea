@@ -900,6 +900,12 @@ class BrowserTab(private val appContext: Context) {
         }
     }
 
+    /** 当前页面（主框架）里真正匹配并运行的脚本数量 */
+    fun queryRunningScripts(onResult: (Int) -> Unit) {
+        val js = "(function(){try{return Object.keys(window.__mafariRan||{}).length}catch(e){return 0}})()"
+        webView.evaluateJavascript(js) { raw -> onResult(raw?.trim()?.toIntOrNull() ?: 0) }
+    }
+
     fun runMenuCommand(id: String) {
         webView.evaluateJavascript(
             "(function(){try{window.__mafariMenuRun&&window.__mafariMenuRun(" + org.json.JSONObject.quote(id) + ")}catch(e){}})()",

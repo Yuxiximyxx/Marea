@@ -91,6 +91,8 @@
     return anyOf(META.match, matchPatternTest, href) || anyOf(META.include, globTest, href);
   }
   if (!shouldRun(W.location.href)) return;
+  // 真正匹配并会在本页运行的脚本（__mafariSeen 是所有注入过的脚本，不能用来计数）
+  (W.__mafariRan || (W.__mafariRan = {}))[META.id] = 1;
 
   // ------------------------------------------------------------------ helpers
   function whenRoot(cb) {
