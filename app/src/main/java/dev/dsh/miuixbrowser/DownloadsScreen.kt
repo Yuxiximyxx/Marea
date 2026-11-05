@@ -266,7 +266,7 @@ fun DownloadsScreen(
                         }
                     } else {
                         item {
-                            SmallTitle(text = "本应用下载")
+                            SmallTitle(text = "文件下载")
                         }
                     }
                     items(tasks.size) { index ->
@@ -280,9 +280,8 @@ fun DownloadsScreen(
                         ) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    FilePreview(task)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(
+                                    // 可点击打开区域：暂停/删除按钮左侧的整块区域（图标 + 文字）
+                                    Row(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable(enabled = task.state == DownloadState.DONE && task.uri != null) {
@@ -295,7 +294,11 @@ fun DownloadsScreen(
                                                     )
                                                 }
                                             },
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
+                                    FilePreview(task)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = task.name,
                                             fontSize = 15.sp,
@@ -321,6 +324,7 @@ fun DownloadsScreen(
                                                 MiuixTheme.colorScheme.primary
                                             },
                                         )
+                                    }
                                     }
                                     when (task.state) {
                                         DownloadState.RUNNING -> IconButton(onClick = { Downloader.pause(task.id) }) {

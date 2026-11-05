@@ -383,7 +383,8 @@ object Downloader {
             null,
             null,
         )
-        update(id) { it.copy(uri = uri) }
+        // 本地已有同名文件时系统会自动改名（如 xxx (1).zip），读回实际文件名
+        update(id) { it.copy(uri = uri, name = actualName(context, uri, it.name)) }
         runCatching { file.delete() }
     }
 
@@ -396,6 +397,13 @@ object Downloader {
         }
         context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
     }.getOrNull()
+
+    /** 读取 MediaStore 实际落盘的显示名；同名文件已存在时系统会自动追加 (1) 等后缀 */
+    private fun actualName(context: Context, uri: Uri, fallback: String): String = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
+        }
+    }.getOrNull() ?: fallback
 
     private fun update(id: Long, transform: (DownloadTask) -> DownloadTask) {
         val index = tasks.indexOfFirst { it.id == id }
@@ -438,7 +446,7 @@ object Downloader {
             tasks.add(
                 0,
                 DownloadTask(
-                    name = fileName,
+                    name = actualName(context, target, fileName),
                     url = "",
                     mime = mime,
                     uri = target,
@@ -475,7 +483,7 @@ object Downloader {
         tasks.add(
             0,
             DownloadTask(
-                name = fileName,
+                name = actualName(context, uri, fileName),
                 url = "",
                 mime = mime,
                 uri = uri,

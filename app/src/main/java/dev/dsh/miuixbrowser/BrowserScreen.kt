@@ -1819,7 +1819,7 @@ fun BrowserScreen(
             show = menuItems != null,
             title = "脚本快捷菜单",
             summary = "${scriptRunCount}个脚本运行中" +
-                if (menuItems.isNullOrEmpty()) "，当前页面没有脚本注册菜单命令" else "",
+                if (menuItems.isNullOrEmpty()) "，没有脚本注册快捷菜单" else "",
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
             onDismissRequest = { scriptMenuItems = null },
         ) {
