@@ -392,6 +392,7 @@ fun SettingsScreen(
                         Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
                         Triple("麦克风", settings.micPermission, settings::updateMicPermission),
                         Triple("定位", settings.locationPermission, settings::updateLocationPermission),
+                        Triple("网站通知", settings.notificationPermission, settings::updateNotificationPermission),
                         Triple("剪贴板读写", settings.clipboardPermission, settings::updateClipboardPermission),
                         Triple("网站媒体发声", settings.mediaAutoplay, settings::updateMediaAutoplay),
                     ).forEach { (label, current, update) ->

@@ -939,6 +939,7 @@ class BrowserTab(private val appContext: Context) {
         cameraMode: Int = 0,
         micMode: Int = 0,
         locationMode: Int = 0,
+        notificationMode: Int = 0,
         blockTrackers: Boolean = false,
     ) {
         runCatching {
@@ -950,8 +951,9 @@ class BrowserTab(private val appContext: Context) {
         this.cameraMode = cameraMode
         this.micMode = micMode
         this.locationMode = locationMode
+        this.notificationMode = notificationMode
         this.blockTrackers = blockTrackers
-        // 询问 / 拒绝：需要用户手势才能出声；允许：自动播放
+        // 媒体发声：允许=可自动播放；询问/拒绝=需用户手势才能出声
         runCatching { webView.settings.mediaPlaybackRequiresUserGesture = mediaMode != 1 }
 
         val script = buildString {
@@ -979,6 +981,15 @@ class BrowserTab(private val appContext: Context) {
                         "var p=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{this.volume=0}catch(e){}return p.apply(this,arguments)}}catch(e){}})();\n",
                 )
             }
+            // 网站通知拒绝：JS Notification 权限固定为 denied
+            if (notificationMode == 2) {
+                append(
+                    "(function(){try{" +
+                        "if(window.Notification){Object.defineProperty(Notification,'permission',{get:function(){return 'denied'},configurable:true});" +
+                        "Notification.requestPermission=function(){return Promise.resolve('denied')}}}" +
+                        "}catch(e){}})();\n",
+                )
+            }
         }
         runCatching { privacyHandler?.remove() }
         privacyHandler = null
@@ -1004,6 +1015,7 @@ class BrowserTab(private val appContext: Context) {
     private var cameraMode = 0
     private var micMode = 0
     private var locationMode = 0
+    private var notificationMode = 0
 
     /** 网页权限「询问」：由界面弹窗，decide(true/false) 只能调用一次 */
     var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
@@ -1016,16 +1028,21 @@ class BrowserTab(private val appContext: Context) {
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun ensureAndroid(perms: Array<String>, anyOk: Boolean, result: (Boolean) -> Unit) {
-        fun granted() = if (anyOk) perms.any { hasPermission(it) } else perms.all { hasPermission(it) }
-        if (granted()) {
-            result(true)
+        val need = perms.filter { it.isNotBlank() && !hasPermission(it) }.toTypedArray()
+        fun granted() = if (anyOk) {
+            perms.filter { it.isNotBlank() }.any { hasPermission(it) }
+        } else {
+            perms.filter { it.isNotBlank() }.all { hasPermission(it) }
+        }
+        if (need.isEmpty()) {
+            result(granted())
             return
         }
         val request = requestAndroidPermissions
         if (request == null) {
             result(false)
         } else {
-            request(perms.filter { !hasPermission(it) }.toTypedArray()) { result(granted()) }
+            request(need) { result(granted()) }
         }
     }
 
@@ -1059,25 +1076,48 @@ class BrowserTab(private val appContext: Context) {
         if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in res) keep += PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
         val camOk = PermissionRequest.RESOURCE_VIDEO_CAPTURE in res && cameraMode != 2
         val micOk = PermissionRequest.RESOURCE_AUDIO_CAPTURE in res && micMode != 2
+        val notifyOk = PermissionRequest.RESOURCE_NOTIFICATIONS in res && notificationMode != 2
+        val geoOk = PermissionRequest.RESOURCE_GEOLLOCATION in res && locationMode != 2
         fun finish(extra: List<String>) {
             val all = keep + extra
             if (all.isEmpty()) request.deny() else request.grant(all.toTypedArray())
         }
-        if (!camOk && !micOk) {
+        if (!camOk && !micOk && !notifyOk && !geoOk) {
             finish(emptyList())
             return
         }
         val perms = buildList {
             if (camOk) add(android.Manifest.permission.CAMERA)
             if (micOk) add(android.Manifest.permission.RECORD_AUDIO)
+            if (notifyOk && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                add(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (geoOk) {
+                add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
         }.toTypedArray()
-        val what = listOfNotNull(if (camOk) "摄像头" else null, if (micOk) "麦克风" else null).joinToString("、")
-        val mustAsk = (camOk && cameraMode == 0) || (micOk && micMode == 0)
-        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms) { ok ->
+        val what = listOfNotNull(
+            if (camOk) "摄像头" else null,
+            if (micOk) "麦克风" else null,
+            if (notifyOk) "通知" else null,
+            if (geoOk) "定位" else null,
+        ).joinToString("、")
+        val mustAsk =
+            (camOk && cameraMode == 0) ||
+                (micOk && micMode == 0) ||
+                (notifyOk && notificationMode == 0) ||
+                (geoOk && locationMode == 0)
+        // 仅定位时 fine/coarse 任一即可；同时要摄像头/麦克风/通知则全部 Android 权限都必须拿到
+        val needsAll = camOk || micOk || notifyOk
+        val anyOk = geoOk && !needsAll
+        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms, anyOk) { ok ->
             finish(
                 if (ok) buildList {
                     if (camOk) add(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
                     if (micOk) add(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                    if (notifyOk) add(PermissionRequest.RESOURCE_NOTIFICATIONS)
+                    if (geoOk) add(PermissionRequest.RESOURCE_GEOLLOCATION)
                 } else emptyList(),
             )
         }

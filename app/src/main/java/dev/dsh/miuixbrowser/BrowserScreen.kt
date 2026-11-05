@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -609,6 +610,7 @@ fun BrowserScreen(
         settings.cameraPermission,
         settings.micPermission,
         settings.locationPermission,
+        settings.notificationPermission,
         settings.blockTrackingScripts,
     ) {
         tab.applyPrivacy(
@@ -620,6 +622,7 @@ fun BrowserScreen(
             cameraMode = settings.cameraPermission,
             micMode = settings.micPermission,
             locationMode = settings.locationPermission,
+            notificationMode = settings.notificationPermission,
             blockTrackers = settings.blockTrackingScripts,
         )
     }
@@ -1194,7 +1197,20 @@ fun BrowserScreen(
         // 隐藏状态不放置透明热区：底部网页区域完全交给 WebView 处理点击、长按和滚动。
         // 通过 WebView 的 scrollY 方向判断下拉恢复，不通过点击底部区域恢复。
 
-        // ---- 弹层：GlassBottomSheet（保持组合直到离场动画结束）----
+    // 标签页列表：打开时自动滚到当前标签并高亮
+    val tabsListState = rememberLazyListState()
+    LaunchedEffect(sheet, tabsPage, state.activeIndex, settings.tabsStyle) {
+        if (sheet != Sheet.Tabs) return@LaunchedEffect
+        val pageIncognito = tabsPage == 1
+        val visible = state.tabs.withIndex().filter { it.value.incognito == pageIncognito }
+        val pos = visible.indexOfFirst { it.index == state.activeIndex }
+        if (pos >= 0) {
+            val row = if (settings.tabsStyle == 1) pos / 2 else pos
+            runCatching { tabsListState.animateScrollToItem(row) }
+        }
+    }
+
+    // ---- 弹层：GlassBottomSheet（保持组合直到离场动画结束）----
         val activeSheet = sheet
         if (activeSheet != Sheet.None) {
             lastActiveSheet = activeSheet
@@ -1266,6 +1282,7 @@ fun BrowserScreen(
                 val cardStyle = settings.tabsStyle == 1
                 // 懒加载：只组合/绘制可见行（最多 99 个标签时不再一次性全部组合）
                 LazyColumn(
+                    state = tabsListState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = screenH * 0.68f),
@@ -1285,6 +1302,7 @@ fun BrowserScreen(
                                 rowItems.forEach { indexed ->
                                     TabCard(
                                         item = indexed.value,
+                                        highlight = indexed.index == state.activeIndex,
                                         blurBackdrop = if (settings.blurEnabled && homeBlurAvailable) browserBackdrop else null,
                                         modifier = Modifier.weight(1f),
                                         onSelect = {
@@ -1310,6 +1328,7 @@ fun BrowserScreen(
                                     append(item.title.ifBlank { "新标签页" })
                                 },
                                 subtitle = item.url.ifBlank { null },
+                                highlight = index == state.activeIndex,
                                 trailing = {
                                     BarButton(
                                         icon = MiuixIcons.Glass.Close,
@@ -2416,12 +2435,20 @@ private fun SheetRow(
     title: String,
     subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    highlight: Boolean = false,
     onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (highlight) {
+                    Modifier.border(2.dp, MiuixTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                },
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -3088,7 +3115,7 @@ private fun MenuCell(
     }
 }
 
-/** 标签卡片。[blurBackdrop] 非空时标题条使用 miuix-glass 模糊底，否则退回半透明纯色底。 */
+/** 标签卡片。[blurBackdrop] 非空时标题条使用 miuix-glass 模糊底，否则退回半透明纯色底。[highlight] 当前页高光描边。 */
 @Composable
 private fun TabCard(
     item: BrowserTab,
@@ -3096,14 +3123,35 @@ private fun TabCard(
     onSelect: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    highlight: Boolean = false,
 ) {
     val thumb = item.thumbnail
     val cardColor = if (item.incognito) Color(0xFF3D2B4F) else MiuixTheme.colorScheme.surfaceContainerHigh
+    val highlightColor = MiuixTheme.colorScheme.primary
     Box(
         modifier = modifier
             .height(160.dp)
+            .then(
+                if (highlight) {
+                    Modifier.shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(16.dp),
+                        spotColor = highlightColor,
+                        ambientColor = highlightColor,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .clip(RoundedCornerShape(16.dp))
             .background(cardColor)
+            .then(
+                if (highlight) {
+                    Modifier.border(2.dp, highlightColor, RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                },
+            )
             .clickable(onClick = onSelect),
     ) {
         if (thumb != null) {

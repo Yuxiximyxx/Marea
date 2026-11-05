@@ -204,13 +204,22 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_MEDIA, mediaAutoplay).apply()
     }
 
+    /** 网页权限：网站通知 0=询问 1=允许 2=拒绝 */
+    var notificationPermission by mutableStateOf(prefs.getInt(KEY_NOTIFY, 0))
+        private set
+
+    fun updateNotificationPermission(mode: Int) {
+        notificationPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_NOTIFY, notificationPermission).apply()
+    }
+
     /** 启用「请勿追踪」类隐私增强：合并 DNT + 禁第三方跟踪脚本提示 */
     var blockTrackingScripts by mutableStateOf(prefs.getBoolean(KEY_TRACK, true))
         private set
 
     fun updateBlockTrackingScripts(enabled: Boolean) {
         blockTrackingScripts = enabled
-        prefs.edit().putBoolean(KEY_TRACK, enabled).apply()
+        prefs.edit().putBoolean(KEY_TRACK, blockTrackingScripts).apply()
     }
 
     private companion object {
@@ -235,6 +244,7 @@ class AppSettings(context: Context) {
         const val KEY_LOC = "perm_location"
         const val KEY_CLIP = "perm_clipboard"
         const val KEY_MEDIA = "perm_media_autoplay"
+        const val KEY_NOTIFY = "perm_notification"
         const val KEY_TRACK = "block_tracking"
     }
 }
