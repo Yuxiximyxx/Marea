@@ -1218,6 +1218,23 @@ class BrowserTab(private val appContext: Context) {
     /** 回主页 */
     private var savedUrl: String = ""
 
+    /** 标签实际承载的页面地址：回过主页的标签 url 为空，页面还在 WebView 里，用 savedUrl */
+    val effectiveUrl: String
+        get() = url.ifEmpty { savedUrl }
+
+    /** 完全空白的标签（没有页面、也没有被主页盖住的页面） */
+    val isBlank: Boolean
+        get() = url.isEmpty() && savedUrl.isBlank()
+
+    /** 若这个标签正显示主页（页面被盖住），还原成原来的页面，不重新加载 */
+    fun restoreFromHome() {
+        if (url.isEmpty() && savedUrl.isNotBlank()) {
+            url = savedUrl
+            savedUrl = ""
+            syncNav()
+        }
+    }
+
     fun goHome() {
         savedUrl = url
         fromHome = false
@@ -1305,8 +1322,6 @@ class BrowserState(private val context: Context) {
     }
 
     fun newTab(target: String = "", incognito: Boolean = false) {
-        // 同一站点已有标签：切过去并加载，避免重复卡片
-        if (target.isNotBlank() && reuseTabFor(target, incognito)) return
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -1324,28 +1339,67 @@ class BrowserState(private val context: Context) {
         if (target.isNotEmpty()) tab.load(target)
     }
 
+    /** 站点标识：小写 host，忽略开头的 www. */
+    private fun siteKey(url: String): String? {
+        val host = runCatching { Uri.parse(url).host?.lowercase() }.getOrNull()
+        if (host.isNullOrBlank()) return null
+        return host.removePrefix("www.")
+    }
+
+    /** 是否站点根地址（无路径/查询/片段） */
+    private fun isSiteRoot(url: String): Boolean {
+        val u = runCatching { Uri.parse(url) }.getOrNull() ?: return true
+        val path = u.path.orEmpty()
+        return (path.isEmpty() || path == "/") && u.query.isNullOrEmpty() && u.fragment.isNullOrEmpty()
+    }
+
+    /** 找同站点、同无痕状态的已有标签（含回过主页、页面被盖住的标签） */
+    private fun findSiteTab(target: String, incognito: Boolean): Int {
+        if (!looksLikeUrl(target)) return -1
+        val key = siteKey(toUrl(target)) ?: return -1
+        return tabs.indexOfFirst { tab ->
+            tab.incognito == incognito && siteKey(tab.effectiveUrl) == key
+        }
+    }
+
     /**
-     * 若已有同 host、同无痕状态的标签则选中并（URL 不同时）加载，返回 true。
-     * 仅对看起来像网址的目标生效，搜索词仍新开标签。
+     * 从主页 / 外部 / 应用内打开网址：
+     * 1. 已有同站标签 → 直接切过去显示它原来的页面，不新建、不重新加载；
+     *    仅当 [navigateIfDeepLink] 为 true 且目标是带具体路径的深链、且与该标签当前页不同，才在该标签里跳转。
+     * 2. 没有同站标签 → 当前是空白/主页就地加载，否则新开标签。
+     * 切走后遗留的空白标签会被清掉，避免多出一张空卡片。
      */
-    private fun reuseTabFor(target: String, incognito: Boolean): Boolean {
-        if (!looksLikeUrl(target)) return false
-        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
-        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
-        if (host.isNullOrBlank()) return false
-        val idx = tabs.indexOfFirst { tab ->
-            tab.incognito == incognito &&
-                runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
+    fun openOrReuse(
+        target: String,
+        incognito: Boolean = activeTab.incognito,
+        navigateIfDeepLink: Boolean = false,
+        fromStartPage: Boolean = false,
+    ) {
+        if (target.isBlank()) return
+        val idx = findSiteTab(target, incognito)
+        if (idx >= 0) {
+            val existing = tabs[idx]
+            val blank = activeTab.takeIf { it.isBlank && it !== existing && tabs.size > 1 }
+            existing.restoreFromHome()
+            val url = toUrl(target)
+            if (navigateIfDeepLink && !isSiteRoot(url) &&
+                !existing.effectiveUrl.equals(url, ignoreCase = true)
+            ) {
+                existing.load(url)
+            }
+            if (blank != null) {
+                tabs.remove(blank)
+                blank.close()
+            }
+            activeIndex = tabs.indexOf(existing).coerceAtLeast(0)
+            return
         }
-        if (idx < 0) return false
-        select(idx)
-        val existing = tabs[idx]
-        if (!existing.url.equals(normalized, ignoreCase = true) &&
-            !existing.url.equals(target, ignoreCase = true)
-        ) {
-            existing.load(target)
+        val cur = activeTab
+        if (cur.incognito == incognito && cur.url.isEmpty() && (fromStartPage || cur.isBlank)) {
+            cur.load(target)
+        } else {
+            newTab(target, incognito)
         }
-        return true
     }
 
     /** 当前标签是否无痕 */
@@ -1391,35 +1445,33 @@ class BrowserState(private val context: Context) {
         }
     }
 
-    fun newTabInBackground(target: String) {
-        // 同站已有标签：在该标签加载，不抢当前焦点、不新建卡片
-        if (target.isNotBlank() && reuseTabForBackground(target)) return
+    /** 后台打开，返回目标标签下标（同站已有则复用，失败返回 -1） */
+    fun newTabInBackground(target: String): Int {
+        // 同站已有标签：切换前不抢焦点，由调用方决定是否 select
+        val idx = findSiteTab(target, false)
+        if (idx >= 0) {
+            val existing = tabs[idx]
+            if (existing.url.isNotEmpty() && !isSiteRoot(toUrl(target)) &&
+                !existing.url.equals(toUrl(target), ignoreCase = true)
+            ) {
+                existing.load(target)
+            }
+            return idx
+        }
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
                 "最多同时打开 $MAX_TABS 个标签页",
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
-            return
+            return -1
         }
         val tab = BrowserTab(context)
+        tab.customUserAgent = userAgent
+        tab.applyUserAgent()
         tabs.add(tab)
         tab.load(target)
-    }
-
-    /** 后台打开：同 host 已有标签则只 load，不切换 active */
-    private fun reuseTabForBackground(target: String): Boolean {
-        if (!looksLikeUrl(target)) return false
-        val normalized = if (target.startsWith("http")) target else "https://${target.trim()}"
-        val host = runCatching { Uri.parse(normalized).host?.lowercase() }.getOrNull()
-        if (host.isNullOrBlank()) return false
-        val existing = tabs.firstOrNull { tab ->
-            runCatching { Uri.parse(tab.url).host?.lowercase() }.getOrNull() == host
-        } ?: return false
-        if (!existing.url.equals(normalized, ignoreCase = true)) {
-            existing.load(target)
-        }
-        return true
+        return tabs.lastIndex
     }
 
     /**

@@ -289,7 +289,7 @@ fun BrowserScreen(
     fun openInBrowser(url: String) {
         if (url.isBlank()) return
         popToBrowser()
-        state.newTab(url)
+        state.openOrReuse(url, navigateIfDeepLink = true)
     }
 
     // 外部 ACTION_VIEW / 应用内待打开链接：切回浏览页并加载
@@ -969,7 +969,7 @@ fun BrowserScreen(
                         blurEnabled = settings.blurEnabled,
                         favorites = favorites.items,
                         editing = favEditing,
-                        onOpen = { tab.load(it) },
+                        onOpen = { state.openOrReuse(it, tab.incognito, fromStartPage = true) },
                         onToggleEdit = { favEditing = !favEditing },
                         onRemove = { favorites.remove(it) },
                         onEdit = { index ->
@@ -1496,8 +1496,7 @@ fun BrowserScreen(
                 }
                 SheetRow(title = "在新标签页打开") {
                     sheet = Sheet.None
-                    state.newTabInBackground(linkUrl)
-                    state.select(state.tabs.lastIndex)
+                    state.select(state.newTabInBackground(linkUrl))
                 }
                 SheetRow(title = "复制链接") {
                     sheet = Sheet.None
@@ -1547,8 +1546,7 @@ fun BrowserScreen(
                     }
                     SheetRow(title = "在新标签页打开") {
                         sheet = Sheet.None
-                        state.newTabInBackground(imageUrl)
-                        state.select(state.tabs.lastIndex)
+                        state.select(state.newTabInBackground(imageUrl))
                     }
                 }
             }
@@ -2002,7 +2000,7 @@ fun BrowserScreen(
             onBack = { popPage() },
             onOpen = { url ->
                 popToBrowser()
-                tab.loadUrl(url)
+                state.openOrReuse(url, tab.incognito, navigateIfDeepLink = true)
             },
             initialTab = route.tab,
             blurEnabled = settings.blurEnabled,
