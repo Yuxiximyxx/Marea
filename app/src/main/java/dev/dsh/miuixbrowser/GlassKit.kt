@@ -56,7 +56,7 @@ fun GlassBackButton(onClick: () -> Unit) {
     LiquidIconButton(onClick = onClick) {
         Icon(
             imageVector = MiuixIcons.Glass.ChevronBackward,
-            description = "返回",
+            contentDescription = "返回",
             modifier = Modifier.size(24.dp),
             tint = MiuixTheme.colorScheme.onSurface,
         )
