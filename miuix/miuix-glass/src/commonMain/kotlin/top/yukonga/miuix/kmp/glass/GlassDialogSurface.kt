@@ -66,7 +66,8 @@ fun glassDialogSurface(
         null
     }
     val shape = remember(cornerRadius) { GlassShape(cornerRadius) }
-    Modifier.glassPanel(
+    val deform = rememberGlassDragDeform()
+    deform.layer.glassPanel(
         backdrop = effectiveBackdrop,
         shape = shape,
         material = material,
@@ -74,5 +75,5 @@ fun glassDialogSurface(
         shadow = null,
         shading = false,
         fallback = Modifier.clip(shape).background(containerColor),
-    )
+    ).then(deform.highlight(shape))
 }

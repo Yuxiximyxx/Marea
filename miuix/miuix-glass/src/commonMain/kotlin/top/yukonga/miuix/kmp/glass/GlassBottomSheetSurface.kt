@@ -68,7 +68,9 @@ fun glassBottomSheetSurface(
     val shape = remember(cornerRadius) {
         GlassShape(topStart = cornerRadius, topEnd = cornerRadius, bottomEnd = 0.dp, bottomStart = 0.dp)
     }
-    Modifier.glassPanel(
+    val deform = rememberGlassDragDeform()
+    // The overscroll extension follows the sheet, so only the sheet body deforms.
+    (if (isOverscroll) Modifier else deform.layer).glassPanel(
         backdrop = effectiveBackdrop,
         shape = shape,
         material = material,
@@ -76,5 +78,5 @@ fun glassBottomSheetSurface(
         shadow = null,
         shading = false,
         fallback = Modifier.clip(shape).background(containerColor),
-    )
+    ).then(if (isOverscroll) Modifier else deform.highlight(shape))
 }

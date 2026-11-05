@@ -528,12 +528,24 @@ private fun BookmarksPage(
                                 .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                imageVector = MiuixIcons.Glass.File,
-                                contentDescription = null,
-                                tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
+                            val favicon = rememberFavicon(fav.url)
+                            if (favicon != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = favicon,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(RoundedCornerShape(6.dp)),
+                                )
+                            } else {
+                                // 图标还在加载或抓取失败时的占位
+                                Icon(
+                                    imageVector = MiuixIcons.Glass.File,
+                                    contentDescription = null,
+                                    tint = MiuixTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {

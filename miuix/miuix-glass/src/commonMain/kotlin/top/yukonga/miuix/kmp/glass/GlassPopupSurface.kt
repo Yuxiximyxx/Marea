@@ -196,6 +196,7 @@ internal fun GlassPopupSurface(
         with(density) { popupShadowOutsets(visuals.shadow) }
     }
     val measured = remember { MeasuredPanel() }
+    val deform = rememberGlassDragDeform()
     val shape = remember(measured) {
         val corner = MeasuredCorner(measured)
         GlassShape(corner, corner, corner, corner)
@@ -209,6 +210,7 @@ internal fun GlassPopupSurface(
                     placeable.place(measured.rect.left.roundToInt(), measured.rect.top.roundToInt())
                 }
             }
+            .then(deform.layer)
             .graphicsLayer {
                 panelLayer()
                 // Include shadow pixels in the offscreen buffer used when alpha is below one.
@@ -219,6 +221,7 @@ internal fun GlassPopupSurface(
             .clip(shape)
             .drawWithContent {
                 drawContent()
+                with(deform) { drawHighlight(shape) }
                 overlay()
             }
             .then(
