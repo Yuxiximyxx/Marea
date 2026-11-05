@@ -1,27 +1,26 @@
 package dev.dsh.miuixbrowser
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.util.fastCoerceAtMost
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
@@ -29,6 +28,11 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.tanh
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -39,12 +43,12 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 enum class LiquidRole { Normal, Primary, Destructive }
 
 /**
- * Kyant0/AndroidLiquidGlass（io.github.kyant0:backdrop）的液态玻璃底板 + 点击层。
+ * Kyant0/AndroidLiquidGlass（io.github.kyant0:backdrop）的液态玻璃表面，写法对齐官方 catalog 的 LiquidButton：
+ * 按压放大、拖拽时跟手形变、按下处有高光（见 InteractiveHighlight.kt）。
  *
- * - [backdrop] 必须是 Kyant 库自己的 LayerBackdrop，录制层要包住「页面内容」，按钮本身放在录制层之外。
- * - 玻璃底板画在空 Box 上，点击/内容作为兄弟层，避免内容进入自己的采样。
- * - [backdrop] 为 null（用户关了模糊）时退回不透明的 [tint] 实色底。
- * - 形状固定为 CircleShape：正方形尺寸是圆，宽大于高就是胶囊。
+ * - [backdrop] 必须是 Kyant 库自己的 LayerBackdrop，录制层要包住「页面内容」，本控件必须放在录制层之外。
+ * - [backdrop] 为 null（用户关了模糊 / 网页态）时退回不透明的 [tint] 实色底，形变与高光照常。
+ * - 形状固定为 CircleShape：宽高相等是圆，宽大于高就是胶囊。
  */
 @Composable
 fun LiquidGlassSurface(
@@ -57,61 +61,68 @@ fun LiquidGlassSurface(
     content: @Composable () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, label = "liquidPress")
+    val animationScope = rememberCoroutineScope()
+    val highlight = remember(animationScope) { InteractiveHighlight(animationScope = animationScope) }
+    // 官方写法：按压放大 + 拖拽时按钮跟手形变，全部走 layerBlock
+    val liquidLayer: GraphicsLayerScope.() -> Unit = {
+        val width = size.width
+        val height = size.height
+        val progress = highlight.pressProgress
+        val scale = lerp(1f, 1f + 4f.dp.toPx() / height, progress)
+
+        val maxOffset = size.minDimension
+        val initialDerivative = 0.05f
+        val offset = highlight.offset
+        translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
+        translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
+
+        val maxDragScale = 4f.dp.toPx() / height
+        val offsetAngle = atan2(offset.y, offset.x)
+        scaleX = scale +
+            maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension) *
+            (width / height).fastCoerceAtMost(1f)
+        scaleY = scale +
+            maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
+            (height / width).fastCoerceAtMost(1f)
+    }
 
     Box(
-        modifier = modifier.alpha(if (enabled) 1f else 0.4f),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (backdrop != null) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBackdrop(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.4f)
+            .then(
+                if (backdrop != null) {
+                    Modifier.drawBackdrop(
                         backdrop = backdrop,
                         shape = { CircleShape },
                         effects = {
                             vibrancy()
-                            blur(4.dp.toPx())
-                            lens(8.dp.toPx(), 16.dp.toPx())
+                            blur(2f.dp.toPx())
+                            lens(12f.dp.toPx(), 24f.dp.toPx())
                         },
-                        // 官方做法：缩放走 layerBlock，LayerBackdrop 才能正确换算采样位置
-                        layerBlock = {
-                            scaleX = scale
-                            scaleY = scale
-                        },
+                        layerBlock = liquidLayer,
                         onDrawSurface = { drawRect(tint.copy(alpha = tintAlpha)) },
-                    ),
-            )
-        } else {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .clip(CircleShape)
-                    .background(tint),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-                .clip(CircleShape)
-                .clickable(enabled = enabled, interactionSource = interaction, indication = null) {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onClick()
+                    )
+                } else {
+                    // 关闭模糊 / 网页态：实色底，同样跟手形变
+                    Modifier
+                        .graphicsLayer(block = liquidLayer)
+                        .clip(CircleShape)
+                        .background(tint)
                 },
-            contentAlignment = Alignment.Center,
-            content = { content() },
-        )
+            )
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+            ) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+            .then(if (enabled) highlight.modifier.then(highlight.gestureModifier) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
