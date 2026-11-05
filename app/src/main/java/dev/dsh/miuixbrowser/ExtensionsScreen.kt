@@ -4,6 +4,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -168,8 +170,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     .layerBackdrop(backdrop)
                     .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .background(MiuixTheme.colorScheme.surface)
-                    .navigationBarsPadding(),
+                    .background(MiuixTheme.colorScheme.surface),
             ) {
                 val normalScripts = store.items.toList()
                 val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
@@ -179,7 +180,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
                     if (missingBuiltins.isNotEmpty()) {
                         item {

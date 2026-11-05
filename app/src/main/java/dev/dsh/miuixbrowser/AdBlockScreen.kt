@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -184,14 +186,13 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                     .layerBackdrop(backdrop)
                     .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .background(MiuixTheme.colorScheme.surface)
-                    .navigationBarsPadding(),
+                    .background(MiuixTheme.colorScheme.surface),
             ) {
                 val subs = AdBlock.subs.toList()
                 val presets = AD_PRESETS.filter { p -> subs.none { it.url.equals(p.url, ignoreCase = true) } }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 32.dp),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 32.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
                     item {
                         Card(

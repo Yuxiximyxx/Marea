@@ -1818,7 +1818,8 @@ fun BrowserScreen(
         GlassDialog(
             show = menuItems != null,
             title = "脚本快捷菜单",
-            summary = if (menuItems.isNullOrEmpty()) "当前页面没有脚本注册菜单命令" else null,
+            summary = "${scriptRunCount}个脚本运行中" +
+                if (menuItems.isNullOrEmpty()) "，当前页面没有脚本注册菜单命令" else "",
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
             onDismissRequest = { scriptMenuItems = null },
         ) {

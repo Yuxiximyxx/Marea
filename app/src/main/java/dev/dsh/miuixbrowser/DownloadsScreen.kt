@@ -9,6 +9,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -217,12 +219,11 @@ fun DownloadsScreen(
                     .layerBackdrop(backdrop)
                     .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .background(MiuixTheme.colorScheme.surface)
-                    .navigationBarsPadding(),
+                    .background(MiuixTheme.colorScheme.surface),
             ) {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset, bottom = 24.dp),
+                    contentPadding = PaddingValues(top = topInset, bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
                     item {
                         SmallTitle(text = "下载配置")
