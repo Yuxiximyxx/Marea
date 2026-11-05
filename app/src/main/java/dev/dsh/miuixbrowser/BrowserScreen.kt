@@ -91,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.layer.CompositingStrategy as LayerCompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
@@ -233,8 +234,8 @@ fun BrowserScreen(
     // 每一帧都会把整页内容（含壁纸 28dp 模糊）重新回放一遍再叠自己的模糊，弹层动画期间必然掉帧。
     // 缓存后内容只在真正变化（滚动、加载）时重绘，取样方只读纹理。
     SideEffect {
-        wallpaperBackdrop.graphicsLayer.compositingStrategy = CompositingStrategy.Offscreen
-        browserBackdrop.graphicsLayer.compositingStrategy = CompositingStrategy.Offscreen
+        wallpaperBackdrop.graphicsLayer.compositingStrategy = LayerCompositingStrategy.Offscreen
+        browserBackdrop.graphicsLayer.compositingStrategy = LayerCompositingStrategy.Offscreen
     }
 
     // 从其他应用点进来的链接：回到浏览页并新开标签（须在 popToBrowser 定义之后）
