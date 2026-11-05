@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.20-dev]
+
+- 液态玻璃改铺到设置/关于等子页面按钮（顶栏图标、设置行、对话框按钮），底栏按钮恢复原样式
+
 ## [1.5.19-dev]
 
 - 修复：`rememberLiquidBackdrop` 中 lambda 误绑定到 `verticalGradient` 导致 1.5.18 编译失败

@@ -2213,20 +2213,10 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
         label = "tabPress",
     )
     val color = MiuixTheme.colorScheme.onSurface
-    val dark = isAppDarkTheme()
-    val liquid = rememberLiquidBackdrop(dark)
     Box(
         modifier = Modifier
             .size(44.dp)
-            .liquidGlass(
-                backdrop = liquid,
-                shape = liquidCircleShape,
-                refractionHeight = 6.dp,
-                refractionAmount = 12.dp,
-                blurRadius = 1.5.dp,
-                tint = liquidButtonTint(dark),
-                highlight = LiquidHighlight(width = 0.75.dp, alpha = if (dark) 0.3f else 0.85f),
-            )
+            .clip(CircleShape)
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
@@ -2292,20 +2282,10 @@ private fun PressIcon(
     } else {
         MiuixTheme.colorScheme.onSurface.copy(alpha = 0.25f)
     }
-    val dark = isAppDarkTheme()
-    val liquid = rememberLiquidBackdrop(dark)
     Box(
         modifier = Modifier
             .size(44.dp)
-            .liquidGlass(
-                backdrop = liquid,
-                shape = liquidCircleShape,
-                refractionHeight = 6.dp,
-                refractionAmount = 12.dp,
-                blurRadius = 1.5.dp,
-                tint = liquidButtonTint(dark),
-                highlight = LiquidHighlight(width = 0.75.dp, alpha = if (dark) 0.3f else 0.85f),
-            )
+            .clip(CircleShape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,

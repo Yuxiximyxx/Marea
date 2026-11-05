@@ -198,7 +198,7 @@ fun AboutScreen(
                             }
                         },
                         role = GlassDialogButtonRole.Primary,
-                        modifier = Modifier.width(200.dp),
+                        modifier = Modifier.width(200.dp).liquidButton(14.dp),
                     ) {
                         Text(
                             text = if (checkingUpdate) "检查中…" else "检查更新",
@@ -242,6 +242,7 @@ fun AboutScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .liquidButton(14.dp)
                             .clickable { onOpenUrl(PROJECT_URL) }
                             .padding(16.dp),
                     ) {
@@ -281,7 +282,7 @@ fun AboutScreen(
                 ) {
                     top.yukonga.miuix.kmp.glass.GlassDialogButton(
                         onClick = { pendingUpdate = null },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).liquidButton(14.dp),
                     ) {
                         Text(text = "取消", style = MiuixTheme.textStyles.button)
                     }
@@ -307,7 +308,7 @@ fun AboutScreen(
                             }
                             pendingUpdate = null
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).liquidButton(14.dp),
                         role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
                     ) {
                         Text(text = "下载", style = MiuixTheme.textStyles.button)
