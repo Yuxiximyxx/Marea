@@ -50,10 +50,16 @@ fun rememberGlassActive(userEnabled: Boolean): Boolean = userEnabled && isRuntim
 fun rememberHaptic(): androidx.compose.ui.hapticfeedback.HapticFeedback =
     LocalHapticFeedback.current
 
-/** 顶栏里的玻璃返回键（液态玻璃，设置等子页面统一）。 */
+/** 顶栏里的玻璃返回键。必须放在 GlassTopAppBar 的 navigationIcon 里，才会继承顶栏材质。 */
 @Composable
 fun GlassBackButton(onClick: () -> Unit) {
-    LiquidIconButton(onClick = onClick) {
+    val haptic = LocalHapticFeedback.current
+    GlassIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+    ) {
         Icon(
             imageVector = MiuixIcons.Glass.ChevronBackward,
             contentDescription = "返回",
@@ -63,16 +69,22 @@ fun GlassBackButton(onClick: () -> Unit) {
     }
 }
 
-/** 玻璃图标按钮 + 点击震动（液态玻璃）。 */
+/** 玻璃图标按钮 + 点击震动 */
 @Composable
 fun HapticGlassIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    LiquidIconButton(onClick = onClick, modifier = modifier) {
-        content()
-    }
+    val haptic = LocalHapticFeedback.current
+    GlassIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        modifier = modifier,
+        content = content,
+    )
 }
 
 /** 顶栏里的玻璃图标按钮（actions 槽）。 */

@@ -17,7 +17,7 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = 172
-        versionName = "v1.5.22-dev"
+        versionName = "v1.5.22-stable"
     }
 
     buildFeatures {
@@ -85,6 +85,4 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
-    // Liquid Glass（AndroidLiquidGlass / Kyant0）：底栏与按钮的折射玻璃
-    implementation("io.github.kyant0:backdrop:2.0.1")
 }

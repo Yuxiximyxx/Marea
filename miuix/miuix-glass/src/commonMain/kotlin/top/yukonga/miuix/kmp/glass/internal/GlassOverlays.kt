@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import top.yukonga.miuix.kmp.glass.GlassDefaults
@@ -114,7 +115,29 @@ internal fun DrawScope.drawGlassStroke(
     shader.setLightUniforms("in_light1", "in_light1Color", stroke.primary)
     shader.setLightUniforms("in_light2", "in_light2Color", stroke.secondary)
 
-    drawRect(brush = shader.asBrush(), blendMode = BlendMode.Plus)
+    // The stroke shader returns zero everywhere farther than max(corner radius, bevel) from the
+    // rectangle edges, yet drawing it over the whole rect still runs (and blends) a fragment for
+    // every interior pixel on every frame. On a tall surface such as a bottom sheet that is most of
+    // the screen, so restrict the pass to the four edge strips where it can produce output.
+    val halfMin = min(size.width, size.height) * 0.5f
+    val maxRadius = maxOf(
+        shape.topStart.toPx(size, this),
+        shape.topEnd.toPx(size, this),
+        shape.bottomEnd.toPx(size, this),
+        shape.bottomStart.toPx(size, this),
+    ).coerceIn(0f, halfMin)
+    val rim = maxOf(maxRadius, bevel, 0.5f) + 2f
+    val brush = shader.asBrush()
+    if (rim * 2f >= size.width || rim * 2f >= size.height) {
+        drawRect(brush = brush, blendMode = BlendMode.Plus)
+    } else {
+        val w = size.width
+        val h = size.height
+        clipRect(0f, 0f, w, rim) { drawRect(brush = brush, blendMode = BlendMode.Plus) }
+        clipRect(0f, h - rim, w, h) { drawRect(brush = brush, blendMode = BlendMode.Plus) }
+        clipRect(0f, rim, rim, h - rim) { drawRect(brush = brush, blendMode = BlendMode.Plus) }
+        clipRect(w - rim, rim, w, h - rim) { drawRect(brush = brush, blendMode = BlendMode.Plus) }
+    }
 }
 
 /**

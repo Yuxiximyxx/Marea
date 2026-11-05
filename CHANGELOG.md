@@ -2,26 +2,6 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
-## [1.5.22-dev]
-
-- 回退：恢复标签列表 / 更多菜单 sheet 的页面取样模糊与窗口遮罩（撤销 1.5.17 的去模糊）
-
-## [1.5.21-dev]
-
-- 修复：`GlassBackButton` 中 `Icon` 误用 `description` 应为 `contentDescription`，消除 1.5.20 编译失败
-
-## [1.5.20-dev]
-
-- 液态玻璃改铺到设置/关于等子页面按钮（顶栏图标、设置行、对话框按钮），底栏按钮恢复原样式
-
-## [1.5.19-dev]
-
-- 修复：`rememberLiquidBackdrop` 中 lambda 误绑定到 `verticalGradient` 导致 1.5.18 编译失败
-
-## [1.5.18-dev]
-
-- 接入公开库 AndroidLiquidGlass（`io.github.kyant0:backdrop`）：浏览页底栏与底栏按钮改用液态折射玻璃（主页仍用 miuix 真采样）
-
 ## [1.5.17-dev]
 
 - 同站复用标签：已有相同 host 的标签则切换并加载，不再重复开卡

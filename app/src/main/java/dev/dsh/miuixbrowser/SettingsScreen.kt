@@ -383,7 +383,7 @@ fun SettingsScreen(
                     Spacer(Modifier.height(10.dp))
                     GlassDialogButton(
                         onClick = { showWallpaper = false },
-                        modifier = Modifier.fillMaxWidth().liquidButton(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         cornerRadius = 14.dp,
                         minHeight = 44.dp,
                     ) {
@@ -508,7 +508,7 @@ fun SettingsScreen(
                     ) {
                         GlassDialogButton(
                             onClick = { showProxyDialog = false },
-                            modifier = Modifier.weight(1f).liquidButton(14.dp),
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
                         }
@@ -536,7 +536,7 @@ fun SettingsScreen(
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             },
-                            modifier = Modifier.weight(1f).liquidButton(14.dp),
+                            modifier = Modifier.weight(1f),
                             role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
                         ) {
                             Text(text = "保存", style = MiuixTheme.textStyles.button)
@@ -689,7 +689,6 @@ private fun SettingsRow(title: String, summary: String, onClick: () -> Unit) {
         title = title,
         summary = summary,
         onClick = onClick,
-        modifier = Modifier.liquidButton(14.dp),
     )
 }
 

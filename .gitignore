@@ -22,3 +22,4 @@ _mafari_extract/
 miuix/docs/.vitepress/cache/
 miuix/docs/.vitepress/dist/
 node_modules/
+_stable_extract/

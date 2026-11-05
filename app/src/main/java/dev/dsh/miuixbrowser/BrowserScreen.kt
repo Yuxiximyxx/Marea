@@ -66,6 +66,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -89,6 +90,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.layer.CompositingStrategy as LayerCompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
@@ -158,7 +161,6 @@ import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Back
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import com.kyant.backdrop.highlight.Highlight as LiquidHighlight
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
@@ -227,6 +229,13 @@ fun BrowserScreen(
         // 给采集层补一层不透明底色，避免网页透明区域出现模糊采样伪影。
         drawRect(browserSurfaceColor)
         drawContent()
+    }
+    // 采集层缓存成离屏纹理：否则每个取样方（底栏 / 每个收藏卡片 / 顶部渐进模糊 / 弹层）
+    // 每一帧都会把整页内容（含壁纸 28dp 模糊）重新回放一遍再叠自己的模糊，弹层动画期间必然掉帧。
+    // 缓存后内容只在真正变化（滚动、加载）时重绘，取样方只读纹理。
+    SideEffect {
+        wallpaperBackdrop.graphicsLayer.compositingStrategy = LayerCompositingStrategy.Offscreen
+        browserBackdrop.graphicsLayer.compositingStrategy = LayerCompositingStrategy.Offscreen
     }
 
     // 从其他应用点进来的链接：回到浏览页并新开标签（须在 popToBrowser 定义之后）
@@ -298,6 +307,8 @@ fun BrowserScreen(
     var editingFavIndex by remember { mutableStateOf(-1) }
     // 离场动画期间保留最近一次打开的弹层内容
     var lastActiveSheet by remember { mutableStateOf(Sheet.None) }
+    // 弹层从打开到离场动画结束的整段时间为 true：期间把（主页）整页冻结成一张纹理
+    var sheetHostActive by remember { mutableStateOf(false) }
     var showClearTabsConfirm by remember { mutableStateOf(false) }
     // 标签列表当前栏：0 = 标签页，1 = 无痕浏览页
     var tabsPage by remember { mutableIntStateOf(0) }
@@ -824,7 +835,21 @@ fun BrowserScreen(
         containerColor = MiuixTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { _ ->
-    Box(modifier = Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // 弹层动画期间页面本身没有任何变化，但整窗每帧都会重绘；把页面（含底栏、收藏卡片、
+            // 顶部模糊带等所有玻璃取样方）冻结成一张离屏纹理，每帧只做一次贴图合成，
+            // 不再重复执行这些模糊着色器。仅主页（无 WebView）启用，避免 WebView 进离屏层。
+            .graphicsLayer {
+                compositingStrategy = if (homeBlurAvailable && sheetHostActive) {
+                    CompositingStrategy.Offscreen
+                } else {
+                    CompositingStrategy.Auto
+                }
+            }
+            .background(MiuixTheme.colorScheme.surface),
+    ) {
         // 采集网页 / 首页内容，供外部的 MIUIX 玻璃底栏取样。底栏本身不能放进采集层。
         Box(
             modifier = Modifier
@@ -1221,14 +1246,24 @@ fun BrowserScreen(
 
     // 标签页列表：打开时自动滚到当前标签并高亮
     val tabsListState = rememberLazyListState()
+    var tabsOpenScrolled by remember { mutableStateOf(false) }
     LaunchedEffect(sheet, tabsPage, state.activeIndex, settings.tabsStyle) {
-        if (sheet != Sheet.Tabs) return@LaunchedEffect
+        if (sheet != Sheet.Tabs) {
+            tabsOpenScrolled = false
+            return@LaunchedEffect
+        }
         val pageIncognito = tabsPage == 1
         val visible = state.tabs.withIndex().filter { it.value.incognito == pageIncognito }
         val pos = visible.indexOfFirst { it.index == state.activeIndex }
         if (pos >= 0) {
             val row = if (settings.tabsStyle == 1) pos / 2 else pos
-            runCatching { tabsListState.animateScrollToItem(row) }
+            if (!tabsOpenScrolled) {
+                // 刚打开：弹层还在滑入，直接定位，不在动画期间再跑一段滚动动画
+                tabsOpenScrolled = true
+                runCatching { tabsListState.scrollToItem(row) }
+            } else {
+                runCatching { tabsListState.animateScrollToItem(row) }
+            }
         }
     }
 
@@ -1236,6 +1271,9 @@ fun BrowserScreen(
         val activeSheet = sheet
         if (activeSheet != Sheet.None) {
             lastActiveSheet = activeSheet
+        }
+        LaunchedEffect(activeSheet) {
+            if (activeSheet != Sheet.None) sheetHostActive = true
         }
         GlassBottomSheet(
             show = activeSheet != Sheet.None,
@@ -1286,9 +1324,12 @@ fun BrowserScreen(
                 null
             },
             endAction = null,
-            // 与清除模糊前一致：主页可采样时所有弹层（含更多/标签）都走 backdrop
+            // 所有弹层统一采样页面模糊。卡顿的根因不在弹层自己的模糊，而在页面每帧被重复回放，
+            // 已由上方的离屏缓存 / 整页冻结解决，所以更多菜单、标签列表可以恢复模糊。
             backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            enableWindowDim = lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs,
             onDismissRequest = { sheet = Sheet.None },
+            onDismissFinished = { if (sheet == Sheet.None) sheetHostActive = false },
         ) {
             Column(
                 modifier = Modifier
@@ -1972,11 +2013,7 @@ fun BrowserScreen(
 
 /* ------------------------------ 玻璃 ------------------------------ */
 
-/**
- * 底栏底板：
- * - 主页有 miuix LayerBackdrop 时：继续用 glassPanel 真采样模糊
- * - 网页态 / 关模糊采样：改用 AndroidLiquidGlass（kyant backdrop）液态折射玻璃
- */
+/** MIUIX Glass 底板：主页用 glassPanel 真玻璃；无采样/关模糊时回退到渐变底板。 */
 @Composable
 private fun Modifier.glassBar(
     backdrop: LayerBackdrop?,
@@ -1989,44 +2026,33 @@ private fun Modifier.glassBar(
     val rounded = RoundedCornerShape(corner)
     val canUseGlass = blurEnabled && textureBlurEnabled && backdrop != null &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-
-    if (canUseGlass) {
-        return this.glassPanel(
-            backdrop = backdrop,
-            shape = glassShape,
-            style = GlassDefaults.style(dark),
-            material = GlassMaterials.puredThinGlass(dark),
-            stroke = GlassStrokes.forTheme(dark),
-            shading = false,
-            fallback = Modifier
-                .clip(rounded)
-                .background(
-                    if (dark) Color(0xF02B2B31) else Color(0xF0FFFFFF),
-                    rounded,
-                ),
+    // 关闭模糊时使用接近不透明的纯色底板；网页态（无采样）提高不透明度，避免内容透出干扰。
+    val tint = when {
+        !blurEnabled -> Brush.verticalGradient(
+            listOf(
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+                MiuixTheme.colorScheme.surface.copy(alpha = 0.97f),
+            ),
         )
+        dark -> Brush.verticalGradient(listOf(Color(0xF02B2B31), Color(0xE81A1A20)))
+        else -> Brush.verticalGradient(listOf(Color(0xF0FFFFFF), Color(0xE8E7EAF0)))
     }
 
-    if (!blurEnabled) {
-        // 用户关闭模糊：不透明底，避免内容透出
-        val solid = if (dark) Color(0xF51A1A20) else Color(0xF5F5F7FA)
-        return this
+    return this.glassPanel(
+        backdrop = if (canUseGlass) backdrop else null,
+        shape = glassShape,
+        style = GlassDefaults.style(dark),
+        material = if (canUseGlass) GlassMaterials.puredThinGlass(dark) else null,
+        stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
+        shading = false,
+        fallback = Modifier
             .clip(rounded)
-            .background(solid, rounded)
-            .border(1.dp, Color.White.copy(alpha = if (dark) 0.14f else 0.85f), rounded)
-    }
-
-    // 液态玻璃：WebView 页无法采样，用主题渐变 + lens 折射
-    val liquid = rememberLiquidBackdrop(dark)
-    return this.liquidGlass(
-        backdrop = liquid,
-        shape = liquidBarShape(corner),
-        refractionHeight = 12.dp,
-        refractionAmount = 24.dp,
-        blurRadius = 2.dp,
-        tint = if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.45f),
-        highlight = LiquidHighlight(width = 1.dp, alpha = if (dark) 0.35f else 0.9f),
-        shadow = null,
+            .background(tint, rounded)
+            .border(
+                width = 1.dp,
+                color = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.9f),
+                shape = rounded,
+            ),
     )
 }
 
