@@ -3,6 +3,15 @@
 
 package top.yukonga.miuix.kmp.glass
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -317,7 +326,9 @@ private fun directionFrame(
  * @param summaryColor Colour of the second line.
  * @param selectedContentColor Colour of a selected row's label and its tick.
  * @param pressedColor Pressed background color.
+ * @param marquee Scroll an overlong label once instead of ellipsizing it; touching the row scrolls it again.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GlassPopupItem(
     text: String,
@@ -333,7 +344,9 @@ fun GlassPopupItem(
     summaryColor: Color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
     selectedContentColor: Color = MiuixTheme.colorScheme.primary,
     pressedColor: Color = GlassPopupDefaults.itemPressedColor(),
+    marquee: Boolean = false,
 ) {
+    var marqueeRestart by remember { mutableIntStateOf(0) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressFill = animateColorAsState(
@@ -351,6 +364,18 @@ fun GlassPopupItem(
             .fillMaxWidth()
             .heightIn(min = GlassPopupDefaults.ItemMinHeight)
             .padding(horizontal = GlassPopupDefaults.ItemPressInset)
+            .then(
+                if (marquee) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            marqueeRestart++
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .drawBehind {
                 drawRoundRect(
                     color = pressFill.value,
@@ -380,14 +405,29 @@ fun GlassPopupItem(
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = text,
-                fontSize = MiuixTheme.textStyles.body1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = color,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (marquee) {
+                key(marqueeRestart) {
+                    Text(
+                        text = text,
+                        fontSize = MiuixTheme.textStyles.body1.fontSize,
+                        fontWeight = FontWeight.Medium,
+                        color = color,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
+                        modifier = Modifier.basicMarquee(iterations = 1),
+                    )
+                }
+            } else {
+                Text(
+                    text = text,
+                    fontSize = MiuixTheme.textStyles.body1.fontSize,
+                    fontWeight = FontWeight.Medium,
+                    color = color,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (summary != null) {
                 Text(
                     text = summary,

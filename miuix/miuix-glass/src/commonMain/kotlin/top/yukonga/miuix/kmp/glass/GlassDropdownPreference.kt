@@ -61,6 +61,7 @@ import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.PopupLayout
  * @param sizing Popup size limits and window margin.
  * @param visuals Popup material, stroke, shadow and fallback color.
  * @param onExpandedChange Called when the popup is opened or dismissed.
+ * @param marqueeItems Scroll overlong popup items once (touch an item to scroll it again) instead of ellipsizing.
  */
 @Composable
 fun GlassDropdownPreference(
@@ -82,6 +83,7 @@ fun GlassDropdownPreference(
     sizing: GlassPopupSizing = GlassPopupSizing(),
     visuals: GlassPopupVisuals = GlassPopupDefaults.visuals(),
     onExpandedChange: ((Boolean) -> Unit)? = null,
+    marqueeItems: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val mounted = remember { mutableStateOf(false) }
@@ -171,6 +173,7 @@ fun GlassDropdownPreference(
                     GlassPopupItem(
                         text = item,
                         selected = selectedIndex == index,
+                        marquee = marqueeItems,
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             setExpanded(false)

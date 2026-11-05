@@ -22,7 +22,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -169,7 +178,16 @@ private fun ScriptRow(
     onRunCommand: (ScriptMenuCommand) -> Unit,
 ) {
     val items = if (commands.isEmpty()) listOf(NO_MENU_TEXT) else commands.map { it.title }
+    // 标题只滚动一遍；触摸该条目时换 key 让 marquee 重新滚动一遍
+    var marqueeRestart by remember { mutableIntStateOf(0) }
     GlassDropdownPreference(
+        modifier = Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                marqueeRestart++
+            }
+        },
+        marqueeItems = true,
         backdrop = backdrop,
         title = "",
         items = items,
@@ -184,16 +202,18 @@ private fun ScriptRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ScriptSheetIcon(script.icon)
-                Text(
-                    text = script.name,
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    softWrap = false,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .width(nameWidth)
-                        .basicMarquee(iterations = Int.MAX_VALUE),
-                )
+                key(marqueeRestart) {
+                    Text(
+                        text = script.name,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .width(nameWidth)
+                            .basicMarquee(iterations = 1),
+                    )
+                }
             }
         },
         onSelectedIndexChange = { index ->
