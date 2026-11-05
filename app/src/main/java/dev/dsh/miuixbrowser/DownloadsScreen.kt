@@ -231,6 +231,7 @@ fun DownloadsScreen(
                             GlassDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
                                 title = "多线程阈值",
+                                summary = "超过该阈值才使用多线程下载",
                                 items = minMbOptions.map { downloadThresholdLabel(it) },
                                 selectedIndex = minMbOptions.indexOf(multiThreadMinMb).coerceAtLeast(0),
                                 onSelectedIndexChange = { onMultiThreadMinMbChange(minMbOptions[it]) },
