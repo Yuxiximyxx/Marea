@@ -222,6 +222,34 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_TRACK, blockTrackingScripts).apply()
     }
 
+    /** 代理开关（WebView ProxyController，进程内全部标签） */
+    var proxyEnabled by mutableStateOf(prefs.getBoolean(KEY_PROXY_ON, false))
+        private set
+
+    /** 0 = HTTP，1 = SOCKS5 */
+    var proxyType by mutableStateOf(prefs.getInt(KEY_PROXY_TYPE, 0).coerceIn(0, 1))
+        private set
+
+    var proxyHost by mutableStateOf(prefs.getString(KEY_PROXY_HOST, "").orEmpty())
+        private set
+
+    var proxyPort by mutableStateOf(prefs.getInt(KEY_PROXY_PORT, 0))
+        private set
+
+    fun updateProxy(enabled: Boolean, type: Int, host: String, port: Int) {
+        proxyEnabled = enabled
+        proxyType = type.coerceIn(0, 1)
+        proxyHost = host.trim()
+        proxyPort = port.coerceIn(0, 65535)
+        prefs.edit()
+            .putBoolean(KEY_PROXY_ON, proxyEnabled)
+            .putInt(KEY_PROXY_TYPE, proxyType)
+            .putString(KEY_PROXY_HOST, proxyHost)
+            .putInt(KEY_PROXY_PORT, proxyPort)
+            .apply()
+        WebViewProxy.applyFrom(this)
+    }
+
     private companion object {
         const val KEY_BLUR = "blur"
         const val KEY_APP_ICON = "app_icon"
@@ -246,6 +274,10 @@ class AppSettings(context: Context) {
         const val KEY_MEDIA = "perm_media_autoplay"
         const val KEY_NOTIFY = "perm_notification"
         const val KEY_TRACK = "block_tracking"
+        const val KEY_PROXY_ON = "proxy_enabled"
+        const val KEY_PROXY_TYPE = "proxy_type"
+        const val KEY_PROXY_HOST = "proxy_host"
+        const val KEY_PROXY_PORT = "proxy_port"
     }
 }
 

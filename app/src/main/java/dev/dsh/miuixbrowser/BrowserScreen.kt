@@ -633,6 +633,16 @@ fun BrowserScreen(
         tab.applyDisplayTheme(appDark)
     }
 
+    // 代理（ProxyController）：设置变化或进入浏览页时应用到全部 WebView
+    LaunchedEffect(
+        settings.proxyEnabled,
+        settings.proxyType,
+        settings.proxyHost,
+        settings.proxyPort,
+    ) {
+        WebViewProxy.applyFrom(settings)
+    }
+
     // WebView 不会把滚动事件抛给 Compose，这里轻量轮询页面滚动位置：
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.toList()) {

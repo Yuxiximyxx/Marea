@@ -86,6 +86,7 @@ fun SettingsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
+    var showProxyDialog by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -289,6 +290,16 @@ fun SettingsScreen(
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
                     )
+                    SettingsRow(
+                        title = "代理",
+                        summary = if (settings.proxyEnabled && settings.proxyHost.isNotBlank()) {
+                            val kind = if (settings.proxyType == 1) "SOCKS5" else "HTTP"
+                            "已开启 · $kind ${settings.proxyHost}:${settings.proxyPort}"
+                        } else {
+                            "关闭 · 支持 HTTP / SOCKS5"
+                        },
+                        onClick = { showProxyDialog = true },
+                    )
                 }
 
                 SmallTitle(text = "关于")
@@ -376,6 +387,94 @@ fun SettingsScreen(
                         minHeight = 44.dp,
                     ) {
                         Text(text = "关闭", fontSize = 16.sp, style = MiuixTheme.textStyles.button)
+                    }
+                }
+            }
+
+            // 代理：官方 ProxyController，HTTP / SOCKS5
+            var proxyOn by remember(showProxyDialog) { mutableStateOf(settings.proxyEnabled) }
+            var proxyType by remember(showProxyDialog) { mutableStateOf(settings.proxyType) }
+            var proxyHost by remember(showProxyDialog) { mutableStateOf(settings.proxyHost) }
+            var proxyPort by remember(showProxyDialog) {
+                mutableStateOf(if (settings.proxyPort > 0) settings.proxyPort.toString() else "")
+            }
+            GlassDialog(
+                show = showProxyDialog,
+                title = "代理",
+                summary = "WebView 级 HTTP / SOCKS5（ProxyController）",
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { showProxyDialog = false },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "启用代理",
+                            fontSize = 15.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = proxyOn, onCheckedChange = { proxyOn = it })
+                    }
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
+                        title = "类型",
+                        items = listOf("HTTP", "SOCKS5"),
+                        selectedIndex = proxyType.coerceIn(0, 1),
+                        onSelectedIndexChange = { proxyType = it },
+                    )
+                    TextField(
+                        value = proxyHost,
+                        onValueChange = { proxyHost = it },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        label = "主机（如 127.0.0.1）",
+                        singleLine = true,
+                    )
+                    TextField(
+                        value = proxyPort,
+                        onValueChange = { proxyPort = it.filter { c -> c.isDigit() }.take(5) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        label = "端口（如 7890）",
+                        singleLine = true,
+                    )
+                    Text(
+                        text = "对全部标签页生效；留空主机或关闭开关即清除代理。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        GlassDialogButton(
+                            onClick = { showProxyDialog = false },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        GlassDialogButton(
+                            onClick = {
+                                val port = proxyPort.toIntOrNull() ?: 0
+                                settings.updateProxy(proxyOn, proxyType, proxyHost, port)
+                                showProxyDialog = false
+                                Toast.makeText(
+                                    context,
+                                    if (proxyOn && proxyHost.isNotBlank() && port in 1..65535) {
+                                        "代理已${if (proxyType == 1) "（SOCKS5）" else "（HTTP）"}生效"
+                                    } else {
+                                        "代理已关闭"
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "保存", style = MiuixTheme.textStyles.button)
+                        }
                     }
                 }
             }
