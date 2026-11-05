@@ -60,6 +60,7 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -154,7 +155,14 @@ private fun FilePreview(task: DownloadTask) {
 }
 
 @Composable
-fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
+fun DownloadsScreen(
+    onBack: () -> Unit,
+    blurEnabled: Boolean = true,
+    threads: Int = 4,
+    onThreadsChange: (Int) -> Unit = {},
+    multiThreadMinMb: Int = 1,
+    onMultiThreadMinMbChange: (Int) -> Unit = {},
+) {
     val context = LocalContext.current
     val tasks = Downloader.tasks
     val backdrop = rememberLayerBackdrop()
@@ -187,20 +195,52 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     .background(MiuixTheme.colorScheme.surface)
                     .navigationBarsPadding(),
             ) {
-            if (tasks.isEmpty()) {
-                Text(
-                    text = "还没有下载任务。网页里的下载会先弹确认框，再保存到 /sdcard/Download/mafari。",
-                    fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(top = topInset).padding(24.dp),
-                )
-            } else {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(top = topInset, bottom = 24.dp),
                 ) {
                     item {
-                        SmallTitle(text = "本应用下载")
+                        SmallTitle(text = "下载配置")
+                    }
+                    item {
+                        val threadOptions = AppSettings.DOWNLOAD_THREAD_OPTIONS
+                        val minMbOptions = AppSettings.DOWNLOAD_MIN_MB_OPTIONS
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 8.dp),
+                            insideMargin = PaddingValues(0.dp),
+                        ) {
+                            GlassDropdownPreference(
+                                backdrop = if (glass) backdrop else null,
+                                title = "线程数",
+                                items = threadOptions.map { it.toString() },
+                                selectedIndex = threadOptions.indexOf(threads).coerceAtLeast(0),
+                                onSelectedIndexChange = { onThreadsChange(threadOptions[it]) },
+                            )
+                            GlassDropdownPreference(
+                                backdrop = if (glass) backdrop else null,
+                                title = "超过多少 MB 使用多线程",
+                                items = minMbOptions.map { "$it MB" },
+                                selectedIndex = minMbOptions.indexOf(multiThreadMinMb).coerceAtLeast(0),
+                                onSelectedIndexChange = { onMultiThreadMinMbChange(minMbOptions[it]) },
+                            )
+                        }
+                    }
+                    if (tasks.isEmpty()) {
+                        item {
+                            Text(
+                                text = "还没有下载任务。网页里的下载会先弹确认框，再保存到 /sdcard/Download/mafari。",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(24.dp),
+                            )
+                        }
+                    } else {
+                        item {
+                            SmallTitle(text = "本应用下载")
+                        }
                     }
                     items(tasks.size) { index ->
                         val task = tasks[index]
@@ -282,7 +322,6 @@ fun DownloadsScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         }
                     }
                 }
-            }
             }
         }
 

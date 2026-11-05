@@ -64,6 +64,8 @@ import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassStrokes
 import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 
 @Composable
 fun AboutScreen(
@@ -80,8 +82,11 @@ fun AboutScreen(
     var checkingUpdate by remember { mutableStateOf(false) }
 
     val pageBackdrop = rememberLayerBackdrop()
+    val liquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)
+    val liquid = if (glass) liquidBackdrop else null
     val scrollBehavior = MiuixScrollBehavior()
+    val topScrolled = rememberTopBarScrolled(scrollBehavior)
     val dark = isAppDarkTheme()
     val surface = MiuixTheme.colorScheme.surface
     val iconShape = RoundedCornerShape(26.dp)
@@ -97,13 +102,16 @@ fun AboutScreen(
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
+                backButton = {
+                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                },
             )
         },
     ) { innerPadding ->
         val topInset = innerPadding.calculateTopPadding()
         Box(modifier = Modifier.fillMaxSize().background(surface)) {
             // ---- 整页背景：铺满全屏的主题色渐变，供玻璃图标与顶栏采样（顶栏在录制层之外）----
-            Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop)) {
+            Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop).kyantLayerBackdrop(liquidBackdrop)) {
                 Box(modifier = Modifier.fillMaxSize().background(surface))
                 Box(
                     modifier = Modifier

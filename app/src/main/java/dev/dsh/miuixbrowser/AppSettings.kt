@@ -38,6 +38,34 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_UPDATE_CHANNEL, updateChannel).apply()
     }
 
+    /** 下载线程数：4/8/16/32/64 */
+    var downloadThreads by mutableStateOf(prefs.getInt(KEY_DL_THREADS, 4).let { if (it in DOWNLOAD_THREAD_OPTIONS) it else 4 })
+        private set
+
+    fun updateDownloadThreads(threads: Int) {
+        downloadThreads = if (threads in DOWNLOAD_THREAD_OPTIONS) threads else 4
+        Downloader.segments = downloadThreads
+        prefs.edit().putInt(KEY_DL_THREADS, downloadThreads).apply()
+    }
+
+    /** 文件超过多少 MB 才使用多线程下载 */
+    var downloadMultiThreadMinMb by mutableStateOf(
+        prefs.getInt(KEY_DL_MIN_MB, 1).let { if (it in DOWNLOAD_MIN_MB_OPTIONS) it else 1 },
+    )
+        private set
+
+    fun updateDownloadMultiThreadMinMb(mb: Int) {
+        downloadMultiThreadMinMb = if (mb in DOWNLOAD_MIN_MB_OPTIONS) mb else 1
+        Downloader.segmentMinBytes = downloadMultiThreadMinMb * 1024L * 1024L
+        prefs.edit().putInt(KEY_DL_MIN_MB, downloadMultiThreadMinMb).apply()
+    }
+
+    init {
+        // 启动时把已保存的下载配置推给下载器
+        Downloader.segments = downloadThreads
+        Downloader.segmentMinBytes = downloadMultiThreadMinMb * 1024L * 1024L
+    }
+
     /** 应用图标：0=默认 1=多彩 2=立体 3=深色（对应 AppIconManager.ICONS） */
     var appIcon by mutableStateOf(prefs.getInt(KEY_APP_ICON, 0).coerceIn(0, 3))
         private set
@@ -296,6 +324,10 @@ class AppSettings(context: Context) {
         const val KEY_APP_ICON = "app_icon"
         const val KEY_IGNORED_UPDATE = "ignored_update"
         const val KEY_UPDATE_CHANNEL = "update_channel"
+        const val KEY_DL_THREADS = "download_threads"
+        const val KEY_DL_MIN_MB = "download_multithread_min_mb"
+        val DOWNLOAD_THREAD_OPTIONS = listOf(4, 8, 16, 32, 64)
+        val DOWNLOAD_MIN_MB_OPTIONS = listOf(1, 5, 10, 20, 50, 100)
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"

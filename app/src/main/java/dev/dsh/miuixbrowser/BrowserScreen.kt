@@ -1998,6 +1998,10 @@ fun BrowserScreen(
         DownloadsScreen(
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
+            threads = settings.downloadThreads,
+            onThreadsChange = { settings.updateDownloadThreads(it) },
+            multiThreadMinMb = settings.downloadMultiThreadMinMb,
+            onMultiThreadMinMbChange = { settings.updateDownloadMultiThreadMinMb(it) },
         )
     }
     entry<AppRoute.AdBlockPage> {

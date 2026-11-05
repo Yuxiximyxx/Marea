@@ -105,11 +105,16 @@ object Downloader {
         val task = tasks.firstOrNull { it.id == id }
         task?.uri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
         runCatching { tempFile(context, id).delete() }
+        runCatching { segFile(context, id).delete() }
         tasks.removeAll { it.id == id }
     }
 
     private fun tempFile(context: Context, id: Long) =
         java.io.File(context.cacheDir, "mafari_dl_$id.part")
+
+    /** 多线程分段下载专用临时文件：会预先撑满到总长度，不能和断点续传共用 .part，否则重试时会误当成“已下完”而发出越界 Range → HTTP 416 */
+    private fun segFile(context: Context, id: Long) =
+        java.io.File(context.cacheDir, "mafari_dl_$id.seg")
 
     private fun launch(context: Context, id: Long) {
         jobs.remove(id)?.cancel()
@@ -144,17 +149,33 @@ object Downloader {
         val file = tempFile(context, id)
         var existing = if (file.exists()) file.length() else 0L
 
-        val connection = (URL(task.url).openConnection() as HttpURLConnection).apply {
+        // 旧版本遗留的 / 已经完整的临时文件：长度已达总长度，再发 Range 必然 416，直接重来
+        if (existing > 0 && task.total > 0 && existing >= task.total) {
+            runCatching { file.delete() }
+            existing = 0
+        }
+
+        fun open(from: Long): HttpURLConnection = (URL(task.url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15000
             readTimeout = 30000
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
             setRequestProperty("Accept", "*/*")
             setRequestProperty("Accept-Encoding", "identity")
-            if (existing > 0) setRequestProperty("Range", "bytes=$existing-")
+            if (from > 0) setRequestProperty("Range", "bytes=$from-")
         }
+
+        var connection = open(existing)
         try {
-            val code = connection.responseCode
+            var code = connection.responseCode
+            if (code == 416 && existing > 0) {
+                // 服务器认为续传位置越界（文件已变 / 临时文件已满）：丢弃临时文件，从头下载
+                connection.disconnect()
+                runCatching { file.delete() }
+                existing = 0
+                connection = open(0)
+                code = connection.responseCode
+            }
             if (code !in 200..299) throw IllegalStateException("HTTP $code")
             val length = connection.contentLengthLong.coerceAtLeast(0)
             val append = existing > 0 && code == 206
@@ -170,9 +191,24 @@ object Downloader {
                 )
             }
             // 多线程分段下载（服务器支持 Range 且文件 > 1MB 时）
-            if (existing == 0L && append.not() && length > 1024 * 1024 && supportsRange(task)) {
-                downloadSegmented(context, id, task, file, length)
-                return finishToMediaStore(context, id, task, file)
+            if (existing == 0L && append.not() && length > segmentMinBytes) {
+                // 先放掉这条整文件连接，再探测 Range，避免对镜像同时开 N+2 条连接被限流
+                connection.disconnect()
+                if (supportsRange(task)) {
+                    val seg = segFile(context, id)
+                    runCatching { seg.delete() }
+                    try {
+                        downloadSegmented(context, id, task, seg, length)
+                    } catch (t: Throwable) {
+                        runCatching { seg.delete() }
+                        throw t
+                    }
+                    return finishToMediaStore(context, id, task, seg)
+                }
+                // 不支持 Range：重新建立单连接顺序下载
+                connection = open(0)
+                val retryCode = connection.responseCode
+                if (retryCode !in 200..299) throw IllegalStateException("HTTP $retryCode")
             }
 
             connection.inputStream.use { input ->
@@ -252,7 +288,7 @@ object Downloader {
         file: java.io.File,
         total: Long,
     ) {
-        val threads = SEGMENTS.coerceAtMost(((total / (256 * 1024)) + 1).toInt()).coerceAtLeast(1)
+        val threads = segments.coerceAtMost(((total / (256 * 1024)) + 1).toInt()).coerceAtLeast(1)
         val chunk = total / threads
         java.io.RandomAccessFile(file, "rw").use { raf ->
             raf.setLength(total)
@@ -273,13 +309,15 @@ object Downloader {
                         }
                         try {
                             val code = connection.responseCode
-                            if (code !in 200..299) throw IllegalStateException("HTTP $code")
+                            // 必须是 206：返回 200 说明服务器忽略了 Range，整文件会被写到错误的偏移上
+                            if (code != 206) throw IllegalStateException("HTTP $code")
                             connection.inputStream.use { input ->
                                 val buffer = ByteArray(128 * 1024)
                                 var position = start
                                 while (true) {
                                     val read = input.read(buffer)
-                                    if (read <= 0) break
+                                    if (read < 0) break
+                                    if (read == 0) continue
                                     synchronized(raf) {
                                         raf.seek(position)
                                         raf.write(buffer, 0, read)
@@ -303,6 +341,9 @@ object Downloader {
                                             id,
                                         )
                                     }
+                                }
+                                if (position != end + 1) {
+                                    throw IllegalStateException("分段 ${index + 1} 数据不完整")
                                 }
                             }
                         } finally {
@@ -451,5 +492,11 @@ object Downloader {
     }
 
     private const val MAX_ATTEMPTS = 3
-    private const val SEGMENTS = 4
+    /** 分段下载线程数（设置里可选 4/8/16/32/64） */
+    @Volatile
+    var segments = 4
+
+    /** 文件超过该字节数才使用多线程分段下载 */
+    @Volatile
+    var segmentMinBytes = 1024L * 1024
 }
