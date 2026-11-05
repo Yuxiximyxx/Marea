@@ -55,6 +55,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDefaults
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
@@ -69,6 +70,8 @@ fun AboutScreen(
     onBack: () -> Unit,
     onOpenUrl: (String) -> Unit = {},
     blurEnabled: Boolean = true,
+    updateChannel: Int = 0,
+    onUpdateChannelChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -178,7 +181,7 @@ fun AboutScreen(
                             if (checkingUpdate) return@GlassDialogButton
                             checkingUpdate = true
                             scope.launch {
-                                val result = withContext(Dispatchers.IO) { fetchLatestRelease() }
+                                val result = withContext(Dispatchers.IO) { fetchLatestRelease(updateChannel) }
                                 checkingUpdate = false
                                 if (result == null) {
                                     Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
@@ -214,7 +217,15 @@ fun AboutScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    AboutRow("MIUIX Glass", "0.9.4 · miuix-glass")
+                    GlassDropdownPreference(
+                        backdrop = if (glass) pageBackdrop else null,
+                        title = "Mafari",
+                        summary = BuildConfig.VERSION_NAME,
+                        items = listOf("stable", "dev"),
+                        selectedIndex = updateChannel.coerceIn(0, 1),
+                        onSelectedIndexChange = onUpdateChannelChange,
+                    )
+                    AboutRow("miuix", "0.9.4 · miuix-glass")
                     AboutRow("内核版本", kernel)
                 }
 
@@ -259,7 +270,7 @@ fun AboutScreen(
 
                 Spacer(Modifier.height(18.dp))
                 Text(
-                    text = "Mafari · 基于 MIUIX Glass 与系统 WebView",
+                    text = "Mafari · 基于 miuix 与系统 WebView",
                     fontSize = 12.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 20.dp),
@@ -326,23 +337,33 @@ data class AppRelease(
 )
 
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
-private const val RELEASE_API = "https://api.github.com/repos/rosenii/mafari/releases/latest"
+private const val RELEASES_API = "https://api.github.com/repos/rosenii/mafari/releases?per_page=30"
+
+/** 预览类后缀；带这些后缀的 tag 归入 dev 分支（-dev 为主，其余预览后缀一并算 dev） */
+private val PRE_TAG = Regex("(dev|alpha|beta|rc|snapshot)", RegexOption.IGNORE_CASE)
+
+/** tag 是否属于指定分支：0=stable（-stable 或无预览后缀） 1=dev（带预览后缀） */
+internal fun tagMatchesChannel(tag: String, channel: Int): Boolean {
+    val isPre = PRE_TAG.containsMatchIn(tag)
+    return if (channel == 1) isPre else !isPre
+}
 
 /**
- * 拉取最新 release：版本号、页面地址、APK 直链。
+ * 拉取指定分支（0=stable 1=dev）的最新 release：版本号、页面地址、APK 直链。
+ * 取最近 30 个 release，只保留 tag 后缀匹配分支、非草稿的，再按版本号取最高者。
  * 直连 + 公共 GitHub 加速镜像并发探测，连通者优先。
  */
-internal fun fetchLatestRelease(): AppRelease? {
+internal fun fetchLatestRelease(channel: Int): AppRelease? {
     val fetchers: List<() -> AppRelease?> = GitHubAccelerate.MirrorPrefixes.map { prefix ->
         {
-            val api = GitHubAccelerate.map(RELEASE_API, prefix)
-            fetchReleaseFrom(api)
+            val api = GitHubAccelerate.map(RELEASES_API, prefix)
+            fetchReleaseFrom(api, channel)
         }
     }
     return GitHubAccelerate.raceFirst(8000, fetchers)
 }
 
-private fun fetchReleaseFrom(apiUrl: String): AppRelease? = runCatching {
+private fun fetchReleaseFrom(apiUrl: String, channel: Int): AppRelease? = runCatching {
     val connection = (java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
         connectTimeout = 6000
         readTimeout = 6000
@@ -352,15 +373,35 @@ private fun fetchReleaseFrom(apiUrl: String): AppRelease? = runCatching {
     }
     try {
         if (connection.responseCode !in 200..299) return@runCatching null
-        val text = connection.inputStream.bufferedReader().readText()
-        val tag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            ?: return@runCatching null
-        val pageUrl = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            ?: PROJECT_URL + "/releases"
-        val apkUrl = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"")
-            .find(text)?.groupValues?.get(1)
-        val notes = runCatching { org.json.JSONObject(text).optString("body", "") }.getOrDefault("").trim()
-        AppRelease(version = tag, pageUrl = pageUrl, apkUrl = apkUrl, notes = notes)
+        val array = org.json.JSONArray(connection.inputStream.bufferedReader().readText())
+        var best: AppRelease? = null
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            if (o.optBoolean("draft", false)) continue
+            val tag = o.optString("tag_name", "")
+            if (tag.isBlank() || !tagMatchesChannel(tag, channel)) continue
+            val pageUrl = o.optString("html_url", "").ifBlank { PROJECT_URL + "/releases" }
+            var apkUrl: String? = null
+            val assets = o.optJSONArray("assets")
+            if (assets != null) {
+                for (j in 0 until assets.length()) {
+                    val link = assets.optJSONObject(j)?.optString("browser_download_url", "").orEmpty()
+                    if (link.endsWith(".apk", ignoreCase = true)) {
+                        apkUrl = link
+                        break
+                    }
+                }
+            }
+            val candidate = AppRelease(
+                version = tag,
+                pageUrl = pageUrl,
+                apkUrl = apkUrl,
+                notes = o.optString("body", "").trim(),
+            )
+            val current = best
+            if (current == null || isNewerVersion(candidate.version, current.version)) best = candidate
+        }
+        best
     } finally {
         connection.disconnect()
     }

@@ -32,8 +32,8 @@ object UpdateChecker {
     var checkedThisProcess = false
 
     /** 有可提示的新版本则返回，否则 null（网络失败、已是最新、已被用户忽略都返回 null）。 */
-    fun findPending(ignored: String): AppRelease? {
-        val rel = fetchLatestRelease() ?: return null
+    fun findPending(ignored: String, channel: Int): AppRelease? {
+        val rel = fetchLatestRelease(channel) ?: return null
         if (!isNewerVersion(rel.version, BuildConfig.VERSION_NAME)) return null
         if (rel.version.removePrefix("v") == ignored.removePrefix("v")) return null
         return rel

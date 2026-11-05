@@ -335,7 +335,7 @@ fun BrowserScreen(
         // 稍等首屏稳定再请求，避免和启动渲染抢资源
         kotlinx.coroutines.delay(1500)
         val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            UpdateChecker.findPending(settings.ignoredUpdate)
+            UpdateChecker.findPending(settings.ignoredUpdate, settings.updateChannel)
         }
         if (found != null) {
             lastUpdateRelease = found
@@ -1990,6 +1990,8 @@ fun BrowserScreen(
             onBack = { popPage() },
             onOpenUrl = { openInBrowser(it) },
             blurEnabled = settings.blurEnabled,
+            updateChannel = settings.updateChannel,
+            onUpdateChannelChange = { settings.updateUpdateChannel(it) },
         )
     }
     entry<AppRoute.Downloads> {

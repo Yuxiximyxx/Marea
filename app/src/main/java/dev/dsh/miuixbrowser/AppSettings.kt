@@ -21,6 +21,23 @@ class AppSettings(context: Context) {
         prefs.edit().putString(KEY_IGNORED_UPDATE, version).apply()
     }
 
+    /** 更新分支：0=stable 1=dev。未设置过时跟随当前安装包的版本后缀（-dev → dev，否则 stable） */
+    var updateChannel by mutableStateOf(
+        if (prefs.contains(KEY_UPDATE_CHANNEL)) {
+            prefs.getInt(KEY_UPDATE_CHANNEL, 0).coerceIn(0, 1)
+        } else if (BuildConfig.VERSION_NAME.contains("dev", ignoreCase = true)) {
+            1
+        } else {
+            0
+        },
+    )
+        private set
+
+    fun updateUpdateChannel(channel: Int) {
+        updateChannel = channel.coerceIn(0, 1)
+        prefs.edit().putInt(KEY_UPDATE_CHANNEL, updateChannel).apply()
+    }
+
     /** 应用图标：0=默认 1=多彩 2=立体 3=深色（对应 AppIconManager.ICONS） */
     var appIcon by mutableStateOf(prefs.getInt(KEY_APP_ICON, 0).coerceIn(0, 3))
         private set
@@ -278,6 +295,7 @@ class AppSettings(context: Context) {
         const val KEY_BLUR = "blur"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_IGNORED_UPDATE = "ignored_update"
+        const val KEY_UPDATE_CHANNEL = "update_channel"
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"
