@@ -145,14 +145,13 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.glass.Settings
 import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.icon.glass.Refresh
 import top.yukonga.miuix.kmp.icon.glass.Phone
 import top.yukonga.miuix.kmp.icon.glass.More
-import top.yukonga.miuix.kmp.icon.glass.Layers
 import top.yukonga.miuix.kmp.icon.glass.Info
 import top.yukonga.miuix.kmp.icon.glass.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.glass.Hide
@@ -2138,7 +2137,7 @@ private fun BottomBar(
                 )
             } else {
                 PressIcon(
-                    icon = MiuixIcons.Glass.Sidebar,
+                    icon = MiuixIcons.Home,
                     description = "主页",
                     enabled = true,
                     onClick = onHome,
@@ -2278,7 +2277,7 @@ private fun TabIcon(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     ) {
         Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
             IconWithContourShadow(
-                imageVector = MiuixIcons.Glass.Layers,
+                imageVector = AppIcons.Tabs,
                 description = "标签页",
                 tint = color,
                 scale = scale,

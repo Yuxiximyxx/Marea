@@ -75,5 +75,5 @@ fun glassDialogSurface(
         shadow = null,
         shading = false,
         fallback = Modifier.clip(shape).background(containerColor),
-    ).then(deform.highlight(shape))
+    )
 }

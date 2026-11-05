@@ -198,6 +198,7 @@ internal fun BoxScope.GlassDropdownPopupContent(
         modifier = modifier,
         interactive = show,
         scrollable = true,
+        dragDeform = false,
         content = content,
     )
 }

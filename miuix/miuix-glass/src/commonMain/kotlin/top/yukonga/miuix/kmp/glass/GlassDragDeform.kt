@@ -14,13 +14,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -28,38 +22,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.shader.RuntimeShader
-import top.yukonga.miuix.kmp.shader.asBrush
-import top.yukonga.miuix.kmp.shader.isRuntimeShaderSupported
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tanh
 
-// Touch highlight, shared by every popup. Uniforms are set right before each draw.
-private val highlightShader: RuntimeShader? by lazy {
-    if (isRuntimeShaderSupported()) RuntimeShader(HIGHLIGHT_SHADER) else null
-}
-
-private const val HIGHLIGHT_SHADER = """
-uniform float2 size;
-layout(color) uniform half4 color;
-uniform float radius;
-uniform float2 position;
-
-half4 main(float2 coord) {
-    float dist = distance(coord, position);
-    float intensity = smoothstep(radius, radius * 0.5, dist);
-    return color * intensity;
-}"""
-
 /**
  * Drag-to-deform press feedback for dialogs, bottom sheets and popup menus.
  *
  * The deformation maths and spring specs follow Kyant0/AndroidLiquidGlass's InteractiveHighlight
  * and its drag-scale layer: press grows the panel, the drag is tanh-damped into a translation, and
- * the panel stretches along the drag direction. A highlight follows the finger.
+ * the panel stretches along the drag direction. Panels get no touch highlight; only buttons do.
  *
  * The gesture only watches the [PointerEventPass.Final] pass and never consumes, so taps, buttons,
  * text fields and scrolling keep working. It engages after the touch slop, and not at all for
@@ -124,30 +98,6 @@ internal class GlassDragDeform(private val scope: CoroutineScope) {
                 maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
                 (height / width).coerceAtMost(1f)
         }
-
-    /** Draws the touch highlight over the whole bounds; the caller clips to the panel shape. */
-    fun DrawScope.drawHighlight() {
-        val progress = press.value
-        if (progress <= 0f) return
-        val shader = highlightShader
-        if (shader != null) {
-            drawRect(Color.White.copy(0.08f * progress), blendMode = BlendMode.Plus)
-            val p = position.value
-            shader.setFloatUniform("size", size.width, size.height)
-            shader.setColorUniform("color", Color.White.copy(0.15f * progress))
-            shader.setFloatUniform("radius", size.minDimension * 1.5f)
-            shader.setFloatUniform("position", p.x.coerceIn(0f, size.width), p.y.coerceIn(0f, size.height))
-            drawRect(brush = shader.asBrush(), blendMode = BlendMode.Plus)
-        } else {
-            drawRect(Color.White.copy(0.25f * progress), blendMode = BlendMode.Plus)
-        }
-    }
-
-    /** [drawHighlight] as a modifier, clipped to [shape] and drawn above the content it wraps. */
-    fun highlight(shape: Shape): Modifier = Modifier.clip(shape).drawWithContent {
-        drawContent()
-        drawHighlight()
-    }
 
     private fun begin(down: Offset) {
         start = down

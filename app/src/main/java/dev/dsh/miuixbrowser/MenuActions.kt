@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.WorldClock
 import top.yukonga.miuix.kmp.icon.glass.Translate
-import top.yukonga.miuix.kmp.icon.glass.Sidebar
+import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.glass.Share
 import top.yukonga.miuix.kmp.icon.glass.Settings
 import top.yukonga.miuix.kmp.icon.glass.Search
@@ -15,7 +15,6 @@ import top.yukonga.miuix.kmp.icon.glass.Link
 import top.yukonga.miuix.kmp.icon.glass.Hide
 import top.yukonga.miuix.kmp.icon.glass.GridView
 import top.yukonga.miuix.kmp.icon.glass.Favorites
-import top.yukonga.miuix.kmp.icon.glass.Edit
 import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Copy
@@ -34,9 +33,9 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     CopyLink("copy", "复制链接", MiuixIcons.Glass.Copy),
     External("external", "外部打开", MiuixIcons.Glass.Link),
     Settings("settings", "设置", MiuixIcons.Glass.Settings),
-    Home("home", "主页", MiuixIcons.Glass.Sidebar),
+    Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
-    Extensions("extensions", "脚本", MiuixIcons.Glass.Edit),
+    Extensions("extensions", "脚本", AppIcons.Script),
     ScriptMenu("script_menu", "脚本命令", MiuixIcons.Glass.File),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),

@@ -78,5 +78,5 @@ fun glassBottomSheetSurface(
         shadow = null,
         shading = false,
         fallback = Modifier.clip(shape).background(containerColor),
-    ).then(if (isOverscroll) Modifier else deform.highlight(shape))
+    )
 }

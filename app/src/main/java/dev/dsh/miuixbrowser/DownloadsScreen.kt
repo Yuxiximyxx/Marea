@@ -36,9 +36,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,50 +66,66 @@ import top.yukonga.miuix.kmp.glass.GlassTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Refresh
 import top.yukonga.miuix.kmp.icon.glass.Play
-import top.yukonga.miuix.kmp.icon.glass.Photos
 import top.yukonga.miuix.kmp.icon.glass.Pause
-import top.yukonga.miuix.kmp.icon.glass.Music
-import top.yukonga.miuix.kmp.icon.glass.Folder
-import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Close
-import top.yukonga.miuix.kmp.icon.glass.AppRecording
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
-private enum class FileKind { IMAGE, VIDEO, AUDIO, ARCHIVE, APK, OTHER }
+private enum class FileKind(val iconRes: Int, val accent: Color) {
+    IMAGE(R.drawable.ic_file_image, Color(0xFF26A69A)),
+    VIDEO(R.drawable.ic_file_video, Color(0xFF8E54E9)),
+    AUDIO(R.drawable.ic_file_audio, Color(0xFFEC407A)),
+    ARCHIVE(R.drawable.ic_file_archive, Color(0xFFF59E0B)),
+    APK(R.drawable.ic_file_apk, Color(0xFF3DDC84)),
+    PDF(R.drawable.ic_file_pdf, Color(0xFFE5484D)),
+    DOC(R.drawable.ic_file_doc, Color(0xFF2B6CD9)),
+    SHEET(R.drawable.ic_file_sheet, Color(0xFF1F9D55)),
+    SLIDE(R.drawable.ic_file_slide, Color(0xFFF08A24)),
+    TEXT(R.drawable.ic_file_text, Color(0xFF7B8794)),
+    CODE(R.drawable.ic_file_code, Color(0xFF5B6EE1)),
+    OTHER(R.drawable.ic_file_other, Color(0xFF6B7A90)),
+}
 
 private fun fileKindOf(name: String): FileKind = when (name.substringAfterLast('.', "").lowercase()) {
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif" -> FileKind.IMAGE
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "svg", "avif" -> FileKind.IMAGE
     "mp4", "mkv", "webm", "mov", "avi", "3gp", "ts", "m4v", "flv" -> FileKind.VIDEO
     "mp3", "m4a", "flac", "wav", "aac", "ogg", "opus" -> FileKind.AUDIO
-    "zip", "rar", "7z", "tar", "gz", "bz2", "xz" -> FileKind.ARCHIVE
-    "apk", "apks", "xapk" -> FileKind.APK
+    "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz" -> FileKind.ARCHIVE
+    "apk", "apks", "xapk", "apkm" -> FileKind.APK
+    "pdf" -> FileKind.PDF
+    "doc", "docx", "rtf", "odt", "wps", "pages" -> FileKind.DOC
+    "xls", "xlsx", "csv", "ods", "numbers" -> FileKind.SHEET
+    "ppt", "pptx", "odp", "key" -> FileKind.SLIDE
+    "txt", "md", "log", "ini", "conf" -> FileKind.TEXT
+    "js", "json", "html", "htm", "xml", "css", "kt", "java", "py", "sh", "c", "cpp", "h", "yml", "yaml" -> FileKind.CODE
     else -> FileKind.OTHER
 }
 
-private fun iconOf(kind: FileKind): ImageVector = when (kind) {
-    FileKind.IMAGE -> MiuixIcons.Glass.Photos
-    FileKind.VIDEO -> MiuixIcons.Glass.Play
-    FileKind.AUDIO -> MiuixIcons.Glass.Music
-    FileKind.ARCHIVE -> MiuixIcons.Glass.Folder
-    FileKind.APK -> MiuixIcons.Glass.AppRecording
-    FileKind.OTHER -> MiuixIcons.Glass.File
-}
-
-private fun loadThumbnail(context: Context, uri: Uri, video: Boolean): ImageBitmap? = runCatching {
-    if (video) {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-            retriever.getFrameAtTime(0)?.asImageBitmap()
-        } finally {
-            runCatching { retriever.release() }
+/** 图片 / 视频 / 音频保留封面；取不到封面时退回对应类型的图标。 */
+private fun loadThumbnail(context: Context, uri: Uri, kind: FileKind): ImageBitmap? = runCatching {
+    when (kind) {
+        FileKind.VIDEO -> {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                retriever.getFrameAtTime(0)?.asImageBitmap()
+            } finally {
+                runCatching { retriever.release() }
+            }
         }
-    } else {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        FileKind.AUDIO -> {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                retriever.embeddedPicture?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.asImageBitmap()
+            } finally {
+                runCatching { retriever.release() }
+            }
+        }
+        else -> context.contentResolver.openInputStream(uri)?.use { stream ->
             val options = BitmapFactory.Options().apply { inSampleSize = 4 }
             BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
         }
@@ -123,9 +139,9 @@ private fun FilePreview(task: DownloadTask) {
     val preview by produceState<ImageBitmap?>(initialValue = null, key1 = task.uri, key2 = task.state) {
         value = if (task.uri != null &&
             task.state == DownloadState.DONE &&
-            (kind == FileKind.IMAGE || kind == FileKind.VIDEO)
+            (kind == FileKind.IMAGE || kind == FileKind.VIDEO || kind == FileKind.AUDIO)
         ) {
-            withContext(Dispatchers.IO) { loadThumbnail(context, task.uri, kind == FileKind.VIDEO) }
+            withContext(Dispatchers.IO) { loadThumbnail(context, task.uri, kind) }
         } else {
             null
         }
@@ -134,7 +150,7 @@ private fun FilePreview(task: DownloadTask) {
         modifier = Modifier
             .size(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(MiuixTheme.colorScheme.surfaceContainerHigh),
+            .background(kind.accent.copy(alpha = 0.14f)),
         contentAlignment = Alignment.Center,
     ) {
         val thumb = preview
@@ -147,10 +163,10 @@ private fun FilePreview(task: DownloadTask) {
             )
         } else {
             Icon(
-                imageVector = iconOf(kind),
+                painter = painterResource(kind.iconRes),
                 contentDescription = null,
-                tint = MiuixTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
+                tint = kind.accent,
+                modifier = Modifier.size(26.dp),
             )
         }
     }

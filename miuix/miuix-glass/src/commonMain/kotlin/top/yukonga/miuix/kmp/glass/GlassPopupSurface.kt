@@ -148,6 +148,8 @@ internal fun placeGlassPopup(
  * @param onMeasured Called with the final panel size on each measurement.
  * @param interactive Whether the panel's rows can receive input and accessibility actions.
  * @param scrollable Whether rows scroll within the safe-area-constrained viewport.
+ * @param dragDeform Whether dragging on the panel stretches and moves it. Off for dropdowns, where a drag
+ *   means scrolling or a tap and the panel must stay put under the finger.
  * @param content The rows.
  */
 // The full-page dismiss layer and positioned panel must be siblings in the popup host.
@@ -168,6 +170,7 @@ internal fun GlassPopupSurface(
     onMeasured: ((Size) -> Unit)? = null,
     interactive: Boolean = true,
     scrollable: Boolean = false,
+    dragDeform: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val currentOnDismissRequest by rememberUpdatedState(onDismissRequest)
@@ -210,7 +213,7 @@ internal fun GlassPopupSurface(
                     placeable.place(measured.rect.left.roundToInt(), measured.rect.top.roundToInt())
                 }
             }
-            .then(deform.layer)
+            .then(if (dragDeform) deform.layer else Modifier)
             .graphicsLayer {
                 panelLayer()
                 // Include shadow pixels in the offscreen buffer used when alpha is below one.
@@ -221,7 +224,6 @@ internal fun GlassPopupSurface(
             .clip(shape)
             .drawWithContent {
                 drawContent()
-                with(deform) { drawHighlight() }
                 overlay()
             }
             .then(
