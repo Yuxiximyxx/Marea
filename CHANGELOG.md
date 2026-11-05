@@ -2,6 +2,11 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.16-dev]
+
+- 代理弹窗：文案字号统一；代理关闭时仍可配置认证；SOCKS5 时认证开关置灰
+- 外部打开链接、关于页/更新页等应用内链接：自动切回浏览主界面并加载
+
 ## [1.5.15-dev]
 
 - 修复：`GitHubAccelerate.raceFirst` 中 `ExecutorCompletionService.submit` 类型参数导致的编译失败

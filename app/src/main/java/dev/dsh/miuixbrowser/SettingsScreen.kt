@@ -402,6 +402,8 @@ fun SettingsScreen(
             var proxyAuth by remember(showProxyDialog) { mutableStateOf(settings.proxyAuth) }
             var proxyUser by remember(showProxyDialog) { mutableStateOf(settings.proxyUser) }
             var proxyPass by remember(showProxyDialog) { mutableStateOf(settings.proxyPass) }
+            // SOCKS5 官方 API 不支持账密：认证开关置灰；代理关闭时仍可先配好认证
+            val authSwitchEnabled = proxyType != 1
             GlassDialog(
                 show = showProxyDialog,
                 title = "代理",
@@ -415,7 +417,7 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = "启用代理",
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             color = MiuixTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f),
                         )
@@ -456,17 +458,21 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = "认证",
-                            fontSize = 15.sp,
-                            color = MiuixTheme.colorScheme.onSurface,
+                            fontSize = 16.sp,
+                            color = if (authSwitchEnabled) {
+                                MiuixTheme.colorScheme.onSurface
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            },
                             modifier = Modifier.weight(1f),
                         )
                         Switch(
                             checked = proxyAuth,
                             onCheckedChange = { proxyAuth = it },
-                            enabled = proxyOn,
+                            enabled = authSwitchEnabled,
                         )
                     }
-                    if (proxyAuth && proxyOn) {
+                    if (proxyAuth && authSwitchEnabled) {
                         TextField(
                             value = proxyUser,
                             onValueChange = { proxyUser = it },
@@ -482,8 +488,16 @@ fun SettingsScreen(
                             singleLine = true,
                         )
                         Text(
-                            text = "认证仅对 HTTP 代理挑战生效（SOCKS5 账密官方 API 不支持）。",
-                            fontSize = 11.sp,
+                            text = "代理关闭时也可先保存认证；仅 HTTP 代理挑战会自动提交。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                    if (proxyType == 1) {
+                        Text(
+                            text = "SOCKS5 不支持账密认证，认证开关已禁用。",
+                            fontSize = 12.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(bottom = 6.dp),
                         )
@@ -506,7 +520,8 @@ fun SettingsScreen(
                                     type = proxyType,
                                     host = proxyHost,
                                     port = port,
-                                    auth = proxyAuth && proxyOn,
+                                    // 关闭代理时也保存认证配置，便于下次直接启用
+                                    auth = proxyAuth,
                                     user = proxyUser,
                                     pass = proxyPass,
                                 )
@@ -516,7 +531,7 @@ fun SettingsScreen(
                                     if (proxyOn && proxyHost.isNotBlank() && port in 1..65535) {
                                         "代理已${if (proxyType == 1) "（SOCKS5）" else "（HTTP）"}生效"
                                     } else {
-                                        "代理已关闭"
+                                        "代理已关闭${if (proxyAuth) "（认证配置已保存）" else ""}"
                                     },
                                     Toast.LENGTH_SHORT,
                                 ).show()

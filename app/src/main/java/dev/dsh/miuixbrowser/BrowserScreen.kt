@@ -228,13 +228,8 @@ fun BrowserScreen(
         drawContent()
     }
 
-    // 从其他应用点进来的链接：新开标签页
-    LaunchedEffect(initialUrl) {
-        if (!initialUrl.isNullOrBlank()) {
-            state.newTab(initialUrl)
-            onInitialUrlConsumed()
-        }
-    }
+    // 从其他应用点进来的链接：回到浏览页并新开标签（须在 popToBrowser 定义之后）
+    // 由 MainActivity 传入；这里只负责导航与加载
     val extensions = remember { ExtensionStore(context) }
     // 旧版本放在脚本列表里的去广告订阅 → 迁移到「去广告」页；之后按设置的间隔在后台更新订阅
     remember {
@@ -279,6 +274,22 @@ fun BrowserScreen(
     fun popToBrowser() {
         while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
+
+    /** 应用内打开链接：切回浏览主界面并加载（设置/关于/书签等非网页页共用） */
+    fun openInBrowser(url: String) {
+        if (url.isBlank()) return
+        popToBrowser()
+        state.newTab(url)
+    }
+
+    // 外部 ACTION_VIEW / 应用内待打开链接：切回浏览页并加载
+    LaunchedEffect(initialUrl) {
+        if (!initialUrl.isNullOrBlank()) {
+            openInBrowser(initialUrl)
+            onInitialUrlConsumed()
+        }
+    }
+
     var pendingScript by remember { mutableStateOf<String?>(null) }
     var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>?>(null) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
@@ -1544,7 +1555,7 @@ fun BrowserScreen(
                 updateRelease = null
             },
             onDownload = {
-                UpdateChecker.download(context, it)
+                UpdateChecker.download(context, it, openInApp = { openInBrowser(it) })
                 updateRelease = null
             },
         )
@@ -1917,6 +1928,7 @@ fun BrowserScreen(
     entry<AppRoute.About> {
         AboutScreen(
             onBack = { popPage() },
+            onOpenUrl = { openInBrowser(it) },
             blurEnabled = settings.blurEnabled,
         )
     }

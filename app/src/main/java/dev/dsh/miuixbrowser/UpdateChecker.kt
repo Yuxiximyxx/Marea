@@ -39,14 +39,19 @@ object UpdateChecker {
         return rel
     }
 
-    fun download(context: Context, rel: AppRelease) {
+    fun download(context: Context, rel: AppRelease, openInApp: ((String) -> Unit)? = null) {
         val apk = rel.apkUrl
         if (apk.isNullOrBlank()) {
-            // 发布页没有 APK 附件：打开发布页
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(rel.pageUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
+            // 无 APK：优先在应用内浏览页打开发布页，回退系统浏览器
+            val page = rel.pageUrl
+            if (openInApp != null && page.isNotBlank()) {
+                openInApp(page)
+            } else {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
             }
             return
         }

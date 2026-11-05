@@ -65,7 +65,11 @@ import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    onOpenUrl: (String) -> Unit = {},
+    blurEnabled: Boolean = true,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val kernel = webViewVersion() ?: "未知"
@@ -184,13 +188,9 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                                     if (!isNewerVersion(result.version, BuildConfig.VERSION_NAME)) {
                                         Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
                                     } else if (result.apkUrl.isNullOrBlank()) {
-                                        // 无 APK 资产时仍打开发布页
+                                        // 无 APK 资产时在应用内浏览页打开发布页
                                         Toast.makeText(context, "发现新版本 $latest", Toast.LENGTH_LONG).show()
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(result.pageUrl)),
-                                            )
-                                        }
+                                        onOpenUrl(result.pageUrl)
                                     } else {
                                         pendingUpdate = result
                                     }
@@ -242,13 +242,7 @@ fun AboutScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)),
-                                    )
-                                }
-                            }
+                            .clickable { onOpenUrl(PROJECT_URL) }
                             .padding(16.dp),
                     ) {
                         Text("项目地址", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
