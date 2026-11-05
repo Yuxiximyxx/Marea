@@ -294,7 +294,8 @@ fun SettingsScreen(
                         title = "代理",
                         summary = if (settings.proxyEnabled && settings.proxyHost.isNotBlank()) {
                             val kind = if (settings.proxyType == 1) "SOCKS5" else "HTTP"
-                            "已开启 · $kind ${settings.proxyHost}:${settings.proxyPort}"
+                            val auth = if (settings.proxyAuth) " · 认证" else ""
+                            "已开启 · $kind ${settings.proxyHost}:${settings.proxyPort}$auth"
                         } else {
                             "关闭 · 支持 HTTP / SOCKS5"
                         },
@@ -398,16 +399,18 @@ fun SettingsScreen(
             var proxyPort by remember(showProxyDialog) {
                 mutableStateOf(if (settings.proxyPort > 0) settings.proxyPort.toString() else "")
             }
+            var proxyAuth by remember(showProxyDialog) { mutableStateOf(settings.proxyAuth) }
+            var proxyUser by remember(showProxyDialog) { mutableStateOf(settings.proxyUser) }
+            var proxyPass by remember(showProxyDialog) { mutableStateOf(settings.proxyPass) }
             GlassDialog(
                 show = showProxyDialog,
                 title = "代理",
-                summary = "WebView 级 HTTP / SOCKS5（ProxyController）",
                 backdrop = if (glass) backdrop else null,
                 onDismissRequest = { showProxyDialog = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -425,28 +428,68 @@ fun SettingsScreen(
                         selectedIndex = proxyType.coerceIn(0, 1),
                         onSelectedIndexChange = { proxyType = it },
                     )
-                    TextField(
-                        value = proxyHost,
-                        onValueChange = { proxyHost = it },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        label = "主机（如 127.0.0.1）",
-                        singleLine = true,
-                    )
-                    TextField(
-                        value = proxyPort,
-                        onValueChange = { proxyPort = it.filter { c -> c.isDigit() }.take(5) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        label = "端口（如 7890）",
-                        singleLine = true,
-                    )
-                    Text(
-                        text = "对全部标签页生效；留空主机或关闭开关即清除代理。",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextField(
+                            value = proxyHost,
+                            onValueChange = { proxyHost = it },
+                            modifier = Modifier.weight(2f),
+                            label = "主机",
+                            singleLine = true,
+                        )
+                        TextField(
+                            value = proxyPort,
+                            onValueChange = { proxyPort = it.filter { c -> c.isDigit() }.take(5) },
+                            modifier = Modifier.weight(1f),
+                            label = "端口",
+                            singleLine = true,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "认证",
+                            fontSize = 15.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = proxyAuth,
+                            onCheckedChange = { proxyAuth = it },
+                            enabled = proxyOn,
+                        )
+                    }
+                    if (proxyAuth && proxyOn) {
+                        TextField(
+                            value = proxyUser,
+                            onValueChange = { proxyUser = it },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            label = "用户名",
+                            singleLine = true,
+                        )
+                        TextField(
+                            value = proxyPass,
+                            onValueChange = { proxyPass = it },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            label = "密码",
+                            singleLine = true,
+                        )
+                        Text(
+                            text = "认证仅对 HTTP 代理挑战生效（SOCKS5 账密官方 API 不支持）。",
+                            fontSize = 11.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         GlassDialogButton(
@@ -458,7 +501,15 @@ fun SettingsScreen(
                         GlassDialogButton(
                             onClick = {
                                 val port = proxyPort.toIntOrNull() ?: 0
-                                settings.updateProxy(proxyOn, proxyType, proxyHost, port)
+                                settings.updateProxy(
+                                    enabled = proxyOn,
+                                    type = proxyType,
+                                    host = proxyHost,
+                                    port = port,
+                                    auth = proxyAuth && proxyOn,
+                                    user = proxyUser,
+                                    pass = proxyPass,
+                                )
                                 showProxyDialog = false
                                 Toast.makeText(
                                     context,

@@ -494,6 +494,21 @@ class BrowserTab(private val appContext: Context) {
                 if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
             }
 
+            /** HTTP 代理认证：挑战主机等于代理主机时自动提交设置里的账号密码 */
+            override fun onReceivedHttpAuthRequest(
+                view: WebView?,
+                host: String?,
+                realm: String?,
+                callback: android.webkit.HttpAuthHandler?,
+            ) {
+                if (callback == null) return
+                if (host != null && WebViewProxy.shouldAutoAuth(host)) {
+                    callback.onProceed(WebViewProxy.authUser, WebViewProxy.authPass)
+                } else {
+                    callback.onCancel()
+                }
+            }
+
             override fun onPageFinished(view: WebView, pageUrl: String?) {
                 pageUrl?.let { url = it }
                 loading = false

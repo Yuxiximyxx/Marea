@@ -236,16 +236,40 @@ class AppSettings(context: Context) {
     var proxyPort by mutableStateOf(prefs.getInt(KEY_PROXY_PORT, 0))
         private set
 
-    fun updateProxy(enabled: Boolean, type: Int, host: String, port: Int) {
+    /** 代理认证（HTTP 挑战时提交；SOCKS5 官方 ProxyConfig 不支持） */
+    var proxyAuth by mutableStateOf(prefs.getBoolean(KEY_PROXY_AUTH, false))
+        private set
+
+    var proxyUser by mutableStateOf(prefs.getString(KEY_PROXY_USER, "").orEmpty())
+        private set
+
+    var proxyPass by mutableStateOf(prefs.getString(KEY_PROXY_PASS, "").orEmpty())
+        private set
+
+    fun updateProxy(
+        enabled: Boolean,
+        type: Int,
+        host: String,
+        port: Int,
+        auth: Boolean = proxyAuth,
+        user: String = proxyUser,
+        pass: String = proxyPass,
+    ) {
         proxyEnabled = enabled
         proxyType = type.coerceIn(0, 1)
         proxyHost = host.trim()
         proxyPort = port.coerceIn(0, 65535)
+        proxyAuth = auth
+        proxyUser = user
+        proxyPass = pass
         prefs.edit()
             .putBoolean(KEY_PROXY_ON, proxyEnabled)
             .putInt(KEY_PROXY_TYPE, proxyType)
             .putString(KEY_PROXY_HOST, proxyHost)
             .putInt(KEY_PROXY_PORT, proxyPort)
+            .putBoolean(KEY_PROXY_AUTH, proxyAuth)
+            .putString(KEY_PROXY_USER, proxyUser)
+            .putString(KEY_PROXY_PASS, proxyPass)
             .apply()
         WebViewProxy.applyFrom(this)
     }
@@ -278,6 +302,9 @@ class AppSettings(context: Context) {
         const val KEY_PROXY_TYPE = "proxy_type"
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"
+        const val KEY_PROXY_AUTH = "proxy_auth"
+        const val KEY_PROXY_USER = "proxy_user"
+        const val KEY_PROXY_PASS = "proxy_pass"
     }
 }
 
