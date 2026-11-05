@@ -527,7 +527,7 @@ fun SettingsScreen(
                 onDismissRequest = { showPermSheet = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
-                    val permOptions = listOf("询问", "允许", "拒绝")
+                    val permOptions = listOf("每次使用时询问", "总是允许", "总是拒绝")
                     listOf(
                         Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
                         Triple("麦克风", settings.micPermission, settings::updateMicPermission),
@@ -535,6 +535,7 @@ fun SettingsScreen(
                         Triple("网站通知", settings.notificationPermission, settings::updateNotificationPermission),
                         Triple("剪贴板读写", settings.clipboardPermission, settings::updateClipboardPermission),
                         Triple("网站媒体发声", settings.mediaAutoplay, settings::updateMediaAutoplay),
+                        Triple("网页重定向", settings.redirectPermission, settings::updateRedirectPermission),
                     ).forEach { (label, current, update) ->
                         GlassDropdownPreference(
                             title = label,

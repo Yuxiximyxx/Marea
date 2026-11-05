@@ -453,6 +453,8 @@ fun BrowserScreen(
             tab.onBlobStart = null
             fileChooserChoice = null
             customView = null
+            // 未决的权限请求按拒绝收尾，否则 WebView 回调 / 重定向待决标记会一直悬空
+            webPermPrompt?.decide?.invoke(false)
             webPermPrompt = null
         }
     }
@@ -624,7 +626,11 @@ fun BrowserScreen(
     }
 
     LaunchedEffect(tab.id) {
-        tab.onPermissionPrompt = { origin, what, decide -> webPermPrompt = WebPermPrompt(origin, what, decide) }
+        tab.onPermissionPrompt = { origin, what, decide ->
+            // 同一时刻只显示一个弹窗：被顶掉的请求按拒绝处理，避免 WebView 回调悬空
+            webPermPrompt?.decide?.invoke(false)
+            webPermPrompt = WebPermPrompt(origin, what, decide)
+        }
         tab.requestAndroidPermissions = { perms, done ->
             androidPermDone = done
             androidPermLauncher.launch(perms)
@@ -643,6 +649,7 @@ fun BrowserScreen(
         settings.micPermission,
         settings.locationPermission,
         settings.notificationPermission,
+        settings.redirectPermission,
         settings.blockTrackingScripts,
     ) {
         tab.applyPrivacy(
@@ -655,6 +662,7 @@ fun BrowserScreen(
             micMode = settings.micPermission,
             locationMode = settings.locationPermission,
             notificationMode = settings.notificationPermission,
+            redirectMode = settings.redirectPermission,
             blockTrackers = settings.blockTrackingScripts,
         )
     }

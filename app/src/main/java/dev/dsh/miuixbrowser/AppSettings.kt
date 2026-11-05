@@ -213,7 +213,7 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_3P_COOKIE, thirdPartyCookie).apply()
     }
 
-    /** 网页权限：摄像头 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：摄像头 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var cameraPermission by mutableStateOf(prefs.getInt(KEY_CAM, 0))
         private set
 
@@ -222,7 +222,7 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_CAM, cameraPermission).apply()
     }
 
-    /** 网页权限：麦克风 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：麦克风 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var micPermission by mutableStateOf(prefs.getInt(KEY_MIC, 0))
         private set
 
@@ -231,7 +231,7 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_MIC, micPermission).apply()
     }
 
-    /** 网页权限：定位 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：定位 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var locationPermission by mutableStateOf(prefs.getInt(KEY_LOC, 0))
         private set
 
@@ -240,7 +240,7 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_LOC, locationPermission).apply()
     }
 
-    /** 网页权限：剪贴板读写 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：剪贴板读写 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var clipboardPermission by mutableStateOf(prefs.getInt(KEY_CLIP, 0))
         private set
 
@@ -249,7 +249,7 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_CLIP, clipboardPermission).apply()
     }
 
-    /** 网页权限：网站媒体发声/自动播放 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：网站媒体发声/自动播放 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var mediaAutoplay by mutableStateOf(prefs.getInt(KEY_MEDIA, 0))
         private set
 
@@ -258,13 +258,25 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_MEDIA, mediaAutoplay).apply()
     }
 
-    /** 网页权限：网站通知 0=询问 1=允许 2=拒绝 */
+    /** 网页权限：网站通知 0=每次使用时询问 1=总是允许 2=总是拒绝 */
     var notificationPermission by mutableStateOf(prefs.getInt(KEY_NOTIFY, 0))
         private set
 
     fun updateNotificationPermission(mode: Int) {
         notificationPermission = mode.coerceIn(0, 2)
         prefs.edit().putInt(KEY_NOTIFY, notificationPermission).apply()
+    }
+
+    /**
+     * 网页权限：网页重定向 0=每次使用时询问 1=总是允许 2=总是拒绝
+     * 指网页在没有用户操作的情况下自动跳转到其他站点（JS / meta refresh），以及自动唤起其他应用。
+     */
+    var redirectPermission by mutableStateOf(prefs.getInt(KEY_REDIRECT, 0))
+        private set
+
+    fun updateRedirectPermission(mode: Int) {
+        redirectPermission = mode.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_REDIRECT, redirectPermission).apply()
     }
 
     /** 启用「请勿追踪」类隐私增强：合并 DNT + 禁第三方跟踪脚本提示 */
@@ -354,6 +366,7 @@ class AppSettings(context: Context) {
         const val KEY_CLIP = "perm_clipboard"
         const val KEY_MEDIA = "perm_media_autoplay"
         const val KEY_NOTIFY = "perm_notification"
+        const val KEY_REDIRECT = "perm_redirect"
         const val KEY_TRACK = "block_tracking"
         const val KEY_PROXY_ON = "proxy_enabled"
         const val KEY_PROXY_TYPE = "proxy_type"

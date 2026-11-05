@@ -584,6 +584,13 @@ class BrowserTab(private val appContext: Context) {
                     return true
                 }
                 val scheme = request.url.scheme ?: return false
+                if (scheme == "http" || scheme == "https") {
+                    val proceed = {
+                        val h = extraRequestHeaders()
+                        if (h.isEmpty()) view.loadUrl(target) else view.loadUrl(target, h)
+                    }
+                    if (interceptRedirect(request, external = false, onAllowed = proceed)) return true
+                }
                 // DNT / Sec-GPC：点击链接产生的主框架 GET 导航也带上请求头
                 if (dntEnabled && (scheme == "http" || scheme == "https") && request.isForMainFrame &&
                     request.method == "GET" && !request.isRedirect &&
@@ -596,12 +603,16 @@ class BrowserTab(private val appContext: Context) {
                 return when (scheme) {
                     "http", "https", "file", "about", "data", "javascript" -> false
                     else -> {
-                        // 支付宝 / 微信 / 淘宝等外部协议交给系统处理
-                        runCatching {
-                            appContext.startActivity(
-                                Intent(Intent.ACTION_VIEW, request.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
+                        // 支付宝 / 微信 / 淘宝等外部协议交给系统处理（无用户手势的自动唤起受「网页重定向」权限控制）
+                        val open = {
+                            runCatching {
+                                appContext.startActivity(
+                                    Intent(Intent.ACTION_VIEW, request.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                            Unit
                         }
+                        if (!interceptRedirect(request, external = true, onAllowed = open)) open()
                         true
                     }
                 }
@@ -1008,6 +1019,7 @@ class BrowserTab(private val appContext: Context) {
         micMode: Int = 0,
         locationMode: Int = 0,
         notificationMode: Int = 0,
+        redirectMode: Int = 0,
         blockTrackers: Boolean = false,
     ) {
         runCatching {
@@ -1020,6 +1032,7 @@ class BrowserTab(private val appContext: Context) {
         this.micMode = micMode
         this.locationMode = locationMode
         this.notificationMode = notificationMode
+        this.redirectMode = redirectMode
         this.blockTrackers = blockTrackers
         // 媒体发声：允许=可自动播放；询问/拒绝=需用户手势才能出声
         runCatching { webView.settings.mediaPlaybackRequiresUserGesture = mediaMode != 1 }
@@ -1084,6 +1097,63 @@ class BrowserTab(private val appContext: Context) {
     private var micMode = 0
     private var locationMode = 0
     private var notificationMode = 0
+
+    /** 网页重定向 0=每次使用时询问 1=总是允许 2=总是拒绝 */
+    @Volatile
+    private var redirectMode = 0
+
+    /** 正在等待用户决定的重定向，避免脚本循环跳转时连续弹窗 */
+    private var redirectPromptPending = false
+    private var lastRedirectToast = 0L
+
+    /**
+     * 网页重定向权限：只管「页面自己发起、没有用户手势」的主框架跳转——
+     * JS（location / window.open）、meta refresh，以及自动唤起其他应用（intent:// 等）。
+     * 用户点击、地址栏输入、前进后退，以及用户发起导航后的服务器 3xx 链都不受影响。
+     * 同站跳转（host 去掉 www. 后相同）视为页面内部导航，不拦截。
+     * @return true 表示本次导航已被接管（拦截，用户同意后由 [onAllowed] 放行）
+     */
+    private fun interceptRedirect(request: WebResourceRequest, external: Boolean, onAllowed: () -> Unit): Boolean {
+        if (!request.isForMainFrame || request.hasGesture() || request.isRedirect) return false
+        if (redirectMode == 1) return false
+        // 首次加载 / 空白页上的跳转不算重定向
+        val from = pageHost
+        if (from.isEmpty()) return false
+        val targetHost = request.url.host.orEmpty()
+        if (!external) {
+            fun bare(h: String) = h.lowercase().removePrefix("www.")
+            if (targetHost.isNotEmpty() && bare(targetHost) == bare(from)) return false
+        }
+        val label = if (external) "打开其他应用" else "跳转到 ${targetHost.ifEmpty { request.url.toString().take(60) }}"
+        if (redirectMode == 2) {
+            notifyRedirectBlocked(external, targetHost)
+            return true
+        }
+        val prompt = onPermissionPrompt
+        if (prompt == null) {
+            notifyRedirectBlocked(external, targetHost)
+            return true
+        }
+        if (redirectPromptPending) return true
+        redirectPromptPending = true
+        prompt(from, label) { allow ->
+            redirectPromptPending = false
+            if (allow) {
+                onAllowed()
+            } else {
+                notifyRedirectBlocked(external, targetHost)
+            }
+        }
+        return true
+    }
+
+    private fun notifyRedirectBlocked(external: Boolean, host: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastRedirectToast < 2000) return
+        lastRedirectToast = now
+        val msg = if (external) "已拦截网页打开其他应用" else "已拦截网页重定向" + if (host.isNotEmpty()) "：$host" else ""
+        android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
 
     /** 网页权限「询问」：由界面弹窗，decide(true/false) 只能调用一次 */
     var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
