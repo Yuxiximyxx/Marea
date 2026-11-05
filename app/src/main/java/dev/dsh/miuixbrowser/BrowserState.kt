@@ -128,6 +128,14 @@ class BrowserTab(private val appContext: Context) {
             syncUserScripts()
         }
 
+    /** 脚本一键启停（菜单里的开关）：关闭后不再注入任何油猴脚本，需刷新页面生效 */
+    var scriptsEnabled: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            syncUserScripts()
+        }
+
     /** 搜索模板，由设置注入 */
     var searchTemplate: String = "https://www.baidu.com/s?wd=%s"
 
@@ -831,7 +839,7 @@ class BrowserTab(private val appContext: Context) {
      */
     private fun syncUserScripts() {
         if (destroyed) return
-        if (!pageEnhancements) {
+        if (!pageEnhancements || !scriptsEnabled) {
             scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
             scriptHandlers.clear()
             installedScriptsSignature = ""
@@ -877,7 +885,7 @@ class BrowserTab(private val appContext: Context) {
      * 没见过的（特性不支持、或 handler 安装晚于本次导航）再用 evaluateJavascript 补注入主框架。
      */
     private fun injectMissingUserScripts(view: WebView) {
-        if (!pageEnhancements) return
+        if (!pageEnhancements || !scriptsEnabled) return
         val enabled = userScripts.filter { it.enabled }
         if (enabled.isEmpty()) return
         val query = "(function(){try{return JSON.stringify(Object.keys(window.__mafariSeen||{}))}catch(e){return '[]'}})()"
@@ -915,6 +923,19 @@ class BrowserTab(private val appContext: Context) {
     fun queryRunningScripts(onResult: (Int) -> Unit) {
         val js = "(function(){try{return Object.keys(window.__mafariRan||{}).length}catch(e){return 0}})()"
         webView.evaluateJavascript(js) { raw -> onResult(raw?.trim()?.toIntOrNull() ?: 0) }
+    }
+
+    /** 当前页面（主框架）里真正匹配并运行的脚本 id */
+    fun queryRunningScriptIds(onResult: (List<String>) -> Unit) {
+        val js = "(function(){try{return JSON.stringify(Object.keys(window.__mafariRan||{}))}catch(e){return '[]'}})()"
+        webView.evaluateJavascript(js) { raw ->
+            val ids = runCatching {
+                val text = org.json.JSONTokener(raw ?: "null").nextValue() as? String ?: "[]"
+                val array = org.json.JSONArray(text)
+                (0 until array.length()).map { array.getString(it) }
+            }.getOrDefault(emptyList())
+            onResult(ids)
+        }
     }
 
     fun runMenuCommand(id: String) {

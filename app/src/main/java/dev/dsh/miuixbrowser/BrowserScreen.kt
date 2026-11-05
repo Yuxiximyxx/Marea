@@ -307,7 +307,9 @@ fun BrowserScreen(
     }
 
     var pendingScript by remember { mutableStateOf<String?>(null) }
-    var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>?>(null) }
+    var scriptSheetShow by remember { mutableStateOf(false) }
+    var scriptMenuItems by remember { mutableStateOf<List<ScriptMenuCommand>>(emptyList()) }
+    var runningScripts by remember { mutableStateOf<List<RunningScript>>(emptyList()) }
     // 菜单面板右上角蓝标：当前页面运行的脚本数
     var scriptRunCount by remember { mutableIntStateOf(0) }
     var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
@@ -1272,6 +1274,32 @@ fun BrowserScreen(
         // 隐藏状态不放置透明热区：底部网页区域完全交给 WebView 处理点击、长按和滚动。
         // 通过 WebView 的 scrollY 方向判断下拉恢复，不通过点击底部区域恢复。
 
+    // 脚本快捷菜单：查询当前页面运行的脚本 + 它们注册的快捷命令
+    fun refreshScriptSheet() {
+        val t = state.activeTab
+        t.queryRunningScriptIds { ids ->
+            val byId = t.userScripts.associateBy { it.id }
+            runningScripts = ids.map { id ->
+                val us = byId[id]
+                RunningScript(id, us?.name?.ifBlank { null } ?: "未命名脚本", us?.icon.orEmpty())
+            }
+        }
+        t.queryMenuCommands { scriptMenuItems = it }
+    }
+
+    // 脚本总开关 → 所有标签页
+    LaunchedEffect(settings.scriptsEnabled, state.tabs.size) {
+        state.tabs.forEach { it.scriptsEnabled = settings.scriptsEnabled }
+    }
+
+    // Sheet 打开期间，页面（重新）加载完成后刷新脚本列表；停用时保留旧列表（仅置灰）
+    LaunchedEffect(scriptSheetShow, tab.loading, settings.scriptsEnabled) {
+        if (scriptSheetShow && !tab.loading && settings.scriptsEnabled) {
+            kotlinx.coroutines.delay(600)
+            refreshScriptSheet()
+        }
+    }
+
     // 打开更多菜单时刷新「当前页面运行的脚本数」
     LaunchedEffect(sheet, state.activeIndex) {
         if (sheet == Sheet.Menu) {
@@ -1522,7 +1550,10 @@ fun BrowserScreen(
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
                             MenuAction.Extensions -> pushPage(AppRoute.Extensions)
-                            MenuAction.ScriptMenu -> tab.queryMenuCommands { scriptMenuItems = it }
+                            MenuAction.ScriptMenu -> {
+                                scriptSheetShow = true
+                                refreshScriptSheet()
+                            }
                             MenuAction.History -> pushPage(AppRoute.Library(1))
                             MenuAction.Settings -> pushPage(AppRoute.Settings)
                             MenuAction.CloseTab -> state.closeTab(state.activeIndex)
@@ -1814,46 +1845,24 @@ fun BrowserScreen(
             )
         }
 
-        val menuItems = scriptMenuItems
-        GlassDialog(
-            show = menuItems != null,
-            title = "脚本快捷菜单",
-            summary = "${scriptRunCount}个脚本运行中" +
-                if (menuItems.isNullOrEmpty()) "，没有脚本注册快捷菜单" else "",
+        ScriptMenuSheet(
+            show = scriptSheetShow,
             backdrop = if (homeBlurAvailable) browserBackdrop else null,
-            onDismissRequest = { scriptMenuItems = null },
-        ) {
-            if (menuItems != null) {
-                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    menuItems.forEach { cmd ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    scriptMenuItems = null
-                                    tab.runMenuCommand(cmd.id)
-                                }
-                                .padding(vertical = 10.dp),
-                        ) {
-                            Text(cmd.title, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
-                            Text(
-                                text = cmd.script,
-                                fontSize = 11.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    GlassDialogButton(
-                        onClick = { scriptMenuItems = null },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(text = "关闭", style = MiuixTheme.textStyles.button)
-                    }
-                }
-            }
-        }
+            scripts = runningScripts,
+            commands = scriptMenuItems,
+            scriptsEnabled = settings.scriptsEnabled,
+            onScriptsEnabledChange = { on ->
+                settings.updateScriptsEnabled(on)
+                state.tabs.forEach { it.scriptsEnabled = on }
+                // 已注入的脚本无法撤销，刷新页面使开关生效
+                tab.reload()
+            },
+            onRunCommand = { cmd ->
+                scriptSheetShow = false
+                tab.runMenuCommand(cmd.id)
+            },
+            onDismiss = { scriptSheetShow = false },
+        )
 
         val permPrompt = webPermPrompt
         GlassDialog(

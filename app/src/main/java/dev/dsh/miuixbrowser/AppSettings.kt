@@ -181,6 +181,15 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_ENHANCE, enabled).apply()
     }
 
+    /** 脚本一键启停：只影响油猴脚本，不影响去广告 / 长按标记 */
+    var scriptsEnabled by mutableStateOf(prefs.getBoolean(KEY_SCRIPTS, true))
+        private set
+
+    fun updateScriptsEnabled(enabled: Boolean) {
+        scriptsEnabled = enabled
+        prefs.edit().putBoolean(KEY_SCRIPTS, enabled).apply()
+    }
+
     fun updateUserAgent(value: String) {
         userAgent = value.trim()
         prefs.edit().putString(KEY_UA, userAgent).apply()
@@ -357,6 +366,7 @@ class AppSettings(context: Context) {
         const val KEY_WALL = "wallpaper"
         const val KEY_WALL_BLUR = "wallpaper_blur"
         const val KEY_ENHANCE = "page_enhancements"
+        const val KEY_SCRIPTS = "scripts_enabled"
         const val KEY_DNT = "send_dnt"
         const val KEY_WEBRTC = "webrtc_disabled"
         const val KEY_3P_COOKIE = "third_party_cookie"
