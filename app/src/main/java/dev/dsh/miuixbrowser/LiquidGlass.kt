@@ -31,7 +31,8 @@ fun rememberLiquidBackdrop(dark: Boolean): Backdrop {
         val top = if (dark) Color(0xF02B2B31) else Color(0xF0FFFFFF)
         val bottom = if (dark) Color(0xE81A1A20) else Color(0xE8E7EAF0)
         val brush = Brush.verticalGradient(listOf(top, bottom))
-        { drawRect(brush) }
+        val block: DrawScope.() -> Unit = { drawRect(brush) }
+        block
     }
     return rememberCanvasBackdrop(draw)
 }

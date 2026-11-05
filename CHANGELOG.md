@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.19-dev]
+
+- 修复：`rememberLiquidBackdrop` 中 lambda 误绑定到 `verticalGradient` 导致 1.5.18 编译失败
+
 ## [1.5.18-dev]
 
 - 接入公开库 AndroidLiquidGlass（`io.github.kyant0:backdrop`）：浏览页底栏与底栏按钮改用液态折射玻璃（主页仍用 miuix 真采样）
