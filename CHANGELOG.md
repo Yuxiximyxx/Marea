@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.5.15-dev]
+
+- 修复：`GitHubAccelerate.raceFirst` 中 `ExecutorCompletionService.submit` 类型参数导致的编译失败
+
 ## [1.5.14-dev]
 
 - 检查更新与 APK 下载：直连 + 公共 GitHub 加速镜像并发探测，连通者优先

@@ -38,7 +38,9 @@ object GitHubAccelerate {
         val completion = ExecutorCompletionService<T?>(pool)
         try {
             fetchers.forEach { f ->
-                completion.submit<T?> { runCatching { f() }.getOrNull() }
+                completion.submit(java.util.concurrent.Callable {
+                    runCatching { f() }.getOrNull()
+                })
             }
             val deadline = System.nanoTime() + timeoutMs * 1_000_000
             while (true) {
