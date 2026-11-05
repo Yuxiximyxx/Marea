@@ -1071,53 +1071,33 @@ class BrowserTab(private val appContext: Context) {
     }
 
     private fun handleWebPermission(request: PermissionRequest) {
+        // Android SDK 的 PermissionRequest 仅有：
+        // RESOURCE_AUDIO_CAPTURE / RESOURCE_VIDEO_CAPTURE / RESOURCE_PROTECTED_MEDIA_ID / RESOURCE_MIDI_SYSEX
+        // 定位走 onGeolocationPermissionsShowPrompt；网站通知 WebView 不走 PermissionRequest（设置里用 JS 拒绝生效）
         val res = request.resources.toSet()
         val keep = mutableListOf<String>()
         if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in res) keep += PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
         val camOk = PermissionRequest.RESOURCE_VIDEO_CAPTURE in res && cameraMode != 2
         val micOk = PermissionRequest.RESOURCE_AUDIO_CAPTURE in res && micMode != 2
-        val notifyOk = PermissionRequest.RESOURCE_NOTIFICATIONS in res && notificationMode != 2
-        val geoOk = PermissionRequest.RESOURCE_GEOLLOCATION in res && locationMode != 2
         fun finish(extra: List<String>) {
             val all = keep + extra
             if (all.isEmpty()) request.deny() else request.grant(all.toTypedArray())
         }
-        if (!camOk && !micOk && !notifyOk && !geoOk) {
+        if (!camOk && !micOk) {
             finish(emptyList())
             return
         }
         val perms = buildList {
             if (camOk) add(android.Manifest.permission.CAMERA)
             if (micOk) add(android.Manifest.permission.RECORD_AUDIO)
-            if (notifyOk && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                add(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
-            if (geoOk) {
-                add(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-            }
         }.toTypedArray()
-        val what = listOfNotNull(
-            if (camOk) "摄像头" else null,
-            if (micOk) "麦克风" else null,
-            if (notifyOk) "通知" else null,
-            if (geoOk) "定位" else null,
-        ).joinToString("、")
-        val mustAsk =
-            (camOk && cameraMode == 0) ||
-                (micOk && micMode == 0) ||
-                (notifyOk && notificationMode == 0) ||
-                (geoOk && locationMode == 0)
-        // 仅定位时 fine/coarse 任一即可；同时要摄像头/麦克风/通知则全部 Android 权限都必须拿到
-        val needsAll = camOk || micOk || notifyOk
-        val anyOk = geoOk && !needsAll
-        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms, anyOk) { ok ->
+        val what = listOfNotNull(if (camOk) "摄像头" else null, if (micOk) "麦克风" else null).joinToString("、")
+        val mustAsk = (camOk && cameraMode == 0) || (micOk && micMode == 0)
+        decide(if (mustAsk) 0 else 1, request.origin.host ?: request.origin.toString(), "使用$what", perms) { ok ->
             finish(
                 if (ok) buildList {
                     if (camOk) add(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
                     if (micOk) add(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
-                    if (notifyOk) add(PermissionRequest.RESOURCE_NOTIFICATIONS)
-                    if (geoOk) add(PermissionRequest.RESOURCE_GEOLLOCATION)
                 } else emptyList(),
             )
         }

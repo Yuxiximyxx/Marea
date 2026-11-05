@@ -1,7 +1,6 @@
 package dev.dsh.miuixbrowser
 
 import android.content.Intent
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -87,7 +86,6 @@ fun SettingsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
-    var showDnsDialog by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -291,11 +289,6 @@ fun SettingsScreen(
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
                     )
-                    SettingsRow(
-                        title = "DNS 管理",
-                        summary = "查看系统私人 DNS（DoT/DoH）；WebView 无法单独改写 DNS",
-                        onClick = { showDnsDialog = true },
-                    )
                 }
 
                 SmallTitle(text = "关于")
@@ -383,86 +376,6 @@ fun SettingsScreen(
                         minHeight = 44.dp,
                     ) {
                         Text(text = "关闭", fontSize = 16.sp, style = MiuixTheme.textStyles.button)
-                    }
-                }
-            }
-
-            // DNS 管理：说明 WebView 限制 + 跳转系统私人 DNS（公共加密 DNS 路径）
-            val privateDnsMode = remember(showDnsDialog) {
-                if (!showDnsDialog) "" else runCatching {
-                    Settings.Secure.getString(context.contentResolver, "private_dns_mode").orEmpty()
-                }.getOrDefault("")
-            }
-            val privateDnsHost = remember(showDnsDialog, privateDnsMode) {
-                if (!showDnsDialog || privateDnsMode != "hostname") "" else runCatching {
-                    Settings.Secure.getString(context.contentResolver, "private_dns_specifier").orEmpty()
-                }.getOrDefault("")
-            }
-            val privateDnsLabel = when (privateDnsMode) {
-                "hostname" -> if (privateDnsHost.isNotBlank()) "已启用 · $privateDnsHost" else "已启用（自定义主机名）"
-                "opportunistic" -> "自动（机会式加密）"
-                "off" -> "关闭"
-                else -> "未知"
-            }
-            GlassDialog(
-                show = showDnsDialog,
-                title = "DNS 管理",
-                summary = "系统私人 DNS 状态",
-                backdrop = if (glass) backdrop else null,
-                onDismissRequest = { showDnsDialog = false },
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = "当前：$privateDnsLabel",
-                        fontSize = 14.sp,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 10.dp),
-                    )
-                    Text(
-                        text = buildString {
-                            appendLine("无法为 WebView 单独改写 DNS：")
-                            appendLine("Android WebView（Chromium）在系统网络栈内解析域名，没有公开 API 可替换其 HostResolver，也不提供应用内 DoH/自定义 DNS 插槽。")
-                            appendLine()
-                            appendLine("可用的公共方案：")
-                            appendLine("· 系统「私人 DNS」：DoT / 指定主机名（含部分 DoH 提供商），对 WebView 同样生效")
-                            appendLine("· 本地 VPN 接管 53 端口：需 VPN 权限，属系统级方案，非 WebView 专属")
-                            appendLine("· HTTP 代理（ProxyController）：只覆盖走代理的请求，不能等价替换 DNS")
-                        },
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(bottom = 14.dp),
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        GlassDialogButton(
-                            onClick = { showDnsDialog = false },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(text = "关闭", style = MiuixTheme.textStyles.button)
-                        }
-                        GlassDialogButton(
-                            onClick = {
-                                showDnsDialog = false
-                                val opened = runCatching {
-                                    context.startActivity(Intent("android.settings.PRIVATE_DNS_SETTINGS"))
-                                    true
-                                }.getOrDefault(false)
-                                if (!opened) {
-                                    runCatching {
-                                        context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                    }.onFailure {
-                                        Toast.makeText(context, "无法打开系统设置", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
-                        ) {
-                            Text(text = "系统私人 DNS", style = MiuixTheme.textStyles.button)
-                        }
                     }
                 }
             }

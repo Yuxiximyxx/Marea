@@ -2,6 +2,17 @@
 
 本文件记录 mafari 的用户可见变更。发版时在对应版本下追加条目；GitHub Release 正文优先读取本文件该版本小节。
 
+## [1.5.10-dev]
+
+### Removed
+- 设置 → 高级 → DNS 管理（WebView 无法单独改写 DNS，保留无意义）
+
+### Fixed
+- 修复 v1.5.8+ 编译失败：`PermissionRequest.RESOURCE_NOTIFICATIONS` / `RESOURCE_GEOLLOCATION` 在 Android SDK 中不存在
+  - 定位继续走 `onGeolocationPermissionsShowPrompt`
+  - 摄像头 / 麦克风继续走 `PermissionRequest` 公开常量
+  - 网站通知设置保留，拒绝时通过 JS `Notification.permission=denied` 生效
+
 ## [1.5.9-dev]
 
 ### Added
