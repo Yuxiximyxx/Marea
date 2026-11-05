@@ -15,10 +15,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -137,10 +138,10 @@ fun SettingsScreen(
                     .kyantLayerBackdrop(liquidBackdrop)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface)
-                    .navigationBarsPadding()
                     .verticalScroll(rememberScrollState())
                     .padding(top = topInset)
-                    .padding(bottom = 24.dp),
+                    // 沉浸：内容可滚到手势小白条下方，仅在末尾留出小白条高度
+                    .padding(bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
                 SmallTitle(text = "外观")
                 Card(
@@ -253,8 +254,8 @@ fun SettingsScreen(
                         onSelectedIndexChange = { settings.updateThirdPartyCookie(it) },
                     )
                     SettingsRow(
-                        title = "网页权限",
-                        summary = "摄像头 · 麦克风 · 定位 · 网站通知 · 剪贴板 · 媒体发声",
+                        title = "网站权限管理",
+                        summary = "摄像头 · 麦克风 · 定位 · 网站通知 · 剪贴板 · 媒体发声 · 网页重定向",
                         onClick = { showPermSheet = true },
                     )
                     SwitchPreference(
@@ -522,11 +523,11 @@ fun SettingsScreen(
 
             GlassBottomSheet(
                 show = showPermSheet,
-                title = "网页权限",
+                title = "网站权限管理",
                 backdrop = if (glass) backdrop else null,
                 onDismissRequest = { showPermSheet = false },
             ) {
-                Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
                     val permOptions = listOf("每次使用时询问", "总是允许", "总是拒绝")
                     listOf(
                         Triple("摄像头", settings.cameraPermission, settings::updateCameraPermission),
@@ -699,7 +700,7 @@ private fun SearchSheet(
         backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
             SEARCH_ENGINES.forEachIndexed { index, engine ->
                 Row(
                     modifier = Modifier
