@@ -1292,6 +1292,10 @@ fun BrowserScreen(
         state.tabs.forEach { it.scriptsEnabled = settings.scriptsEnabled }
     }
 
+    LaunchedEffect(settings.sameSiteNewTab, state.tabs.size) {
+        state.tabs.forEach { it.sameSiteNewTab = settings.sameSiteNewTab }
+    }
+
     // Sheet 打开期间，页面（重新）加载完成后刷新脚本列表；停用时保留旧列表（仅置灰）
     LaunchedEffect(scriptSheetShow, tab.loading, settings.scriptsEnabled) {
         if (scriptSheetShow && !tab.loading && settings.scriptsEnabled) {

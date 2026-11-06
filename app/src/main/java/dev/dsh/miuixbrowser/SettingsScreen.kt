@@ -200,6 +200,12 @@ fun SettingsScreen(
                         selectedIndex = settings.tabsStyle.coerceIn(0, 1),
                         onSelectedIndexChange = { settings.updateTabsStyle(it) },
                     )
+                    SwitchPreference(
+                        title = "同站链接新标签页打开",
+                        summary = "网页内同站的新窗口链接（target=_blank）在新标签页打开；关闭则在当前标签页打开",
+                        checked = settings.sameSiteNewTab,
+                        onCheckedChange = { settings.updateSameSiteNewTab(it) },
+                    )
                 }
 
                 SmallTitle(text = "浏览")

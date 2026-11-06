@@ -6,6 +6,7 @@ package top.yukonga.miuix.kmp.glass
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -406,6 +407,9 @@ fun GlassPopupItem(
         }
         Column(modifier = Modifier.weight(1f)) {
             if (marquee) {
+                // 先按普通单行布局测量；只有真的被截断才挂 marquee 并锁存，
+                // 避免 marquee 无限宽测量后 hasVisualOverflow 变回 false，也避免短文本被滚动。
+                var overflowing by remember(text) { mutableStateOf(false) }
                 key(marqueeRestart) {
                     Text(
                         text = text,
@@ -415,7 +419,8 @@ fun GlassPopupItem(
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Clip,
-                        modifier = Modifier.basicMarquee(iterations = 1),
+                        onTextLayout = { if (it.hasVisualOverflow) overflowing = true },
+                        modifier = if (overflowing) Modifier.basicMarquee(iterations = 1) else Modifier,
                     )
                 }
             } else {

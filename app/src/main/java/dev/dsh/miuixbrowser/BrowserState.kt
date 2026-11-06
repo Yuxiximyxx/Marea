@@ -173,6 +173,13 @@ class BrowserTab(private val appContext: Context) {
     /** 遇到 .user.js 链接 */
     var onUserScriptLink: ((String) -> Unit)? = null
 
+    /** 网页重定向 / window.open 被允许后，在新标签页打开（由 BrowserState 注入） */
+    var onOpenInNewTab: ((String) -> Unit)? = null
+
+    /** 同站 / 用户点击的新窗口链接是否新开标签页（设置里的开关） */
+    @Volatile
+    var sameSiteNewTab = false
+
     /** 记录历史 */
     var onVisited: ((url: String, title: String) -> Unit)? = null
 
@@ -496,7 +503,7 @@ class BrowserTab(private val appContext: Context) {
             displayZoomControls = false
             setSupportZoom(true)
             mediaPlaybackRequiresUserGesture = false
-            setSupportMultipleWindows(false)
+            setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -537,6 +544,7 @@ class BrowserTab(private val appContext: Context) {
             override fun onPageStarted(view: WebView, pageUrl: String?, favicon: Bitmap?) {
                 pageUrl?.let { url = it }
                 pageHost = runCatching { Uri.parse(pageUrl).host }.getOrNull().orEmpty()
+                pageStartedAt = android.os.SystemClock.elapsedRealtime()
                 loading = true
                 errorText = null
                 syncNav()
@@ -593,10 +601,7 @@ class BrowserTab(private val appContext: Context) {
                 }
                 val scheme = request.url.scheme ?: return false
                 if (scheme == "http" || scheme == "https") {
-                    val proceed = {
-                        val h = extraRequestHeaders()
-                        if (h.isEmpty()) view.loadUrl(target) else view.loadUrl(target, h)
-                    }
+                    val proceed = { openRedirectInNewTab(target, !request.hasGesture()) }
                     if (interceptRedirect(request, external = false, onAllowed = proceed)) return true
                 }
                 // DNT / Sec-GPC：点击链接产生的主框架 GET 导航也带上请求头
@@ -673,6 +678,13 @@ class BrowserTab(private val appContext: Context) {
                 // 界面摘掉 View 后必须通知 WebView
                 cb?.onCustomViewHidden()
             }
+
+            override fun onCreateWindow(
+                view: WebView,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message,
+            ): Boolean = handleCreateWindow(view, isUserGesture, resultMsg)
 
             override fun onPermissionRequest(request: PermissionRequest) {
                 webView.post { handleWebPermission(request) }
@@ -1135,7 +1147,15 @@ class BrowserTab(private val appContext: Context) {
      * @return true 表示本次导航已被接管（拦截，用户同意后由 [onAllowed] 放行）
      */
     private fun interceptRedirect(request: WebResourceRequest, external: Boolean, onAllowed: () -> Unit): Boolean {
-        if (!request.isForMainFrame || request.hasGesture() || request.isRedirect) return false
+        if (!request.isForMainFrame || request.isRedirect) return false
+        // 有用户手势：真实链接点击（触点下是 <a>）照常放行；
+        // 点击后由脚本发起的跨站跳转（div onclick / location.href 等）也按重定向处理
+        if (request.hasGesture()) {
+            val hit = webView.hitTestResult
+            val onAnchor = hit != null && !hit.extra.isNullOrEmpty() &&
+                (hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)
+            if (external || onAnchor || request.method != "GET") return false
+        }
         if (redirectMode == 1) return false
         // 首次加载 / 空白页上的跳转不算重定向
         val from = pageHost
@@ -1148,6 +1168,7 @@ class BrowserTab(private val appContext: Context) {
         val label = if (external) "打开其他应用" else "跳转到 ${targetHost.ifEmpty { request.url.toString().take(60) }}"
         if (redirectMode == 2) {
             notifyRedirectBlocked(external, targetHost)
+            if (!request.hasGesture()) bounceBackIfJustNavigated()
             return true
         }
         val prompt = onPermissionPrompt
@@ -1157,15 +1178,117 @@ class BrowserTab(private val appContext: Context) {
         }
         if (redirectPromptPending) return true
         redirectPromptPending = true
+        // 无手势的自动跳转：说明当前页多半是刚被带来的中转页，拒绝后退回原页面
+        val autoRedirect = !request.hasGesture()
         prompt(from, label) { allow ->
             redirectPromptPending = false
             if (allow) {
                 onAllowed()
             } else {
                 notifyRedirectBlocked(external, targetHost)
+                if (autoRedirect) bounceBackIfJustNavigated()
             }
         }
         return true
+    }
+
+    /** 当前页面开始加载的时间，用于判断它是不是「刚被页面带过来的中转页」 */
+    private var pageStartedAt = 0L
+
+    /**
+     * 重定向被拒绝 / 被放行到新标签后，当前标签不应停在跳转中转页（如 Loading…）上：
+     * 如果当前页是刚加载出来的（15 秒内）并且有上一页，就回到原页面。
+     */
+    private fun bounceBackIfJustNavigated() {
+        val fresh = android.os.SystemClock.elapsedRealtime() - pageStartedAt < 15_000
+        webView.post {
+            if (fresh && webView.canGoBack()) {
+                webView.stopLoading()
+                webView.goBack()
+            }
+        }
+    }
+
+    /** 允许重定向：目标在新标签页打开，当前标签回到原页面 */
+    private fun openRedirectInNewTab(target: String, bounce: Boolean) {
+        val open = onOpenInNewTab
+        if (open != null) open(target) else loadUrl(target)
+        if (open != null && bounce) bounceBackIfJustNavigated()
+    }
+
+    /**
+     * window.open / target=_blank 创建的新窗口：不创建真正的窗口，只截获它要打开的地址，
+     * 再套用「网页重定向」权限——同站或用户点击的真实链接直接开新标签，
+     * 其余按 询问 / 总是允许 / 总是拒绝 处理。拒绝时原页面完全不受影响。
+     */
+    fun handleCreateWindow(view: WebView, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+        val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+        val hit = view.hitTestResult
+        val linkClick = isUserGesture && hit != null && !hit.extra.isNullOrEmpty() &&
+            (hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)
+        val temp = WebView(appContext)
+        temp.settings.javaScriptEnabled = true
+        var handled = false
+        fun capture(target: String?) {
+            if (handled || target.isNullOrBlank() || target == "about:blank") return
+            handled = true
+            val uri = Uri.parse(target)
+            temp.post {
+                runCatching { temp.stopLoading(); temp.destroy() }
+            }
+            if (uri.scheme != "http" && uri.scheme != "https") return
+            handlePopupTarget(target, uri.host.orEmpty(), linkClick)
+        }
+        temp.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
+                capture(request.url.toString())
+                return true
+            }
+
+            override fun onPageStarted(v: WebView, pageUrl: String?, favicon: Bitmap?) {
+                capture(pageUrl)
+            }
+        }
+        // 超时仍没有地址（空白弹窗）就回收
+        temp.postDelayed({
+            if (!handled) {
+                handled = true
+                runCatching { temp.stopLoading(); temp.destroy() }
+            }
+        }, 8_000)
+        transport.webView = temp
+        resultMsg.sendToTarget()
+        return true
+    }
+
+    private fun handlePopupTarget(target: String, targetHost: String, linkClick: Boolean) {
+        val open = onOpenInNewTab ?: return
+        fun bare(h: String) = h.lowercase().removePrefix("www.")
+        val sameSite = pageHost.isNotEmpty() && targetHost.isNotEmpty() && bare(targetHost) == bare(pageHost)
+        if (sameSite || linkClick || pageHost.isEmpty()) {
+            // 页面内正常的新窗口链接：默认在当前标签打开，开关打开才新开标签
+            if (sameSiteNewTab) open(target) else webView.post { loadUrl(target) }
+            return
+        }
+        if (redirectMode == 1) {
+            open(target)
+            return
+        }
+        if (redirectMode == 2) {
+            notifyRedirectBlocked(false, targetHost)
+            return
+        }
+        val prompt = onPermissionPrompt
+        if (prompt == null) {
+            notifyRedirectBlocked(false, targetHost)
+            return
+        }
+        if (redirectPromptPending) return
+        redirectPromptPending = true
+        prompt(pageHost, "跳转到 ${targetHost.ifEmpty { target.take(60) }}") { allow ->
+            redirectPromptPending = false
+            if (allow) open(target) else notifyRedirectBlocked(false, targetHost)
+        }
     }
 
     private fun notifyRedirectBlocked(external: Boolean, host: String) {
@@ -1473,6 +1596,7 @@ class BrowserState(private val context: Context) {
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
         tab.applyIncognito(incognito)
+        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito) }
         tabs.add(tab)
         activeIndex = tabs.lastIndex
         if (target.isNotEmpty()) tab.load(target)
@@ -1608,6 +1732,7 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
+        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito) }
         tabs.add(tab)
         tab.load(target)
         return tabs.lastIndex

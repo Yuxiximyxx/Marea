@@ -172,6 +172,15 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_BLUR, enabled).apply()
     }
 
+    /** 网页 window.open / target=_blank 打开的同站链接是否新开标签页（默认关：在当前标签打开） */
+    var sameSiteNewTab by mutableStateOf(prefs.getBoolean(KEY_SAME_SITE_TAB, false))
+        private set
+
+    fun updateSameSiteNewTab(enabled: Boolean) {
+        sameSiteNewTab = enabled
+        prefs.edit().putBoolean(KEY_SAME_SITE_TAB, enabled).apply()
+    }
+
     /** 网页增强：油猴脚本、去广告规则、长按标记广告 */
     var pageEnhancements by mutableStateOf(prefs.getBoolean(KEY_ENHANCE, true))
         private set
@@ -351,6 +360,7 @@ class AppSettings(context: Context) {
 
     private companion object {
         const val KEY_BLUR = "blur"
+        const val KEY_SAME_SITE_TAB = "same_site_new_tab"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_IGNORED_UPDATE = "ignored_update"
         const val KEY_UPDATE_CHANNEL = "update_channel"
