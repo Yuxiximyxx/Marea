@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,6 +91,9 @@ fun SettingsScreen(
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
     var showProxyDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var reclaimable by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) { reclaimable = withContext(Dispatchers.IO) { CacheCleaner.reclaimableBytes(context) } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -319,6 +323,22 @@ fun SettingsScreen(
                             "关闭 · 支持 HTTP / SOCKS5"
                         },
                         onClick = { showProxyDialog = true },
+                    )
+                    SettingsRow(
+                        title = "清理缓存",
+                        summary = "每次冷启动自动清理 · 仅清理无用的下载 / 抽取临时文件 · 当前可清理 " +
+                            android.text.format.Formatter.formatFileSize(context, reclaimable),
+                        onClick = {
+                            scope.launch {
+                                val freed = withContext(Dispatchers.IO) { CacheCleaner.cleanNow(context) }
+                                reclaimable = withContext(Dispatchers.IO) { CacheCleaner.reclaimableBytes(context) }
+                                Toast.makeText(
+                                    context,
+                                    if (freed > 0) "已清理 " + android.text.format.Formatter.formatFileSize(context, freed) else "没有可清理的缓存",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
                     )
                 }
 
