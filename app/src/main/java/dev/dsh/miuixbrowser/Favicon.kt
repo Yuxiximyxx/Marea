@@ -84,7 +84,7 @@ fun rememberFavicon(url: String): ImageBitmap? {
  * - 403/401 时带 Referer 重试（防盗链）；GitHub 系地址并发走加速镜像；
  * - 大图按 128px 降采样，限制 2MB，BitmapFactory 失败再用 ImageDecoder（AVIF / HEIF 等）；
  * - 失败 10 分钟内不重复请求；最终回退到脚本站点的 favicon，仍失败才显示默认图标。
- * 注意：Android 原生不能解码 SVG（含 data:image/svg+xml），这类图标会走站点 favicon 回退。
+ * SVG（data:image/svg+xml 与 .svg 地址）由 AndroidSVG 渲染成位图。
  */
 object RemoteIconLoader {
 
@@ -191,7 +191,7 @@ object RemoteIconLoader {
                 }
                 if (code !in 200..299) return Fetch(null, code)
                 val bytes = readLimited(connection.inputStream) ?: return Fetch(null, code)
-                return Fetch(decode(bytes), code)
+                return Fetch(decode(bytes, isSvgUrl(current)), code)
             } catch (e: Exception) {
                 return Fetch(null, lastCode)
             } finally {
@@ -219,8 +219,15 @@ object RemoteIconLoader {
         val comma = uri.indexOf(',')
         if (comma < 0) return null
         val meta = uri.substring(5, comma)
-        if (meta.contains("svg", ignoreCase = true)) return null // 原生无法解码 SVG，交给站点 favicon 回退
         val payload = uri.substring(comma + 1)
+        if (meta.contains("svg", ignoreCase = true)) {
+            val svgBytes = if (meta.contains("base64", ignoreCase = true)) {
+                android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
+            } else {
+                java.net.URLDecoder.decode(payload.replace("+", "%2B"), "UTF-8").toByteArray(Charsets.UTF_8)
+            }
+            return decodeSvg(svgBytes)
+        }
         val bytes = if (meta.contains("base64", ignoreCase = true)) {
             android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
         } else {
@@ -229,8 +236,27 @@ object RemoteIconLoader {
         return decode(bytes)
     }
 
-    /** 降采样解码；BitmapFactory 不认的格式再交给 ImageDecoder */
-    private fun decode(bytes: ByteArray): Bitmap? {
+    private fun isSvgUrl(url: String): Boolean =
+        url.substringBefore('#').substringBefore('?').endsWith(".svg", ignoreCase = true)
+
+    /** AndroidSVG 渲染：最长边 TARGET_PX*2，保持宽高比，透明底 */
+    private fun decodeSvg(bytes: ByteArray): Bitmap? = runCatching {
+        val svg = com.caverock.androidsvg.SVG.getFromInputStream(java.io.ByteArrayInputStream(bytes))
+        val target = TARGET_PX * 2
+        val ratio = svg.documentAspectRatio.takeIf { it > 0f } ?: 1f
+        val w = if (ratio >= 1f) target else (target * ratio).toInt().coerceAtLeast(1)
+        val h = if (ratio >= 1f) (target / ratio).toInt().coerceAtLeast(1) else target
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        svg.renderToCanvas(
+            android.graphics.Canvas(bitmap),
+            com.caverock.androidsvg.RenderOptions.create().viewPort(0f, 0f, w.toFloat(), h.toFloat()),
+        )
+        bitmap
+    }.getOrNull()
+
+    /** 降采样解码；SVG 走 AndroidSVG，BitmapFactory 不认的格式再交给 ImageDecoder */
+    private fun decode(bytes: ByteArray, svg: Boolean = false): Bitmap? {
+        if (svg) return decodeSvg(bytes)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth > 0 && bounds.outHeight > 0) {

@@ -86,5 +86,6 @@ dependencies {
     implementation("androidx.credentials:credentials:1.5.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("androidx.browser:browser:1.8.0")
+    implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.navigationevent:navigationevent-compose:1.2.0")
 }
