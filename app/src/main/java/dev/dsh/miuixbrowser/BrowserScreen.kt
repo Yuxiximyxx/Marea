@@ -1300,7 +1300,13 @@ fun BrowserScreen(
             val byId = t.userScripts.associateBy { it.id }
             runningScripts = ids.map { id ->
                 val us = byId[id]
-                RunningScript(id, us?.name?.ifBlank { null } ?: "未命名脚本", us?.icon.orEmpty())
+                RunningScript(
+                    id = id,
+                    name = us?.name?.ifBlank { null } ?: "未命名脚本",
+                    icon = us?.icon.orEmpty(),
+                    iconBase = us?.sourceUrl.orEmpty(),
+                    iconFallbackHost = us?.let { UserscriptEngine.fallbackIconHost(UserscriptEngine.parse(it.code)) }.orEmpty(),
+                )
             }
         }
         t.queryMenuCommands { scriptMenuItems = it }

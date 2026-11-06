@@ -52,7 +52,13 @@ import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 当前页面正在运行的一个脚本（id 与脚本注册的菜单命令 id 前缀对应） */
-data class RunningScript(val id: String, val name: String, val icon: String)
+data class RunningScript(
+    val id: String,
+    val name: String,
+    val icon: String,
+    val iconBase: String = "",
+    val iconFallbackHost: String = "",
+)
 
 private val OnlineGreen = Color(0xFF34C759)
 private const val NO_MENU_TEXT = "脚本未注册快捷菜单"
@@ -201,7 +207,7 @@ private fun ScriptRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ScriptSheetIcon(script.icon)
+                ScriptSheetIcon(script.icon, script.iconBase, script.iconFallbackHost)
                 key(marqueeRestart) {
                     Text(
                         text = script.name,
@@ -223,8 +229,8 @@ private fun ScriptRow(
 }
 
 @Composable
-private fun ScriptSheetIcon(url: String) {
-    val icon = rememberRemoteIcon(url)
+private fun ScriptSheetIcon(url: String, baseUrl: String, fallbackHost: String) {
+    val icon = rememberRemoteIcon(url, baseUrl, fallbackHost)
     Box(
         modifier = Modifier
             .size(30.dp)

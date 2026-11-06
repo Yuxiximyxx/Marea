@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -226,6 +228,16 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                         }
                         items(normalScripts.size) { index ->
                             val script = normalScripts[index]
+                            // 版本号 / 描述 / 图标回退站点都从脚本头自动识别；code 不变就不重复解析
+                            val info = remember(script.code) {
+                                UserscriptEngine.parse(script.code).let {
+                                    ScriptListInfo(
+                                        version = it.version.trim(),
+                                        description = it.description,
+                                        iconHost = UserscriptEngine.fallbackIconHost(it),
+                                    )
+                                }
+                            }
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -234,17 +246,38 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                 insideMargin = PaddingValues(14.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ScriptIcon(script.icon)
+                                    ScriptIcon(script.icon, script.sourceUrl, info.iconHost)
                                     Spacer(Modifier.width(10.dp))
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable { editing = script },
                                     ) {
-                                        Text(script.name, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                                        // 标题 + 紧跟的加粗版本号：名字过长时只截断名字，版本号始终完整显示
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = script.name,
+                                                fontSize = 15.sp,
+                                                color = MiuixTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false),
+                                            )
+                                            if (info.version.isNotEmpty()) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    text = if (info.version.startsWith("v", ignoreCase = true)) info.version else "v${info.version}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MiuixTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                )
+                                            }
+                                        }
                                         Spacer(Modifier.height(2.dp))
                                         // 副标题优先用元数据 @description，没有再回退代码预览
-                                        val subtitle = UserscriptEngine.parse(script.code).description
+                                        val subtitle = info.description
                                             .ifBlank { script.code.take(60).replace("\n", " ") }
                                         Text(
                                             text = subtitle,
@@ -588,9 +621,12 @@ private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> U
     }
 }
 
+/** 脚本列表每一项用到的、从脚本头解析出的信息 */
+private data class ScriptListInfo(val version: String, val description: String, val iconHost: String)
+
 @Composable
-private fun ScriptIcon(url: String) {
-    val icon = rememberRemoteIcon(url)
+private fun ScriptIcon(url: String, baseUrl: String, fallbackHost: String) {
+    val icon = rememberRemoteIcon(url, baseUrl, fallbackHost)
     Box(
         modifier = Modifier
             .size(30.dp)

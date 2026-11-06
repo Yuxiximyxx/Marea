@@ -79,7 +79,10 @@ object UserscriptEngine {
             excludes = all("exclude"),
             grants = grants,
             requires = all("require").map { normalizeUrl(it) },
-            icon = first("icon").ifBlank { first("iconurl") }.ifBlank { first("defaulticon") },
+            // 常见写法：@icon / @iconURL / @defaulticon / @icon64 / @icon64URL，取第一个非空的；并去掉两侧引号
+            icon = first("icon").ifBlank { first("iconurl") }.ifBlank { first("defaulticon") }
+                .ifBlank { first("icon64") }.ifBlank { first("icon64url") }
+                .trim().trim('"', '\''),
             namespace = first("namespace"),
             author = first("author"),
             homepage = first("homepage").ifBlank { first("homepageurl") }.ifBlank { first("website") },
@@ -89,6 +92,27 @@ object UserscriptEngine {
             raw = values,
             metaBlock = BLOCK.find(code)?.value.orEmpty(),
         )
+    }
+
+    /** 这些站点只是脚本托管平台，它们的 favicon 不能代表脚本本身 */
+    private val GENERIC_HOSTS = setOf(
+        "greasyfork.org", "sleazyfork.org", "openuserjs.org", "github.com", "gitlab.com",
+        "raw.githubusercontent.com", "tampermonkey.net", "violentmonkey.github.io",
+    )
+    private val HOST_IN_PATTERN = Regex("^(?:[a-zA-Z*]+:)?//(?:\\*\\.)?([^/*?:\\s]+)")
+
+    /**
+     * @icon 加载失败（或没写）时，用来抓站点 favicon 的主机：
+     * 先 @homepage，再第一个能确定主机名的 @match / @include。找不到返回空串。
+     */
+    fun fallbackIconHost(meta: UserscriptMeta): String {
+        val candidates = sequenceOf(meta.homepage) + meta.matches.asSequence() + meta.includes.asSequence()
+        for (raw in candidates) {
+            val host = HOST_IN_PATTERN.find(raw.trim())?.groupValues?.get(1)
+                ?.removePrefix("*.")?.lowercase().orEmpty()
+            if (host.contains('.') && !host.contains('*') && host !in GENERIC_HOSTS) return host
+        }
+        return ""
     }
 
     /** 协议相对地址补全，并去掉 #sha256=… 之类的片段 */
