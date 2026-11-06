@@ -191,6 +191,63 @@ class GmBridge(
         }
     }
 
+    // ------------------------------------------------------------------ 流式写文件（GM.openFileStream）
+    // WebView 的 showSaveFilePicker 在部分环境不弹选择器；脚本可改用原生流式写入 Download/mafari，
+    // 逐段写盘、不占内存，适合 M3U8 等大文件。只允许写入 Download/mafari，文件名会被净化。
+
+    private class FileStream(val uri: android.net.Uri, val out: java.io.OutputStream)
+
+    private val streams = ConcurrentHashMap<String, FileStream>()
+
+    @JavascriptInterface
+    fun streamOpen(name: String, mime: String): String = runCatching {
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_").trim().trim('.').take(120)
+            .ifBlank { "download_${System.currentTimeMillis()}" }
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safe)
+            put(android.provider.MediaStore.Downloads.MIME_TYPE, mime.ifBlank { "application/octet-stream" })
+            put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+            put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("insert failed")
+        val out = resolver.openOutputStream(uri, "w") ?: run { resolver.delete(uri, null, null); error("open failed") }
+        val id = java.util.UUID.randomUUID().toString()
+        streams[id] = FileStream(uri, out.buffered(256 * 1024))
+        val actual = resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: safe
+        JSONObject().put("id", id).put("name", actual).toString()
+    }.getOrElse { JSONObject().put("error", it.message ?: "error").toString() }
+
+    /** 返回空串表示成功，否则为错误信息 */
+    @JavascriptInterface
+    fun streamWrite(id: String, base64: String): String = runCatching {
+        val s = streams[id] ?: error("stream closed")
+        s.out.write(android.util.Base64.decode(base64, android.util.Base64.DEFAULT))
+        ""
+    }.getOrElse { it.message ?: "write failed" }
+
+    @JavascriptInterface
+    fun streamClose(id: String): String = runCatching {
+        val s = streams.remove(id) ?: error("stream closed")
+        s.out.flush(); s.out.close()
+        context.contentResolver.update(
+            s.uri,
+            android.content.ContentValues().apply { put(android.provider.MediaStore.Downloads.IS_PENDING, 0) },
+            null, null,
+        )
+        ""
+    }.getOrElse { it.message ?: "close failed" }
+
+    @JavascriptInterface
+    fun streamAbort(id: String) {
+        val s = streams.remove(id) ?: return
+        runCatching { s.out.close() }
+        runCatching { context.contentResolver.delete(s.uri, null, null) }
+    }
+
     // ------------------------------------------------------------------ misc
 
     @JavascriptInterface

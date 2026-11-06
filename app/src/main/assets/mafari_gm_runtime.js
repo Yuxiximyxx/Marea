@@ -614,7 +614,48 @@
       });
     };
   }
+  // 原生流式写文件：写入 Download/mafari，逐段落盘，不占内存。返回 Promise<{name, write, close, abort}>
+  function openFileStream(name, mime) {
+    return new Promise(function (resolve, reject) {
+      if (!bridge || typeof bridge.streamOpen !== 'function') { reject(new Error('unsupported')); return; }
+      var info;
+      try { info = JSON.parse(bridge.streamOpen(String(name || ''), String(mime || ''))); } catch (e) { reject(e); return; }
+      if (!info || !info.id) { reject(new Error((info && info.error) || 'open failed')); return; }
+      var id = info.id, closed = false;
+      resolve({
+        name: info.name,
+        write: function (data) {
+          if (closed) return Promise.reject(new Error('stream closed'));
+          var blob = data instanceof Blob ? data : new Blob([data]);
+          var SLICE = 3 * 1024 * 1024;
+          var chain = Promise.resolve();
+          for (var off = 0; off < blob.size; off += SLICE) {
+            (function (o) {
+              chain = chain.then(function () { return blob.slice(o, o + SLICE).arrayBuffer(); }).then(function (buf) {
+                var err = bridge.streamWrite(id, bytesToB64(new Uint8Array(buf)));
+                if (err) throw new Error(err);
+              });
+            })(off);
+          }
+          return chain;
+        },
+        close: function () {
+          if (closed) return Promise.resolve();
+          closed = true;
+          var err = bridge.streamClose(id);
+          return err ? Promise.reject(new Error(err)) : Promise.resolve();
+        },
+        abort: function () {
+          if (closed) return Promise.resolve();
+          closed = true;
+          try { bridge.streamAbort(id); } catch (e) {}
+          return Promise.resolve();
+        }
+      });
+    });
+  }
   var GM = {
+    openFileStream: openFileStream,
     info: GM_info,
     getValue: p(GM_getValue), setValue: p(GM_setValue), deleteValue: p(GM_deleteValue),
     listValues: p(GM_listValues), getValues: p(GM_getValues), setValues: p(GM_setValues), deleteValues: p(GM_deleteValues),
