@@ -55,6 +55,15 @@ object Downloader {
         return truncateName(name.replace(Regex("[\\\\/:*?\"<>|]"), "_"), 80)
     }
 
+    /**
+     * 页面给定的原始文件名（<a download> / File.name）：原样保留，
+     * 只去掉路径分隔符和控制字符（系统不允许），不补扩展名、不替换其它字符。
+     */
+    fun originalName(raw: String): String {
+        val cleaned = raw.replace(Regex("[\\\\/\\u0000-\\u001F]"), "_").trim()
+        return truncateName(cleaned.ifBlank { "download_${System.currentTimeMillis()}" }, 255)
+    }
+
     /** 超长文件名截断时保留扩展名 */
     private fun truncateName(name: String, max: Int): String {
         if (name.length <= max) return name

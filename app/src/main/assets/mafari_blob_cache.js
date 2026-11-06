@@ -9,10 +9,46 @@
   var cache = Object.create(null);
   var order = [];
   window.__mafariBlobCache = cache;
+  // blob URL -> 页面指定的原始文件名（<a download="..."> 或 File.name），下载时原样使用，不重命名
+  var names = Object.create(null);
+  window.__mafariBlobNames = names;
+
+  function rememberName(a) {
+    try {
+      if (!a || !a.getAttribute) return;
+      var href = a.href || a.getAttribute('href') || '';
+      if (href.slice(0, 5).toLowerCase() !== 'blob:') return;
+      var n = a.getAttribute('download');
+      if (n) names[href] = n;
+    } catch (e) {}
+  }
+
+  try {
+    // 点击链接（含用户点击、冒泡前的捕获阶段）
+    document.addEventListener('click', function (ev) {
+      try {
+        var t = ev.target;
+        while (t && t.nodeType === 1 && t.tagName !== 'A') t = t.parentNode;
+        if (t && t.tagName === 'A') rememberName(t);
+      } catch (e) {}
+    }, true);
+    // 脚本里 a.click()（常为未插入文档的 <a>）
+    var origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      rememberName(this);
+      return origClick.apply(this, arguments);
+    };
+    var origDispatch = EventTarget.prototype.dispatchEvent;
+    EventTarget.prototype.dispatchEvent = function (ev) {
+      try { if (this instanceof HTMLAnchorElement && ev && ev.type === 'click') rememberName(this); } catch (e) {}
+      return origDispatch.apply(this, arguments);
+    };
+  } catch (e) {}
 
   function drop(url) {
     if (!(url in cache)) return;
     delete cache[url];
+    delete names[url];
     var i = order.indexOf(url);
     if (i >= 0) order.splice(i, 1);
   }
@@ -27,7 +63,9 @@
             cache[url] = obj;
             order.push(url);
             while (order.length > MAX_ENTRIES) {
-              delete cache[order.shift()];
+              var old = order.shift();
+              delete cache[old];
+              delete names[old];
             }
           }
         } catch (e) {}

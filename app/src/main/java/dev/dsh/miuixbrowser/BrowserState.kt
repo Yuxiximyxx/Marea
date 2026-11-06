@@ -208,6 +208,8 @@ class BrowserTab(private val appContext: Context) {
         var name: String,
         var mime: String?,
     ) {
+        /** 文件名来自页面（download 属性 / File.name）：保存时不得再改名 */
+        var keepName = false
         var written = 0L
         var failed = false
         var finished = false
@@ -234,7 +236,7 @@ class BrowserTab(private val appContext: Context) {
     private val blobBridge = object {
         /** 返回 false 表示原生侧已拒绝（token 无效 / 空间不足），JS 端应直接停止。 */
         @android.webkit.JavascriptInterface
-        fun begin(token: String, mime: String, size: Double): Boolean {
+        fun begin(token: String, mime: String, size: Double, pageName: String): Boolean {
             val session = blobSessions[token] ?: return false
             if (size > 0 && size > appContext.cacheDir.usableSpace - MIN_FREE_BYTES) {
                 discardBlobSession(token)
@@ -242,6 +244,10 @@ class BrowserTab(private val appContext: Context) {
                 return false
             }
             if (mime.isNotBlank()) session.mime = mime
+            if (pageName.isNotBlank()) {
+                session.name = Downloader.originalName(pageName)
+                session.keepName = true
+            }
             if (size >= LARGE_BLOB_NOTICE_BYTES) {
                 val label = session.name
                 webView.post { onBlobStart?.invoke(label) }
@@ -281,7 +287,7 @@ class BrowserTab(private val appContext: Context) {
                 reportBlobError("文件读取不完整或写入失败")
                 return
             }
-            val name = Downloader.withExtension(session.name, session.mime)
+            val name = if (session.keepName) session.name else Downloader.withExtension(session.name, session.mime)
             val mime = session.mime
             val path = session.file.absolutePath
             webView.post { onBlobReady?.invoke(null, name, mime, path) }
@@ -428,9 +434,26 @@ class BrowserTab(private val appContext: Context) {
                 return viaXhr(u).catch(function(){ return viaFetch(u); });
               }
 
+              function findName(u, b) {
+                try {
+                  if (window.__mafariBlobNames && window.__mafariBlobNames[u]) return window.__mafariBlobNames[u];
+                } catch (e) {}
+                try {
+                  var list = document.querySelectorAll('iframe');
+                  for (var i = 0; i < list.length; i++) {
+                    try {
+                      var w = list[i].contentWindow;
+                      if (w && w.__mafariBlobNames && w.__mafariBlobNames[u]) return w.__mafariBlobNames[u];
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+                try { if (b && b.name) return String(b.name); } catch (e) {}
+                return '';
+              }
+
               getBlob(url).then(function(b){
                 if (!b || !b.size) throw new Error('empty blob');
-                if (!B.begin(token, b.type || preferredMime, b.size)) return;
+                if (!B.begin(token, b.type || preferredMime, b.size, findName(url, b))) return;
                 var i = 0;
                 function next(){
                   if (i >= b.size) { B.end(token, b.size); return; }
