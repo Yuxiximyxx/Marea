@@ -537,6 +537,7 @@ fun BrowserScreen(
                 if (hint != null) putExtra(Intent.EXTRA_TITLE, hint)
             }
             runCatching { filePickerLauncher.launch(saveIntent) }.onFailure {
+                Diag.log("save picker launch failed: ${it}")
                 choice.callback.onReceiveValue(null)
                 fileChooserChoice = null
             }

@@ -673,6 +673,11 @@ class BrowserTab(private val appContext: Context) {
                 fileChooserParams: FileChooserParams?,
             ): Boolean {
                 if (filePathCallback == null || fileChooserParams == null) return false
+                // 诊断：确认 WebView 是否真的把 showSaveFilePicker 交给了 onShowFileChooser（mode=3 为保存）
+                Diag.log("onShowFileChooser mode=${fileChooserParams.mode} hint=${fileChooserParams.filenameHint} accept=${fileChooserParams.acceptTypes?.joinToString()}")
+                if (fileChooserParams.mode == FileChooserParams.MODE_SAVE) {
+                    runCatching { android.widget.Toast.makeText(appContext, "收到保存请求: ${fileChooserParams.filenameHint}", android.widget.Toast.LENGTH_SHORT).show() }
+                }
                 // WebView 可能在上一次未回调时再次请求，先取消上一次
                 cancelFileChooser()
                 pendingFileCallback = filePathCallback
