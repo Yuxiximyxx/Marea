@@ -523,6 +523,25 @@ fun BrowserScreen(
     /** 拉起系统文件选择器（按 acceptTypes / 多选） */
     fun launchFilePicker(choice: FileChooserChoice) {
         val params = choice.params
+        // showSaveFilePicker()（File System Access API，WebView 132+）：新建文件并把 Uri 交还给网页，
+        // 网页用 createWritable() 边下边写，不经 blob、不占内存；文件名用页面给的原名，不改名
+        if (params.mode == WebChromeClient.FileChooserParams.MODE_SAVE) {
+            val hint = params.filenameHint?.takeIf { it.isNotBlank() }
+            val ext = hint?.substringAfterLast('.', "")?.lowercase().orEmpty()
+            // MIME 按原文件名的扩展名取，避免系统因类型不符在文件名后再追加扩展名
+            val mimeByName = ext.takeIf { it.isNotEmpty() }
+                ?.let { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+            val saveIntent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = mimeByName ?: "application/octet-stream"
+                if (hint != null) putExtra(Intent.EXTRA_TITLE, hint)
+            }
+            runCatching { filePickerLauncher.launch(saveIntent) }.onFailure {
+                choice.callback.onReceiveValue(null)
+                fileChooserChoice = null
+            }
+            return
+        }
         val types = params.acceptTypes
             ?.mapNotNull { it?.trim()?.takeIf { t -> t.isNotEmpty() } }
             .orEmpty()
