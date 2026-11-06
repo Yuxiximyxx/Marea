@@ -1,6 +1,7 @@
 package dev.dsh.miuixbrowser
 
 import android.content.Intent
+import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.webkit.WebViewCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -326,11 +328,17 @@ fun SettingsScreen(
                     )
                     SettingsRow(
                         title = "清理缓存",
-                        summary = "每次冷启动自动清理 · 仅清理无用的下载 / 抽取临时文件 · 当前可清理 " +
+                        summary = "每次冷启动自动清理 · 同系统「清除缓存」范围，保留未完成的下载 · 当前可清理 " +
                             android.text.format.Formatter.formatFileSize(context, reclaimable),
                         onClick = {
                             scope.launch {
-                                val freed = withContext(Dispatchers.IO) { CacheCleaner.cleanNow(context) }
+                                // WebView 网页缓存要在主线程清；其余文件在 IO 线程删
+                                val clearWeb: () -> Unit = {
+                                    runCatching { WebView(context.applicationContext).apply { clearCache(true); destroy() } }
+                                }
+                                val freed = withContext(Dispatchers.IO) {
+                                    CacheCleaner.cleanNow(context) { runBlocking(Dispatchers.Main) { clearWeb() } }
+                                }
                                 reclaimable = withContext(Dispatchers.IO) { CacheCleaner.reclaimableBytes(context) }
                                 Toast.makeText(
                                     context,
