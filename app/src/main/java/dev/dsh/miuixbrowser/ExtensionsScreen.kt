@@ -74,6 +74,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdr
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
@@ -84,7 +85,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 /** 脚本页：布局与「去广告」一致 —— 顶部设置卡（自动更新）、已安装脚本、推荐脚本；右上角菜单可导入（URL / 本地文件）、新建、全部更新。 */
 @Composable
-fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boolean = true) {
+fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolean = true) {
     var editing by remember { mutableStateOf<UserScript?>(null) }
     var creating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
@@ -221,6 +222,27 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                                 items = listOf("手动", "每天", "每 3 天", "每周"),
                                 selectedIndex = store.autoUpdate.coerceIn(0, 3),
                                 onSelectedIndexChange = { store.updateAutoUpdate(it) },
+                            )
+                        }
+                    }
+
+                    item { SmallTitle(text = "启用范围") }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            insideMargin = PaddingValues(0.dp),
+                        ) {
+                            SwitchPreference(
+                                title = "在无痕浏览中启用",
+                                summary = "关闭后无痕标签不运行脚本，切换后刷新页面生效",
+                                checked = settings.scriptsInIncognito,
+                                onCheckedChange = { settings.updateScriptsInIncognito(it) },
+                            )
+                            SwitchPreference(
+                                title = "在轻应用 / 桌面快捷方式中启用",
+                                summary = "关闭后从桌面图标打开的页面不运行脚本，重新打开生效",
+                                checked = settings.scriptsInWebApp,
+                                onCheckedChange = { settings.updateScriptsInWebApp(it) },
                             )
                         }
                     }

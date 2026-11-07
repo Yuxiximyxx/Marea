@@ -834,9 +834,11 @@ object AdBlock {
 }
 
 /** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS / 指纹保护开关，不泄露任何用户数据。 */
-class AdBlockBridge {
+class AdBlockBridge(private val cosmeticAllowed: () -> Boolean = { true }) {
+    /** [cosmeticAllowed] 为 false（如无痕 / 轻应用里关闭了去广告）时不返回任何隐藏 CSS。 */
     @JavascriptInterface
-    fun css(host: String?, topHost: String?): String = AdBlock.cosmeticCss(host, topHost)
+    fun css(host: String?, topHost: String?): String =
+        if (cosmeticAllowed()) AdBlock.cosmeticCss(host, topHost) else ""
 
     /** 指纹保护配置，见 [AdBlock.fingerprintConfig]。 */
     @JavascriptInterface

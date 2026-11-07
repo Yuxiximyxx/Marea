@@ -183,6 +183,7 @@ class BrowserTab(private val appContext: Context) {
     fun applyIncognito(value: Boolean) {
         if (incognito == value) return
         incognito = value
+        syncUserScripts()
         // Cookie 开关是进程级的，不能在这里改；改为在该标签成为当前标签时由 applyPrivacy 设置
     }
 
@@ -222,6 +223,20 @@ class BrowserTab(private val appContext: Context) {
             field = value
             syncUserScripts()
         }
+
+    /** 启用范围：脚本 / 去广告是否在无痕标签中生效（由设置注入） */
+    var scriptsInIncognito: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            syncUserScripts()
+        }
+
+    var adblockInIncognito: Boolean = true
+
+    /** 当前标签是否应运行油猴脚本：网页增强、脚本总开关、无痕范围三者都允许 */
+    private fun scriptsActive(): Boolean =
+        pageEnhancements && scriptsEnabled && (!incognito || scriptsInIncognito)
 
     /** 搜索模板，由设置注入 */
     var searchTemplate: String = "https://www.baidu.com/s?wd=%s"
@@ -579,7 +594,7 @@ class BrowserTab(private val appContext: Context) {
     private var adblockDocStart = false
 
     init {
-        runCatching { webView.addJavascriptInterface(AdBlockBridge(), "MafariAdblock") }
+        runCatching { webView.addJavascriptInterface(AdBlockBridge { !incognito || adblockInIncognito }, "MafariAdblock") }
         runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
         cleanStaleBlobFiles(appContext)
         runCatching {
@@ -719,7 +734,7 @@ class BrowserTab(private val appContext: Context) {
             }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                AdBlock.intercept(request, pageHost, blockTrackers)
+                if (incognito && !adblockInIncognito) null else AdBlock.intercept(request, pageHost, blockTrackers)
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) errorText = error.description?.toString()
@@ -865,8 +880,6 @@ class BrowserTab(private val appContext: Context) {
         val pullThresholdPx = webView.context.resources.displayMetrics.xdpi / 2.54f * 4f
         var touchDownY = 0f
         var pulled = 0f
-        var lastTouchX = 0f
-        var lastTouchY = 0f
         webView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
@@ -913,6 +926,77 @@ class BrowserTab(private val appContext: Context) {
     }
 
     data class ElementHit(val tag: String, val imageUrl: String, val selector: String)
+
+    /** 最近一次手指按下的位置（WebView 像素），长按图片 / 链接后用它定位对应的页面元素 */
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
+
+    /**
+     * 「标记为广告」：长按图片 / 链接时系统只给出图片地址或链接，拿不到元素。
+     * 这里按最近一次按下的位置取页面元素，向上找到广告位容器（浮层 / 带广告类名 / iframe / ins / 紧贴的包装层），
+     * 生成选择器后走与「长按广告浮层」相同的 ElementHit 流程（标记并移除 / 仅移除）。
+     * [onNotFound] 在没找到可标记元素时回调。
+     */
+    fun markAdAtTouch(onNotFound: () -> Unit) {
+        @Suppress("DEPRECATION")
+        val scale = webView.scale.takeIf { it > 0f } ?: webView.context.resources.displayMetrics.density
+        val cssX = lastTouchX / scale
+        val cssY = lastTouchY / scale
+        val js = """(function(){
+  try {
+    var el = document.elementFromPoint($cssX, $cssY);
+    if (!el) return 0;
+    var AD = /(^|[\s_-])(ad|ads|adv|advert|advertisement|banner|popup|float|floating|modal|overlay|mask|sponsor|sponsored|promo|gg|dsp)([\s_-]|${'$'})/i;
+    function keyOf(n){
+      var cls = (typeof n.className === 'string') ? n.className : '';
+      return cls + ' ' + (n.id || '');
+    }
+    function selectorOf(node){
+      var parts = [], cur = node;
+      while (cur && cur.nodeType === 1 && cur !== document.body && cur !== document.documentElement && parts.length < 8) {
+        if (cur.id) {
+          var idSel = '#' + CSS.escape(cur.id);
+          if (document.querySelectorAll(idSel).length === 1) { parts.unshift(idSel); break; }
+        }
+        var seg = cur.tagName.toLowerCase();
+        var cls = (typeof cur.className === 'string' ? cur.className : '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+        for (var k = 0; k < cls.length; k++) seg += '.' + CSS.escape(cls[k]);
+        var parent = cur.parentElement;
+        if (parent) seg += ':nth-child(' + (Array.prototype.indexOf.call(parent.children, cur) + 1) + ')';
+        parts.unshift(seg);
+        var sel = parts.join(' > ');
+        try { if (document.querySelectorAll(sel).length === 1 && document.querySelector(sel) === node) return sel; } catch (e) {}
+        cur = parent;
+      }
+      return parts.join(' > ');
+    }
+    var vw = innerWidth, vh = innerHeight;
+    var target = null, cur = el, depth = 0;
+    var base = el.getBoundingClientRect();
+    while (cur && cur.nodeType === 1 && cur !== document.body && cur !== document.documentElement && depth < 8) {
+      var tag = cur.tagName;
+      var pos = getComputedStyle(cur).position;
+      var r = cur.getBoundingClientRect();
+      // 接近整页的容器不是广告位本身，不再往上找
+      if (depth > 0 && r.width * r.height > vw * vh * 0.9) break;
+      if (tag === 'INS' || tag === 'IFRAME' || pos === 'fixed' || pos === 'sticky' || AD.test(keyOf(cur))) { target = cur; break; }
+      // 紧贴内容的包装层（宽高与触摸点元素相近）也算广告位的一部分，继续向上
+      if (depth > 0 && r.width <= base.width * 1.2 + 2 && r.height <= base.height * 1.2 + 2) target = cur;
+      cur = cur.parentElement; depth++;
+    }
+    if (!target) target = el.closest('a') || el;
+    var img = target.tagName === 'IMG' ? target : (target.querySelector ? target.querySelector('img') : null);
+    var src = img ? (img.currentSrc || img.src || '') : '';
+    var sel = selectorOf(target);
+    if (!sel) return 0;
+    MafariElement.onElement(sel, target.tagName, src);
+    return 1;
+  } catch (e) { return 0; }
+})()"""
+        webView.evaluateJavascript(js) { raw ->
+            if (raw?.trim() != "1") onNotFound()
+        }
+    }
 
     /** 只在广告浮层（fixed/absolute 且像广告或面积大）上响应长按，文字区域交给系统选词 */
     private fun installElementInspector(view: WebView) {
@@ -982,7 +1066,7 @@ class BrowserTab(private val appContext: Context) {
      */
     private fun syncUserScripts() {
         if (destroyed) return
-        if (!pageEnhancements || !scriptsEnabled) {
+        if (!scriptsActive()) {
             scriptHandlers.forEach { handler -> runCatching { handler.remove() } }
             scriptHandlers.clear()
             installedScriptsSignature = ""
@@ -1028,7 +1112,7 @@ class BrowserTab(private val appContext: Context) {
      * 没见过的（特性不支持、或 handler 安装晚于本次导航）再用 evaluateJavascript 补注入主框架。
      */
     private fun injectMissingUserScripts(view: WebView) {
-        if (!pageEnhancements || !scriptsEnabled) return
+        if (!scriptsActive()) return
         val enabled = userScripts.filter { it.enabled }
         if (enabled.isEmpty()) return
         val query = "(function(){try{return JSON.stringify(Object.keys(window.__mafariSeen||{}))}catch(e){return '[]'}})()"

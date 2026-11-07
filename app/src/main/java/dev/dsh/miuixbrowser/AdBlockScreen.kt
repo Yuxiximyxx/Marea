@@ -233,6 +233,29 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                         }
                     }
 
+                    item { SmallTitle(text = "启用范围") }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            insideMargin = PaddingValues(0.dp),
+                        ) {
+                            SwitchPreference(
+                                title = "在无痕浏览中启用",
+                                summary = "关闭后无痕标签不拦截请求、不隐藏广告元素",
+                                checked = settings.adblockInIncognito,
+                                onCheckedChange = { settings.updateAdblockInIncognito(it) },
+                                enabled = AdBlock.enabled,
+                            )
+                            SwitchPreference(
+                                title = "在轻应用 / 桌面快捷方式中启用",
+                                summary = "关闭后从桌面图标打开的页面不去广告，重新打开生效",
+                                checked = settings.adblockInWebApp,
+                                onCheckedChange = { settings.updateAdblockInWebApp(it) },
+                                enabled = AdBlock.enabled,
+                            )
+                        }
+                    }
+
                     item { SmallTitle(text = "订阅源") }
                     if (subs.isEmpty()) {
                         item {

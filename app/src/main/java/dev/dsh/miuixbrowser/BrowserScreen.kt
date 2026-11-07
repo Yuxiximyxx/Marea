@@ -1316,6 +1316,14 @@ fun BrowserScreen(
         state.tabs.forEach { it.scriptsEnabled = settings.scriptsEnabled }
     }
 
+    // 启用范围（无痕）→ 所有标签页
+    LaunchedEffect(settings.scriptsInIncognito, settings.adblockInIncognito, state.tabs.size) {
+        state.tabs.forEach {
+            it.scriptsInIncognito = settings.scriptsInIncognito
+            it.adblockInIncognito = settings.adblockInIncognito
+        }
+    }
+
     LaunchedEffect(settings.sameSiteNewTab, state.tabs.size) {
         state.tabs.forEach { it.sameSiteNewTab = settings.sameSiteNewTab }
     }
@@ -1619,6 +1627,17 @@ fun BrowserScreen(
                     sheet = Sheet.None
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(linkUrl))) }
                 }
+                if (settings.pageEnhancements) {
+                    SheetRow(
+                        title = "标记为广告",
+                        subtitle = "选中这个广告位，可记住规则下次自动隐藏",
+                    ) {
+                        sheet = Sheet.None
+                        tab.markAdAtTouch {
+                            android.widget.Toast.makeText(context, "没找到可标记的元素", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             }
 
             Sheet.Image -> {
@@ -1660,6 +1679,17 @@ fun BrowserScreen(
                     SheetRow(title = "在新标签页打开") {
                         sheet = Sheet.None
                         state.newTab(imageUrl, tab.incognito, fromLink = true)
+                    }
+                }
+                if (settings.pageEnhancements) {
+                    SheetRow(
+                        title = "标记为广告",
+                        subtitle = "选中这个广告位，可记住规则下次自动隐藏",
+                    ) {
+                        sheet = Sheet.None
+                        tab.markAdAtTouch {
+                            android.widget.Toast.makeText(context, "没找到可标记的元素", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -2127,6 +2157,7 @@ fun BrowserScreen(
     entry<AppRoute.Extensions> {
         ExtensionsScreen(
             store = extensions,
+            settings = settings,
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
         )

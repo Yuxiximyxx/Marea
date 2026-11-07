@@ -190,6 +190,40 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_ENHANCE, enabled).apply()
     }
 
+    /** 启用范围：油猴脚本是否在无痕浏览 / 轻应用（桌面快捷方式）中运行 */
+    var scriptsInIncognito by mutableStateOf(prefs.getBoolean(KEY_SCRIPTS_INCOGNITO, true))
+        private set
+
+    fun updateScriptsInIncognito(enabled: Boolean) {
+        scriptsInIncognito = enabled
+        prefs.edit().putBoolean(KEY_SCRIPTS_INCOGNITO, enabled).apply()
+    }
+
+    var scriptsInWebApp by mutableStateOf(prefs.getBoolean(KEY_SCRIPTS_WEBAPP, true))
+        private set
+
+    fun updateScriptsInWebApp(enabled: Boolean) {
+        scriptsInWebApp = enabled
+        prefs.edit().putBoolean(KEY_SCRIPTS_WEBAPP, enabled).apply()
+    }
+
+    /** 启用范围：去广告（请求拦截 + 元素隐藏）是否在无痕浏览 / 轻应用中生效 */
+    var adblockInIncognito by mutableStateOf(prefs.getBoolean(KEY_ADBLOCK_INCOGNITO, true))
+        private set
+
+    fun updateAdblockInIncognito(enabled: Boolean) {
+        adblockInIncognito = enabled
+        prefs.edit().putBoolean(KEY_ADBLOCK_INCOGNITO, enabled).apply()
+    }
+
+    var adblockInWebApp by mutableStateOf(prefs.getBoolean(KEY_ADBLOCK_WEBAPP, true))
+        private set
+
+    fun updateAdblockInWebApp(enabled: Boolean) {
+        adblockInWebApp = enabled
+        prefs.edit().putBoolean(KEY_ADBLOCK_WEBAPP, enabled).apply()
+    }
+
     /** 脚本一键启停：只影响油猴脚本，不影响去广告 / 长按标记 */
     var scriptsEnabled by mutableStateOf(prefs.getBoolean(KEY_SCRIPTS, true))
         private set
@@ -377,6 +411,10 @@ class AppSettings(context: Context) {
         const val KEY_WALL_BLUR = "wallpaper_blur"
         const val KEY_ENHANCE = "page_enhancements"
         const val KEY_SCRIPTS = "scripts_enabled"
+        const val KEY_SCRIPTS_INCOGNITO = "scripts_in_incognito"
+        const val KEY_SCRIPTS_WEBAPP = "scripts_in_webapp"
+        const val KEY_ADBLOCK_INCOGNITO = "adblock_in_incognito"
+        const val KEY_ADBLOCK_WEBAPP = "adblock_in_webapp"
         const val KEY_DNT = "send_dnt"
         const val KEY_WEBRTC = "webrtc_disabled"
         const val KEY_3P_COOKIE = "third_party_cookie"

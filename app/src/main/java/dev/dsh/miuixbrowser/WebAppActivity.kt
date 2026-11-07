@@ -196,6 +196,8 @@ class WebAppActivity : ComponentActivity() {
         }
 
         configureWebView()
+        setupUserScripts()
+        setupCosmeticFilter()
         setupImmersiveScroll()
         setupPullRefresh()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -228,6 +230,9 @@ class WebAppActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        scriptHandlers.forEach { runCatching { it.remove() } }
+        scriptHandlers.clear()
         if (::webView.isInitialized) {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()
@@ -269,10 +274,13 @@ class WebAppActivity : ComponentActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 progress.visibility = View.VISIBLE
+                if (!cosmeticDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
                 progress.visibility = View.GONE
+                injectMissingUserScripts(view)
+                if (!cosmeticDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
                 syncThemeColor()
                 view.postDelayed({ syncThemeColor() }, 600)
             }
@@ -282,7 +290,7 @@ class WebAppActivity : ComponentActivity() {
             }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                AdBlock.intercept(request, pageHost, settings.blockTrackingScripts)
+                if (!settings.adblockInWebApp) null else AdBlock.intercept(request, pageHost, settings.blockTrackingScripts)
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
@@ -412,6 +420,125 @@ class WebAppActivity : ComponentActivity() {
                 Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "这类下载请在 Mafari 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // ------------------------------------------------------- 去广告：元素隐藏
+
+    /** 元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面回调兜底注入） */
+    private var cosmeticDocStart = false
+
+    /**
+     * 与浏览器一致：装上 MafariAdblock 桥，把 COSMETIC_JS 作为 document-start 脚本注入所有框架，
+     * 页面里的脚本向桥取本站点的隐藏 CSS。开关、规则订阅与站点白名单都在 AdBlock.cosmeticCss 里判断。
+     * 必须在首次加载网页之前调用。
+     */
+    private fun setupCosmeticFilter() {
+        runCatching { webView.addJavascriptInterface(AdBlockBridge { settings.adblockInWebApp }, "MafariAdblock") }
+            .onFailure { Diag.log("webapp adblock: bridge install failed ${it.message}") }
+        runCatching {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
+                cosmeticDocStart = true
+            }
+        }.onFailure { Diag.log("webapp adblock: document-start install failed ${it.message}") }
+    }
+
+    // ------------------------------------------------------------ 油猴脚本
+
+    private var destroyed = false
+    private val scriptHandlers = mutableListOf<androidx.webkit.ScriptHandler>()
+    private var installedScriptsSignature = ""
+    private var prefetchingScripts = false
+    private lateinit var extensions: ExtensionStore
+
+    /** 当前应启用的脚本：受「网页增强」「脚本」两个总开关控制，与 Mafari 浏览器一致 */
+    private fun activeScripts(): List<UserScript> {
+        if (!settings.pageEnhancements || !settings.scriptsEnabled || !settings.scriptsInWebApp) return emptyList()
+        return extensions.items.filter { it.enabled }
+    }
+
+    /**
+     * 轻应用里的油猴脚本：装上 GM 桥（GM_setValue / GM_xmlhttpRequest / GM_openInTab 等），
+     * 再把启用的脚本作为 document-start 脚本注入（URL 匹配与 run-at 由运行时按各框架处理）。
+     * 脚本列表与浏览器共用同一份存储；必须在首次加载网页之前调用。
+     */
+    private fun setupUserScripts() {
+        extensions = ExtensionStore(this)
+        runCatching {
+            webView.addJavascriptInterface(
+                GmBridge(
+                    applicationContext,
+                    { webView },
+                    { target ->
+                        val uri = runCatching { Uri.parse(target) }.getOrNull()
+                        val scheme = uri?.scheme?.lowercase()
+                        if (uri != null && (scheme == "http" || scheme == "https")) openInBrowser(uri)
+                    },
+                    { link, name ->
+                        if (link.startsWith("http", ignoreCase = true)) {
+                            val fileName = name.ifBlank { Downloader.fileNameFrom(link, null) }
+                            Downloader.start(this, link, null, fileName, null)
+                            Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ),
+                "MafariGM",
+            )
+        }.onFailure { Diag.log("webapp userscript: bridge install failed ${it.message}") }
+        syncUserScripts()
+    }
+
+    private fun syncUserScripts() {
+        if (destroyed) return
+        val enabled = activeScripts()
+        val signature = enabled.joinToString("|") {
+            "${it.id}:${it.code.hashCode()}:${it.match.hashCode()}:${ScriptResources.cachedCount(applicationContext, it.code)}"
+        }
+
+        // @require / @resource 还没缓存的先在后台取回来，取到后自动重建
+        val needFetch = enabled.filter { ScriptResources.missing(applicationContext, it.code).isNotEmpty() }
+        if (needFetch.isNotEmpty() && !prefetchingScripts) {
+            prefetchingScripts = true
+            Thread {
+                val changed = needFetch.map { ScriptResources.prefetch(applicationContext, it.code) }.any { it }
+                runOnUiThread {
+                    prefetchingScripts = false
+                    if (changed) syncUserScripts()
+                }
+            }.start()
+        }
+        if (signature == installedScriptsSignature) return
+
+        scriptHandlers.forEach { runCatching { it.remove() } }
+        scriptHandlers.clear()
+        installedScriptsSignature = signature
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        enabled.forEach { script ->
+            runCatching {
+                val source = UserscriptEngine.buildSource(applicationContext, script)
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, source, setOf("*"))
+                    ?.let { scriptHandlers.add(it) }
+            }.onFailure { Diag.log("webapp userscript: install failed ${script.name}: ${it.message}") }
+        }
+        Diag.log("webapp userscript: document-start handlers=${scriptHandlers.size}/${enabled.size}")
+    }
+
+    /** 兜底：系统不支持 document-start 注入、或 handler 装得晚于本次导航时，页面加载完后补注入主框架 */
+    private fun injectMissingUserScripts(view: WebView) {
+        syncUserScripts()
+        val enabled = activeScripts()
+        if (enabled.isEmpty()) return
+        val query = "(function(){try{return JSON.stringify(Object.keys(window.__mafariSeen||{}))}catch(e){return '[]'}})()"
+        view.evaluateJavascript(query) { raw ->
+            val seen = runCatching {
+                val text = org.json.JSONTokener(raw ?: "null").nextValue() as? String ?: "[]"
+                val array = org.json.JSONArray(text)
+                (0 until array.length()).map { array.getString(it) }.toSet()
+            }.getOrDefault(emptySet())
+            enabled.filter { it.id !in seen }.forEach { script ->
+                runCatching { view.evaluateJavascript(UserscriptEngine.buildSource(applicationContext, script), null) }
             }
         }
     }
