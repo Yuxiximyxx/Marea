@@ -1,80 +1,111 @@
 /*
- * Mafari 指纹保护（去广告 → 指纹保护）。document-start 注入所有框架。
+ * Mafari Fingerprint Protection Engine 2.1
  *
- * 配置由 Kotlin 侧 AdBlockBridge.fp(host, topHost) 提供，格式 "掩码:种子"：
- *   掩码 1 = Canvas，2 = WebGL，4 = Audio，8 = Fonts；0 = 本站不处理（总开关关闭 / 站点白名单）。
+ * 注入顺序：AdBlock 完成后、页面脚本执行前；每个 frame 均应独立执行 document-start 注入。
  *
- * WebGL 只对 readPixels / WebGL 画布导出加噪，不再伪装显卡型号（固定型号与真实参数不一致，反而更独特）。
+ * 兼容配置：MafariAdblock.fp(host, topHost) -> "掩码:种子"
+ *   1 = Canvas
+ *   2 = WebGL
+ *   4 = Audio
+ *   8 = Fonts
+ *   0 = 当前 frame 不保护
  *
- * 做法是「农场化」（farbling）：不禁用 API，而是在读出指纹的那一刻加极小的噪声 / 换掉可识别的值，
- * 让同一设备每次读出的指纹都不一样，无法被用来跨站、跨会话追踪；正常绘图 / 播放不受影响。
+ * 安全边界：
+ * - 本脚本不能保护一个可被网页直接调用、且无来源校验的 @JavascriptInterface 密钥接口。
+ * - Kotlin 侧应使用受限的 origin-aware 消息通道提供配置；不要让网页可任意查询其他 host 的 seed。
+ * - 本脚本不声称覆盖 Worker、WebGL2 PBO、所有 CSS 字体探测或 OfflineAudioContext 的 getChannelData 路径。
  */
 (function () {
   'use strict';
+
   try {
-    if (window.__mafariFp) return;
-    if (typeof MafariAdblock === 'undefined' || typeof MafariAdblock.fp !== 'function') return;
+    if (window.__mafariFp2) return;
+    if (typeof MafariAdblock === 'undefined' ||
+        typeof MafariAdblock.fp !== 'function') return;
 
     var host = location.hostname;
     var topHost = host;
+
     try {
       var ao = location.ancestorOrigins;
-      if (ao && ao.length) topHost = new URL(ao[ao.length - 1]).hostname;
-    } catch (e) {}
+      if (ao && ao.length) {
+        topHost = new URL(ao[ao.length - 1]).hostname || host;
+      }
+    } catch (_) {}
 
     var cfg = '';
-    try { cfg = String(MafariAdblock.fp(host, topHost)); } catch (e) { return; }
+    try {
+      cfg = String(MafariAdblock.fp(host, topHost));
+    } catch (_) {
+      return;
+    }
+
     var parts = cfg.split(':');
-    var MASK = parseInt(parts[0], 10) | 0;
-    var SEED = (parseInt(parts[1], 10) | 0) >>> 0;
+    var MASK = Number.parseInt(parts[0], 10);
+    var seedValue = Number.parseInt(parts[1], 10);
+
+    if (!Number.isFinite(MASK)) MASK = 0;
+    if (!Number.isFinite(seedValue)) seedValue = 0;
+
+    MASK = MASK & 15;
+    var SEED = seedValue >>> 0;
+
+    // 标记关闭状态，避免后续同源 iframe adopt 使用父 frame 配置覆盖本站策略。
+    try {
+      Object.defineProperty(window, '__mafariFp2', {
+        value: 1, configurable: false, enumerable: false, writable: false
+      });
+    } catch (_) {
+      window.__mafariFp2 = 1;
+    }
+
     if (!MASK) return;
-    try { Object.defineProperty(window, '__mafariFp', { value: 1 }); } catch (e) { window.__mafariFp = 1; }
 
-    var CANVAS = 1, WEBGL = 2, AUDIO = 4, FONTS = 8;
+    var CANVAS = 1;
+    var WEBGL = 2;
+    var AUDIO = 4;
+    var FONTS = 8;
     var MAX_PIXELS = 4000000;
-
-    /* ---------------- 工具 ---------------- */
 
     var nativeToString = Function.prototype.toString;
     var fakeSrc = new WeakMap();
 
-    function rngFrom(seed) {
-      var a = seed >>> 0;
-      return function () {
-        a = (a + 0x6D2B79F5) | 0;
-        var t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
+    function mix32(x) {
+      x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+      x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+      return (x ^ (x >>> 16)) >>> 0;
     }
 
-    // 每次读取都用新的随机序列：同一画布连续读两次结果也不同
-    var counter = 0;
-    function nextRng() {
-      counter = (counter + 1) | 0;
-      return rngFrom((SEED ^ Math.imul(counter, 0x9E3779B1)) + ((Math.random() * 4294967296) | 0));
-    }
-
-    // 按字符串取稳定哈希：同一会话同一站点里结果固定，换站点 / 重启应用后变化
-    function hash(str) {
-      var h = (2166136261 ^ SEED) >>> 0;
+    function hashString(str, initial) {
+      var h = (initial === undefined ? SEED : initial) >>> 0;
       for (var i = 0; i < str.length; i++) {
         h ^= str.charCodeAt(i);
         h = Math.imul(h, 16777619);
       }
-      return h >>> 0;
+      return mix32(h);
     }
 
-    /**
-     * 用 Proxy 包装原生函数：name / length / 无 prototype / 不可 new 等属性与原生完全一致，
-     * toString() 仍返回原生源码。（以前用普通 function 包装，带 prototype、可被 new，会被识别为「被篡改」）
-     */
+    // 不使用 Math.random：同一 frame / 站点 / API 输出保持确定性。
+    function keyedValue(label, a, b, c) {
+      var h = hashString(String(label), SEED ^ 0x9e3779b9);
+      h = mix32(h ^ (a >>> 0));
+      h = mix32(h ^ (b >>> 0));
+      h = mix32(h ^ (c >>> 0));
+      return h;
+    }
+
+    function unitNoise(label, a, b, c) {
+      return keyedValue(label, a, b, c) / 4294967296;
+    }
+
     function wrap(orig, impl) {
-      var p = new Proxy(orig, {
-        apply: function (t, thisArg, args) { return impl.apply(thisArg, args); }
+      var proxy = new Proxy(orig, {
+        apply: function (target, thisArg, args) {
+          return impl.apply(thisArg, args);
+        }
       });
-      try { fakeSrc.set(p, nativeToString.call(orig)); } catch (e) {}
-      return p;
+      try { fakeSrc.set(proxy, nativeToString.call(orig)); } catch (_) {}
+      return proxy;
     }
 
     function hook(obj, name, make) {
@@ -84,7 +115,7 @@
         if (!d || typeof d.value !== 'function') return;
         d.value = wrap(d.value, make(d.value));
         Object.defineProperty(obj, name, d);
-      } catch (e) {}
+      } catch (_) {}
     }
 
     function hookGetter(obj, name, make) {
@@ -94,387 +125,512 @@
         if (!d || typeof d.get !== 'function') return;
         d.get = wrap(d.get, make(d.get));
         Object.defineProperty(obj, name, d);
-      } catch (e) {}
+      } catch (_) {}
     }
 
-    /** 每个窗口用自己的 Function.prototype.toString 做 Proxy；被我们包装过的函数返回其原生源码 */
     function patchToString(W) {
       try {
-        var ts = W.Function.prototype.toString;
-        var p = new Proxy(ts, {
-          apply: function (t, thisArg, args) {
-            var s = (thisArg !== null && (typeof thisArg === 'function' || typeof thisArg === 'object')) ? fakeSrc.get(thisArg) : undefined;
-            return s !== undefined ? s : Reflect.apply(t, thisArg, args);
+        var proto = W.Function.prototype;
+        var original = proto.toString;
+        var proxy = new Proxy(original, {
+          apply: function (target, thisArg, args) {
+            var source;
+            try {
+              if (thisArg && (typeof thisArg === 'function' ||
+                              typeof thisArg === 'object')) {
+                source = fakeSrc.get(thisArg);
+              }
+            } catch (_) {}
+            return source !== undefined
+              ? source
+              : Reflect.apply(target, thisArg, args);
           }
         });
-        fakeSrc.set(p, nativeToString.call(ts));
-        var d = Object.getOwnPropertyDescriptor(W.Function.prototype, 'toString');
-        d.value = p;
-        Object.defineProperty(W.Function.prototype, 'toString', d);
-      } catch (e) {}
+        fakeSrc.set(proxy, nativeToString.call(original));
+        var d = Object.getOwnPropertyDescriptor(proto, 'toString');
+        if (d) {
+          d.value = proxy;
+          Object.defineProperty(proto, 'toString', d);
+        }
+      } catch (_) {}
     }
 
-    /* ---------------- Canvas / WebGL 像素噪声 ---------------- */
+    /* ---------------- Canvas / WebGL 像素扰动 ---------------- */
 
-    /** 按（种子, 画布坐标）得到稳定的 32 位哈希：同一站点同一会话里，同一像素永远得到同样的噪声 */
-    function pxHash(x, y) {
-      var h = (SEED ^ Math.imul(x + 1, 0x9E3779B1) ^ Math.imul(y + 1, 0x85EBCA6B)) >>> 0;
-      h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D);
-      h ^= h >>> 12; h = Math.imul(h, 0x297A2D39);
-      h ^= h >>> 15;
-      return h >>> 0;
-    }
+    var canvasIds = new WeakMap();
+    var nextCanvasId = 1;
 
-    /** 画面几乎是纯色（空白 / 纯色填充）：不加噪，避免被「纯色读回校验」识别为篡改 */
-    function isFlat(data, n) {
-      var seen = 0, c0 = -1, c1 = -1, c2 = -1;
-      for (var i = 0; i < n; i++) {
-        var o = i * 4;
-        var c = ((data[o] << 24) | (data[o + 1] << 16) | (data[o + 2] << 8) | data[o + 3]) >>> 0;
-        if (c === c0 || c === c1 || c === c2) continue;
-        if (seen === 0) c0 = c; else if (seen === 1) c1 = c; else c2 = c;
-        if (++seen > 3) return false;
+    function canvasId(canvas) {
+      var id = canvasIds.get(canvas);
+      if (!id) {
+        id = nextCanvasId++;
+        canvasIds.set(canvas, id);
       }
-      return true;
+      return id;
     }
 
-    /**
-     * 确定性加噪：约 1/64 的像素把一个颜色通道 ±1（不动 alpha）。
-     * 噪声只取决于「种子 + 像素在整张画布里的坐标」，所以同一画布重复读取、getImageData / toDataURL / toBlob
-     * 之间、分块读取结果都一致——不会再出现「Canvas 不稳定」。(ox, oy) 是该块数据在画布里的左上角。
-     * changed 不为空时，记录被修改的像素下标。返回是否有修改。
-     */
-    function noisePixels(data, w, h, ox, oy, changed) {
-      var n = w * h;
-      if (!data || !(w > 0) || !(h > 0) || n < 256 || n > MAX_PIXELS || data.length < n * 4) return false;
-      if (isFlat(data, n)) return false;
-      var any = false;
-      for (var i = 0; i < n; i++) {
-        var o = i * 4;
-        if (data[o + 3] === 0) continue;
-        var hv = pxHash(ox + (i % w), oy + ((i / w) | 0));
-        if ((hv & 63) !== 0) continue;
-        var c = o + (((hv >>> 6) % 3));
-        var v = data[c];
-        data[c] = v === 0 ? 1 : v === 255 ? 254 : ((hv >>> 8) & 1 ? v - 1 : v + 1);
-        any = true;
-        if (changed) changed.push(i);
+    // 轻量、确定性、内容相关的像素扰动。不会修改原始画布，只修改读回副本。
+    function perturbPixels(data, width, height, originX, originY, id, label, changedIndexes) {
+      var count = width * height;
+      if (!data || width <= 0 || height <= 0 ||
+          count < 64 || count > MAX_PIXELS ||
+          data.length < count * 4) return false;
+
+      var changed = false;
+      for (var i = 0; i < count; i++) {
+        var offset = i * 4;
+        var alpha = data[offset + 3];
+        if (alpha === 0) continue;
+
+        var x = (originX + (i % width)) | 0;
+        var y = (originY + ((i / width) | 0)) | 0;
+
+        // 将像素原值纳入输入，避免不同图像共享完全相同的噪声图。
+        var color = (data[offset] |
+                    (data[offset + 1] << 8) |
+                    (data[offset + 2] << 16) |
+                    (alpha << 24)) >>> 0;
+
+        var h = keyedValue(label, id ^ x, y, color);
+        // 约 1/128 像素修改一个 RGB 通道，幅度最多 1。
+        if ((h & 127) !== 0) continue;
+
+        var channel = offset + ((h >>> 7) % 3);
+        var value = data[channel];
+        if (value === 0) data[channel] = 1;
+        else if (value === 255) data[channel] = 254;
+        else data[channel] = (h & 0x100) ? value - 1 : value + 1;
+
+        changed = true;
+        if (changedIndexes) changedIndexes.push(i);
       }
-      return any;
+      return changed;
     }
 
-    function noiseFloats(arr, step, rel) {
-      var r = nextRng();
-      for (var i = 0; i < arr.length; i += step) {
-        var x = arr[i];
-        if (x !== 0 && isFinite(x)) arr[i] = x + x * (r() - 0.5) * rel;
+    var htmlCanvasType = new WeakMap();
+    var offscreenType = new WeakMap();
+
+    function isWebGLType(type) {
+      return /webgl|experimental/i.test(String(type || ''));
+    }
+
+    function shouldProtectCanvas(type) {
+      return isWebGLType(type) ? !!(MASK & WEBGL) : !!(MASK & CANVAS);
+    }
+
+    function copyNoisyCanvas(source, width, height, create2DContext,
+                             getImageData, putImageData, drawImage,
+                             makeImageData, id, label) {
+      var ctx = create2DContext();
+      if (!ctx) return null;
+
+      drawImage.call(ctx, source, 0, 0);
+      var image = getImageData.call(ctx, 0, 0, width, height);
+      var changed = [];
+
+      if (!perturbPixels(
+        image.data, width, height, 0, 0, id, label, changed
+      )) return null;
+
+      // 仅写回变更像素，避免整幅透明图像进行预乘 / 反预乘往返。
+      for (var k = 0; k < changed.length; k++) {
+        var index = changed[k];
+        var off = index * 4;
+        var x = index % width;
+        var y = (index / width) | 0;
+        var one = makeImageData();
+        one.data[0] = image.data[off];
+        one.data[1] = image.data[off + 1];
+        one.data[2] = image.data[off + 2];
+        one.data[3] = image.data[off + 3];
+        putImageData.call(ctx, one, x, y);
       }
+
+      return ctx.canvas || null;
     }
 
-    var COMMON_FONTS = {
-      'arial': 1, 'helvetica': 1, 'times new roman': 1, 'times': 1, 'courier new': 1, 'courier': 1,
-      'georgia': 1, 'verdana': 1, 'tahoma': 1, 'trebuchet ms': 1, 'impact': 1, 'roboto': 1,
-      'noto sans': 1, 'noto serif': 1, 'droid sans': 1, 'sans-serif': 1, 'serif': 1, 'monospace': 1,
-      'system-ui': 1, 'cursive': 1, 'fantasy': 1
-    };
+    var CP = window.HTMLCanvasElement && HTMLCanvasElement.prototype;
+    var C2 = window.CanvasRenderingContext2D &&
+             CanvasRenderingContext2D.prototype;
 
-    var installed = new WeakSet();
+    if (CP && C2 && (MASK & (CANVAS | WEBGL))) {
+      var origGetContext = CP.getContext;
+      var origGetImageData = C2.getImageData;
+      var origPutImageData = C2.putImageData;
+      var origDrawImage = C2.drawImage;
 
-    /* ---------------- 安装到某个窗口（主窗口 + 同源 iframe） ---------------- */
+      hook(CP, 'getContext', function (orig) {
+        return function getContext(type) {
+          var result = Reflect.apply(orig, this, arguments);
+          if (result && !htmlCanvasType.has(this)) {
+            htmlCanvasType.set(this, String(type || '2d'));
+          }
+          return result;
+        };
+      });
 
-    function install(W) {
-      if (installed.has(W)) return;
-      installed.add(W);
-
-      patchToString(W);
-
-      var CP = W.HTMLCanvasElement && W.HTMLCanvasElement.prototype;
-      var C2 = W.CanvasRenderingContext2D && W.CanvasRenderingContext2D.prototype;
-
-      /* ===== Canvas / WebGL 画布导出 ===== */
-      if ((MASK & (CANVAS | WEBGL)) && CP && C2) {
-        var ctxType = new WeakMap();
-        var origGetContext = CP.getContext;
-        var origGetImageData = C2.getImageData;
-        var origPutImageData = C2.putImageData;
-        var origDrawImage = C2.drawImage;
-
-        hook(CP, 'getContext', function (orig) {
-          return function getContext(type) {
-            var c = orig.apply(this, arguments);
-            if (c) { try { if (!ctxType.has(this)) ctxType.set(this, String(type)); } catch (e) {} }
-            return c;
+      if (MASK & CANVAS) {
+        hook(C2, 'getImageData', function (orig) {
+          return function getImageData(sx, sy, sw, sh) {
+            var image = Reflect.apply(orig, this, arguments);
+            try {
+              var x = Number(sx) || 0;
+              var y = Number(sy) || 0;
+              if (Number(sw) < 0) x += Number(sw);
+              if (Number(sh) < 0) y += Number(sh);
+              perturbPixels(
+                image.data, image.width, image.height,
+                Math.trunc(x), Math.trunc(y),
+                canvasId(this.canvas), 'canvas-pixels'
+              );
+            } catch (_) {}
+            return image;
           };
         });
+      }
 
-        // 2D 画布受 Canvas 开关管，WebGL 画布受 WebGL 开关管
-        var farbleCanvas = function (canvas) {
-          var t = ctxType.get(canvas) || '2d';
-          return /webgl|experimental/i.test(t) ? (MASK & WEBGL) !== 0 : (MASK & CANVAS) !== 0;
-        };
-
-        /**
-         * 导出用：复制画布，仅把被改动的像素逐个写回（1x1 putImageData），其余像素由 drawImage 原样拷贝，
-         * 不做整幅 get/putImageData 往返（半透明像素预乘往返会产生额外误差）。
-         * 画面是纯色 / 没有任何像素被改动时返回 null，调用方直接用原画布导出。
-         */
-        var noisyCopy = function (src, w, h, make2D, getData, putData, draw, mkImageData) {
-          var c = make2D();
-          draw.call(c, src, 0, 0);
-          var img = getData.call(c, 0, 0, w, h);
-          var changed = [];
-          if (!noisePixels(img.data, w, h, 0, 0, changed)) return null;
-          for (var k = 0; k < changed.length; k++) {
-            var i = changed[k], o = i * 4;
-            var one = mkImageData();
-            one.data[0] = img.data[o]; one.data[1] = img.data[o + 1];
-            one.data[2] = img.data[o + 2]; one.data[3] = img.data[o + 3];
-            putData.call(c, one, i % w, (i / w) | 0);
-          }
-          return c.canvas;
-        };
-
-        var copyHtml = function (canvas, w, h) {
-          var t;
-          return noisyCopy(canvas, w, h, function () {
-            t = W.document.createElement('canvas');
-            t.width = w; t.height = h;
-            return origGetContext.call(t, '2d');
-          }, origGetImageData, origPutImageData, origDrawImage, function () { return new W.ImageData(1, 1); });
-        };
-
-        var exporter = function (orig) {
+      function canvasExporter(methodName) {
+        hook(CP, methodName, function (orig) {
           return function () {
             try {
-              var w = this.width, h = this.height;
-              if (w > 0 && h > 0 && w * h <= MAX_PIXELS && farbleCanvas(this)) {
-                var t = copyHtml(this, w, h);
-                if (t) return orig.apply(t, arguments);
+              var width = this.width;
+              var height = this.height;
+              var type = htmlCanvasType.get(this) || '2d';
+
+              if (width > 0 && height > 0 &&
+                  width * height <= MAX_PIXELS &&
+                  shouldProtectCanvas(type)) {
+                var id = canvasId(this);
+                var noisy = copyNoisyCanvas(
+                  this, width, height,
+                  function () {
+                    var temp = document.createElement('canvas');
+                    temp.width = width;
+                    temp.height = height;
+                    return origGetContext.call(temp, '2d');
+                  },
+                  origGetImageData, origPutImageData, origDrawImage,
+                  function () { return new ImageData(1, 1); },
+                  id, 'canvas-pixels'
+                );
+                if (noisy) return Reflect.apply(orig, noisy, arguments);
               }
-            } catch (e) {} // 画布被污染等情况：交给原函数照常报错
-            return orig.apply(this, arguments);
+            } catch (_) {
+              // 保留原生异常行为，例如 tainted canvas 的 SecurityError。
+            }
+            return Reflect.apply(orig, this, arguments);
           };
+        });
+      }
+
+      canvasExporter('toDataURL');
+      canvasExporter('toBlob');
+    }
+
+    /* ---------------- OffscreenCanvas ---------------- */
+
+    var OCP = window.OffscreenCanvas && OffscreenCanvas.prototype;
+    var OC2 = window.OffscreenCanvasRenderingContext2D &&
+              OffscreenCanvasRenderingContext2D.prototype;
+
+    if (OCP && (MASK & (CANVAS | WEBGL))) {
+      var origOffscreenGetContext = OCP.getContext;
+      hook(OCP, 'getContext', function (orig) {
+        return function getContext(type) {
+          var result = Reflect.apply(orig, this, arguments);
+          if (result && !offscreenType.has(this)) {
+            offscreenType.set(this, String(type || '2d'));
+          }
+          return result;
         };
-        hook(CP, 'toDataURL', function (orig) { var f = exporter(orig); return function toDataURL() { return f.apply(this, arguments); }; });
-        hook(CP, 'toBlob', function (orig) { var f = exporter(orig); return function toBlob() { return f.apply(this, arguments); }; });
+      });
 
-        if (MASK & CANVAS) {
-          var gid = function (orig) {
-            return function getImageData(sx, sy, sw, sh) {
-              var img = orig.apply(this, arguments);
-              try {
-                if (img && img.data) {
-                  var ox = Math.floor(+sx || 0), oy = Math.floor(+sy || 0);
-                  if (sw < 0) ox += Math.floor(sw);
-                  if (sh < 0) oy += Math.floor(sh);
-                  noisePixels(img.data, img.width, img.height, ox, oy, null);
-                }
-              } catch (e) {}
-              return img;
-            };
+      if (OC2 && (MASK & CANVAS)) {
+        hook(OC2, 'getImageData', function (orig) {
+          return function getImageData(sx, sy, sw, sh) {
+            var image = Reflect.apply(orig, this, arguments);
+            try {
+              var x = Number(sx) || 0;
+              var y = Number(sy) || 0;
+              if (Number(sw) < 0) x += Number(sw);
+              if (Number(sh) < 0) y += Number(sh);
+              perturbPixels(
+                image.data, image.width, image.height,
+                Math.trunc(x), Math.trunc(y),
+                canvasId(this.canvas), 'offscreen-pixels'
+              );
+            } catch (_) {}
+            return image;
           };
-          hook(C2, 'getImageData', gid);
+        });
+      }
 
-          var OC = W.OffscreenCanvasRenderingContext2D && W.OffscreenCanvasRenderingContext2D.prototype;
-          var origOGetImageData = OC && OC.getImageData;
-          var origOPutImageData = OC && OC.putImageData;
-          var origODrawImage = OC && OC.drawImage;
-          hook(OC, 'getImageData', gid);
+      hook(OCP, 'convertToBlob', function (orig) {
+        return function convertToBlob() {
+          try {
+            var width = this.width;
+            var height = this.height;
+            var type = offscreenType.get(this) || '2d';
 
-          var OCV = W.OffscreenCanvas && W.OffscreenCanvas.prototype;
-          if (OC && OCV) {
-            hook(OCV, 'convertToBlob', function (orig) {
-              return function convertToBlob() {
-                try {
-                  var w = this.width, h = this.height;
-                  if (w > 0 && h > 0 && w * h <= MAX_PIXELS) {
-                    var t = noisyCopy(this, w, h, function () {
-                      return new W.OffscreenCanvas(w, h).getContext('2d');
-                    }, origOGetImageData, origOPutImageData, origODrawImage, function () { return new W.ImageData(1, 1); });
-                    if (t) return orig.apply(t, arguments);
-                  }
-                } catch (e) {}
-                return orig.apply(this, arguments);
-              };
-            });
+            if (width > 0 && height > 0 &&
+                width * height <= MAX_PIXELS &&
+                shouldProtectCanvas(type)) {
+              var source = this;
+              var id = canvasId(source);
+              var noisy = copyNoisyCanvas(
+                source, width, height,
+                function () {
+                  return new OffscreenCanvas(width, height).getContext('2d');
+                },
+                function (x, y, w, h) {
+                  return Reflect.apply(origOCGetImageData, this, [x, y, w, h]);
+                },
+                function (image, x, y) {
+                  return Reflect.apply(origOCPutImageData, this, [image, x, y]);
+                },
+                function (src, x, y) {
+                  return Reflect.apply(origOCDrawImage, this, [src, x, y]);
+                },
+                function () { return new ImageData(1, 1); },
+                id, 'offscreen-pixels'
+              );
+              if (noisy) return Reflect.apply(orig, noisy, arguments);
+            }
+          } catch (_) {}
+          return Reflect.apply(orig, this, arguments);
+        };
+      });
+    }
+
+    /* ---------------- WebGL readPixels ---------------- */
+
+    function patchWebGL(W, name) {
+      var P = W[name] && W[name].prototype;
+      if (!P) return;
+
+      hook(P, 'readPixels', function (orig) {
+        return function readPixels(x, y, width, height,
+                                   format, type, pixels, dstOffset) {
+          var result = Reflect.apply(orig, this, arguments);
+
+          try {
+            // 仅处理可直接访问的 RGBA / UNSIGNED_BYTE TypedArray。
+            // WebGL2 的 PBO（pixels 为数值偏移）需配合 getBufferSubData 单独处理。
+            if (format !== 0x1908 || type !== 0x1401 ||
+                !pixels || typeof pixels === 'number' ||
+                !ArrayBuffer.isView(pixels) ||
+                width <= 0 || height <= 0 ||
+                width * height > MAX_PIXELS) return result;
+
+            var gl = this;
+            var offset = Number(dstOffset) || 0;
+            var rowLength = width;
+            var skipRows = 0;
+            var skipPixels = 0;
+            var alignment = 4;
+
+            if (typeof gl.PACK_ROW_LENGTH === 'number') {
+              rowLength = gl.getParameter(gl.PACK_ROW_LENGTH) || width;
+              skipRows = gl.getParameter(gl.PACK_SKIP_ROWS) || 0;
+              skipPixels = gl.getParameter(gl.PACK_SKIP_PIXELS) || 0;
+              alignment = gl.getParameter(gl.PACK_ALIGNMENT) || 4;
+            }
+
+            var rowBytes = rowLength * 4;
+            var stride = Math.ceil(rowBytes / alignment) * alignment;
+            var start = offset + skipRows * stride + skipPixels * 4;
+            var required = start + (height - 1) * stride + width * 4;
+
+            if (required > pixels.length) return result;
+
+            var id = canvasId(gl.canvas);
+            for (var row = 0; row < height; row++) {
+              var rowStart = start + row * stride;
+              var rowView = pixels.subarray(rowStart, rowStart + width * 4);
+              perturbPixels(
+                rowView, width, 1, x, y + row, id, 'webgl-read'
+              );
+            }
+          } catch (_) {}
+          return result;
+        };
+      });
+    }
+
+    if (MASK & WEBGL) {
+      patchWebGL(window, 'WebGLRenderingContext');
+      patchWebGL(window, 'WebGL2RenderingContext');
+    }
+
+    /* ---------------- Audio：只扰动读出副本 ---------------- */
+
+    if (MASK & AUDIO) {
+      var ABP = window.AudioBuffer && AudioBuffer.prototype;
+
+      // 不包装 getChannelData：它返回 AudioBuffer 内部声道数据，
+      // 修改它会改变后续音频处理 / 播放，不符合“读指纹不影响播放”的目标。
+      hook(ABP, 'copyFromChannel', function (orig) {
+        return function copyFromChannel(destination, channelNumber, bufferOffset) {
+          var result = Reflect.apply(orig, this, arguments);
+          try {
+            if (destination && destination.length <= MAX_PIXELS) {
+              var start = Number(bufferOffset) || 0;
+              var channel = Number(channelNumber) || 0;
+              for (var i = 0; i < destination.length; i += 4) {
+                var v = destination[i];
+                if (!Number.isFinite(v) || v === 0) continue;
+                var n = unitNoise('audio-copy', channel, start + i, 0) - 0.5;
+                destination[i] = v + n * 2e-7;
+              }
+            }
+          } catch (_) {}
+          return result;
+        };
+      });
+
+      var AN = window.AnalyserNode && AnalyserNode.prototype;
+
+      function perturbAnalyserArray(array, label, scale, stride) {
+        if (!array || !array.length) return;
+        for (var i = 0; i < array.length; i += stride) {
+          var value = array[i];
+          if (!Number.isFinite(value)) continue;
+          var n = unitNoise(label, i, array.length, 0) - 0.5;
+          if (array instanceof Uint8Array ||
+              array instanceof Uint8ClampedArray) {
+            array[i] = Math.max(0, Math.min(255, value + (n < 0 ? -1 : 1)));
+          } else {
+            array[i] = value + n * scale;
           }
         }
       }
 
-      /* ===== WebGL ===== */
-      if (MASK & WEBGL) {
-        ['WebGLRenderingContext', 'WebGL2RenderingContext'].forEach(function (n) {
-          var P = W[n] && W[n].prototype;
-          if (!P) return;
-          hook(P, 'readPixels', function (orig) {
-            return function readPixels(x, y, w, h, format, type, pixels) {
-              var r = orig.apply(this, arguments);
-              try {
-                if (format === 0x1908 && type === 0x1401 && pixels && pixels.length >= w * h * 4) {
-                  noisePixels(pixels, w, h, x, y, null);
-                }
-              } catch (e) {}
-              return r;
-            };
-          });
-        });
-      }
-
-      /* ===== Audio ===== */
-      if (MASK & AUDIO) {
-        var seen = new WeakMap(); // AudioBuffer -> 已加过噪的声道
-        hook(W.AudioBuffer && W.AudioBuffer.prototype, 'getChannelData', function (orig) {
-          return function getChannelData(ch) {
-            var d = orig.apply(this, arguments);
+      [
+        ['getFloatFrequencyData', 'audio-freq-float', 0.02, 2],
+        ['getFloatTimeDomainData', 'audio-time-float', 1e-7, 4],
+        ['getByteFrequencyData', 'audio-freq-byte', 1, 8],
+        ['getByteTimeDomainData', 'audio-time-byte', 1, 8]
+      ].forEach(function (entry) {
+        hook(AN, entry[0], function (orig) {
+          return function () {
+            var result = Reflect.apply(orig, this, arguments);
             try {
-              var done = seen.get(this);
-              if (!done) { done = {}; seen.set(this, done); }
-              if (!done[ch] && d && d.length <= MAX_PIXELS) {
-                done[ch] = 1;
-                noiseFloats(d, 4, 2e-5); // 相对 ±1e-5（约 -100 dB），听不出来
-              }
-            } catch (e) {}
-            return d;
+              perturbAnalyserArray(
+                arguments[0], entry[1], entry[2], entry[3]
+              );
+            } catch (_) {}
+            return result;
           };
         });
-        hook(W.AudioBuffer && W.AudioBuffer.prototype, 'copyFromChannel', function (orig) {
-          return function copyFromChannel(dest) {
-            var r = orig.apply(this, arguments);
-            try { if (dest && dest.length <= MAX_PIXELS) noiseFloats(dest, 4, 2e-5); } catch (e) {}
-            return r;
-          };
-        });
-        var AN = W.AnalyserNode && W.AnalyserNode.prototype;
-        ['getFloatFrequencyData', 'getFloatTimeDomainData'].forEach(function (m) {
-          hook(AN, m, function (orig) {
-            return function () {
-              var r = orig.apply(this, arguments);
-              try {
-                var a = arguments[0];
-                if (a) {
-                  var rnd = nextRng();
-                  for (var i = 0; i < a.length; i += 2) if (isFinite(a[i])) a[i] += (rnd() - 0.5) * 0.02;
-                }
-              } catch (e) {}
-              return r;
-            };
-          });
-        });
-        ['getByteFrequencyData', 'getByteTimeDomainData'].forEach(function (m) {
-          hook(AN, m, function (orig) {
-            return function () {
-              var r = orig.apply(this, arguments);
-              try {
-                var a = arguments[0];
-                if (a) {
-                  var rnd = nextRng();
-                  for (var i = 0; i < a.length; i += 8) {
-                    var v = a[i];
-                    a[i] = v <= 0 ? 1 : v >= 255 ? 254 : (rnd() < 0.5 ? v - 1 : v + 1);
-                  }
-                }
-              } catch (e) {}
-              return r;
-            };
-          });
+      });
+    }
+
+    /* ---------------- Fonts ---------------- */
+
+    if (MASK & FONTS) {
+      var COMMON_FONTS = Object.create(null);
+      [
+        'arial', 'helvetica', 'times new roman', 'times', 'courier new',
+        'courier', 'georgia', 'verdana', 'tahoma', 'trebuchet ms',
+        'impact', 'roboto', 'noto sans', 'noto serif', 'droid sans',
+        'sans-serif', 'serif', 'monospace', 'system-ui', 'cursive', 'fantasy'
+      ].forEach(function (name) { COMMON_FONTS[name] = true; });
+
+      function wrapTextMetrics(ctx, text, metrics) {
+        var key = hashString(String(ctx.font) + '|' + String(text));
+        var factor = 1 + (((key % 2001) - 1000) / 1000) * 3e-4;
+        return new Proxy(metrics, {
+          get: function (target, prop, receiver) {
+            var value = Reflect.get(target, prop, receiver);
+            return typeof value === 'number' ? value * factor : value;
+          }
         });
       }
 
-      /* ===== Fonts ===== */
-      if (MASK & FONTS) {
-        // 1) canvas measureText（不再改动 DOM 的 offsetWidth / getBoundingClientRect，避免影响页面布局）：宽度等乘以 (1±0.03%)。系数由「字体串+文本」决定，同一会话里同一次测量结果稳定，
-        //    但「候选字体」与「基准字体」的系数不同 → 探测脚本看到所有字体都「有差异」，无法枚举已安装字体。
-        var wrapMetrics = function (ctx, text, m) {
-          var k = hash(String(ctx.font) + '|' + String(text));
-          var f = 1 + (((k % 2001) - 1000) / 1000) * 3e-4;
-          return new Proxy(m, {
-            get: function (t, p) {
-              var v = t[p];
-              return typeof v === 'number' ? v * f : v;
+      [C2, OC2].forEach(function (P) {
+        hook(P, 'measureText', function (orig) {
+          return function measureText(text) {
+            var metrics = Reflect.apply(orig, this, arguments);
+            try { return wrapTextMetrics(this, text, metrics); }
+            catch (_) { return metrics; }
+          };
+        });
+      });
+
+      // FontFace(local()) 保护：只对纯 local() 来源做限制，不拦截包含网络 URL 的字体。
+      try {
+        var OriginalFontFace = window.FontFace;
+        if (OriginalFontFace) {
+          var localOnly = new WeakMap();
+
+          var FontFaceProxy = new Proxy(OriginalFontFace, {
+            construct: function (target, args, newTarget) {
+              var face = Reflect.construct(target, args, newTarget);
+              try {
+                var source = args[1];
+                if (typeof source === 'string' &&
+                    /local\s*\(/i.test(source) &&
+                    !/url\s*\(/i.test(source)) {
+                  var names = [];
+                  source.replace(
+                    /local\s*\(\s*(['"]?)([^'")]+)\1\s*\)/ig,
+                    function (_, quote, name) {
+                      names.push(name.trim().toLowerCase());
+                      return _;
+                    }
+                  );
+                  localOnly.set(face, names);
+                }
+              } catch (_) {}
+              return face;
             }
           });
-        };
-        [C2, W.OffscreenCanvasRenderingContext2D && W.OffscreenCanvasRenderingContext2D.prototype].forEach(function (P) {
-          hook(P, 'measureText', function (orig) {
-            return function measureText(text) {
-              var m = orig.apply(this, arguments);
-              try { return wrapMetrics(this, text, m); } catch (e) { return m; }
+          // 保持 FontFace.prototype.constructor === FontFace，并隐藏代理构造器源码差异。
+          fakeSrc.set(FontFaceProxy, nativeToString.call(OriginalFontFace));
+          try {
+            Object.defineProperty(OriginalFontFace.prototype, 'constructor', {
+              value: FontFaceProxy, configurable: true, writable: true
+            });
+          } catch (_) {}
+          window.FontFace = FontFaceProxy;
+
+          hook(OriginalFontFace.prototype, 'load', function (orig) {
+            return function load() {
+              var names = localOnly.get(this);
+              if (names && !names.some(function (name) {
+                return COMMON_FONTS[name] === true;
+              })) {
+                return Promise.reject(
+                  new DOMException('Local font access is restricted.',
+                                   'NotAllowedError')
+                );
+              }
+              return Reflect.apply(orig, this, arguments);
             };
           });
-        });
+        }
+      } catch (_) {}
 
-        // 2) FontFace + local()：通过「能否加载本机字体」枚举字体。纯 local() 来源的字体，只对常见字体返回成功。
-        try {
-          var OrigFontFace = W.FontFace;
-          if (OrigFontFace) {
-            var localOnly = new WeakMap();
-            var origLoad = OrigFontFace.prototype.load;
-            W.FontFace = new Proxy(OrigFontFace, {
-              construct: function (target, args, newTarget) {
-                var f = Reflect.construct(target, args, newTarget);
-                try {
-                  var src = args[1];
-                  if (typeof src === 'string' && /local\s*\(/i.test(src) && !/url\s*\(/i.test(src)) {
-                    var names = [];
-                    src.replace(/local\s*\(\s*(['"]?)([^'")]+)\1\s*\)/ig, function (_, q, n) { names.push(n.trim().toLowerCase()); return ''; });
-                    localOnly.set(f, names);
-                  }
-                } catch (e) {}
-                return f;
-              }
-            });
-            hook(OrigFontFace.prototype, 'load', function (orig) {
-              return function load() {
-                var names = localOnly.get(this);
-                if (names && !names.some(function (n) { return COMMON_FONTS[n] === 1; })) {
-                  return Promise.reject(new DOMException('A network error occurred.', 'NetworkError'));
-                }
-                return orig.apply(this, arguments);
-              };
-            });
-          }
-        } catch (e) {}
-
-        // 3) Local Font Access API
-        try {
-          if (typeof W.queryLocalFonts === 'function') {
-            var deny = function queryLocalFonts() {
-              return Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
-            };
-            fakeSrc.set(deny, nativeToString.call(W.queryLocalFonts));
-            W.queryLocalFonts = deny;
-          }
-        } catch (e) {}
-      }
-
-      // 页面自己创建同源 iframe 再去读指纹是常见绕法：iframe 的 contentWindow / contentDocument 被取用时，同样装上保护
-      var IF = W.HTMLIFrameElement && W.HTMLIFrameElement.prototype;
-      hookGetter(IF, 'contentWindow', function (orig) {
-        return function () {
-          var w = orig.call(this);
-          adopt(w);
-          return w;
-        };
-      });
-      hookGetter(IF, 'contentDocument', function (orig) {
-        return function () {
-          var d = orig.call(this);
-          try { if (d) adopt(d.defaultView); } catch (e) {}
-          return d;
-        };
-      });
-    }
-
-    function adopt(w) {
+      // Local Font Access API 实际挂在 Navigator.prototype，而不是 window。
       try {
-        if (!w || w === window) return;
-        // 跨源框架访问属性会抛 SecurityError，直接跳过
-        if (w.__mafariFp) return;
-        Object.defineProperty(w, '__mafariFp', { value: 1 });
-        install(w);
-      } catch (e) {}
+        var NavigatorPrototype = window.Navigator && Navigator.prototype;
+        hook(NavigatorPrototype, 'queryLocalFonts', function (orig) {
+          return function queryLocalFonts() {
+            return Promise.reject(
+              new DOMException('Local font access is restricted.',
+                               'NotAllowedError')
+            );
+          };
+        });
+      } catch (_) {}
     }
 
-    install(window);
-  } catch (e) {}
+    patchToString(window);
+
+    // 不再从父 frame 向 iframe 复制 MASK / SEED。
+    // 每个 frame 必须由 document-start 注入器独立调用原生配置接口，
+    // 由 Kotlin 根据 frame URL 与顶层站点计算自己的配置。
+  } catch (_) {
+    // 指纹保护不得阻断网页加载。
+  }
 })();
