@@ -28,7 +28,6 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -65,19 +64,26 @@ class WebAppActivity : ComponentActivity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermission: ((Boolean) -> Unit)? = null
 
-    private val fileLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        fileCallback?.onReceiveValue(
-            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
-        )
+    private companion object {
+        const val REQ_FILE = 7101
+        const val REQ_PERM = 7102
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FILE) return
+        fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
         fileCallback = null
     }
 
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            val callback = pendingPermission
-            pendingPermission = null
-            callback?.invoke(result.isNotEmpty() && result.values.any { it })
-        }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_PERM) return
+        val callback = pendingPermission
+        pendingPermission = null
+        callback?.invoke(grantResults.any { it == android.content.pm.PackageManager.PERMISSION_GRANTED })
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -306,7 +312,7 @@ class WebAppActivity : ComponentActivity() {
                 }
                 fileCallback?.onReceiveValue(null)
                 fileCallback = filePathCallback
-                return runCatching { fileLauncher.launch(fileChooserParams.createIntent()) }
+                return runCatching { startActivityForResult(fileChooserParams.createIntent(), REQ_FILE) }
                     .onFailure {
                         fileCallback = null
                         filePathCallback.onReceiveValue(null)
@@ -412,7 +418,7 @@ class WebAppActivity : ComponentActivity() {
         pendingPermission = { _ ->
             done(if (anyOk) permissions.any { granted(it) } else permissions.all { granted(it) })
         }
-        permissionLauncher.launch(missing.toTypedArray())
+        requestPermissions(missing.toTypedArray(), REQ_PERM)
     }
 
     /** 用户亲手点的跨站链接：交给 Mafari 浏览器新开页面 */
