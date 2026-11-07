@@ -46,7 +46,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.dsh.miuixbrowser"
-        minSdk = 29
+        minSdk = 33
         targetSdk = 37
         versionCode = 221
         versionName = "v1.8.5-dev"
