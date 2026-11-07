@@ -92,8 +92,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
-        consumeOpenDownloads(intent)
-        consumeViewIntent(intent)
+        // 系统重建 Activity（savedInstanceState != null）时 intent 还是当初那条，不能再重复打开一次链接
+        if (savedInstanceState == null) {
+            consumeOpenDownloads(intent)
+            consumeViewIntent(intent)
+        }
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
         AdBlock.init(this)

@@ -53,6 +53,23 @@ fun hostOf(url: String): String {
     return if (!host.isNullOrBlank()) host else trimmed.take(48)
 }
 
+private val SECOND_LEVEL_LABELS = setOf("com", "net", "org", "gov", "edu", "co", "ac")
+private val PRIVATE_SUFFIXES = setOf("github.io", "vercel.app", "pages.dev", "netlify.app", "blogspot.com", "workers.dev")
+
+/** 取站点标识（近似可注册域名）：m.example.com / www.example.com → example.com，a.co.uk → a.co.uk */
+private fun siteOf(host: String): String {
+    val h = host.lowercase().trim('.')
+    if (h.isEmpty() || h.contains(':') || h.all { it.isDigit() || it == '.' }) return h
+    val parts = h.split('.')
+    if (parts.size <= 2) return h
+    val tail2 = parts.takeLast(2).joinToString(".")
+    val n = if ((parts.last().length == 2 && parts[parts.size - 2] in SECOND_LEVEL_LABELS) || tail2 in PRIVATE_SUFFIXES) 3 else 2
+    return parts.takeLast(n).joinToString(".")
+}
+
+/** 两个 host 是否同站 */
+fun isSameSite(a: String, b: String): Boolean = siteOf(a) == siteOf(b)
+
 /** 脚本菜单命令（GM_registerMenuCommand） */
 data class ScriptMenuCommand(val id: String, val title: String, val script: String)
 
@@ -81,6 +98,15 @@ class BrowserTab(private val appContext: Context) {
     /** 是否是从主页打开的第一个页面（用于「返回到主页」） */
     var fromHome by mutableStateOf(false)
         private set
+
+    /** 打开本标签的标签 id（-1 = 无）：关闭本标签时优先回到它，形成层级回退 */
+    var openerId: Int = -1
+
+    /** 从主页进入页面时 WebView 历史的当前下标（-1 = 历史为空）：回退到这一层就回主页，不再穿透到主页之前的旧页面 */
+    private var homeAnchor = -1
+
+    /** 标签正显示主页：WebView 里的页面（若有）被盖住，页面侧回调不得再改写 url，否则主页会被页面「顶」出来 */
+    private var parked = false
 
     var closed = false
     private var destroyed = false
@@ -565,9 +591,8 @@ class BrowserTab(private val appContext: Context) {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, pageUrl: String?, favicon: Bitmap?) {
-                pageUrl?.let { url = it }
+                if (!parked) pageUrl?.let { url = it }
                 pageHost = runCatching { Uri.parse(pageUrl).host }.getOrNull().orEmpty()
-                pageStartedAt = android.os.SystemClock.elapsedRealtime()
                 loading = true
                 errorText = null
                 syncNav()
@@ -591,11 +616,12 @@ class BrowserTab(private val appContext: Context) {
             }
 
             override fun onPageFinished(view: WebView, pageUrl: String?) {
-                pageUrl?.let { url = it }
+                if (!parked) pageUrl?.let { url = it }
                 loading = false
                 progress = 1f
                 syncNav()
-                onVisited?.invoke(url, title)
+                val visited = pageUrl ?: url
+                if (!parked && !visited.isNullOrEmpty()) onVisited?.invoke(visited, title)
 
                 injectMissingUserScripts(view)
                 if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
@@ -605,7 +631,7 @@ class BrowserTab(private val appContext: Context) {
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
-                pageUrl?.let { url = it }
+                if (!parked) pageUrl?.let { url = it }
                 syncNav()
             }
 
@@ -624,7 +650,7 @@ class BrowserTab(private val appContext: Context) {
                 }
                 val scheme = request.url.scheme ?: return false
                 if (scheme == "http" || scheme == "https") {
-                    val proceed = { openRedirectInNewTab(target, !request.hasGesture()) }
+                    val proceed = { openRedirectInNewTab(target) }
                     if (interceptRedirect(request, external = false, onAllowed = proceed)) return true
                 }
                 // DNT / Sec-GPC：点击链接产生的主框架 GET 导航也带上请求头
@@ -640,15 +666,9 @@ class BrowserTab(private val appContext: Context) {
                     "http", "https", "file", "about", "data", "javascript" -> false
                     else -> {
                         // 支付宝 / 微信 / 淘宝等外部协议交给系统处理（无用户手势的自动唤起受「网页重定向」权限控制）
-                        val open = {
-                            runCatching {
-                                appContext.startActivity(
-                                    Intent(Intent.ACTION_VIEW, request.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            }
-                            Unit
-                        }
+                        val open = { launchExternalApp(request.url) }
                         if (!interceptRedirect(request, external = true, onAllowed = open)) open()
+                        // 无论放行还是拒绝，当前页面都原地不动（拒绝后停留在网页）
                         true
                     }
                 }
@@ -986,14 +1006,25 @@ class BrowserTab(private val appContext: Context) {
     }
 
     private fun syncNav() {
-        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome ||
-            (url.isEmpty() && savedUrl.isNotBlank())
+        if (url.isEmpty()) {
+            // 主页上：只有「页面被盖住」时才能返回（还原页面）；WebView 里遗留的历史不算
+            canGoBack = savedUrl.isNotBlank()
+            canGoForward = false
+            return
+        }
+        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome
         canGoForward = runCatching { webView.canGoForward() }.getOrDefault(false)
     }
 
     fun load(input: String) {
         val target = toUrl(input, searchTemplate)
-        if (url.isEmpty()) fromHome = true
+        if (url.isEmpty()) {
+            // 从主页进入新页面：记下 WebView 历史的当前位置，返回到这一层就回主页
+            fromHome = true
+            homeAnchor = historyIndex()
+            savedUrl = ""
+        }
+        parked = false
         url = target
         val headers = extraRequestHeaders()
         if (headers.isEmpty()) {
@@ -1005,6 +1036,7 @@ class BrowserTab(private val appContext: Context) {
     }
 
     fun loadUrl(raw: String) {
+        parked = false
         url = raw
         val headers = extraRequestHeaders()
         if (headers.isEmpty()) {
@@ -1175,7 +1207,9 @@ class BrowserTab(private val appContext: Context) {
      * @return true 表示本次导航已被接管（拦截，用户同意后由 [onAllowed] 放行）
      */
     private fun interceptRedirect(request: WebResourceRequest, external: Boolean, onAllowed: () -> Unit): Boolean {
-        if (!request.isForMainFrame || request.isRedirect) return false
+        // 网页跳转只管主框架、非服务器 3xx；但「自动唤起其他应用」不受此限：
+        // 隐藏 iframe 里的 weixin:// / intent:// 与服务器 302 到应用协议，同样是页面在无手势地拉起别的应用
+        if (!external && (!request.isForMainFrame || request.isRedirect)) return false
         // 有用户手势：真实链接点击（触点下是 <a>）照常放行；
         // 点击后由脚本发起的跨站跳转（div onclick / location.href 等）也按重定向处理
         if (request.hasGesture()) {
@@ -1184,64 +1218,97 @@ class BrowserTab(private val appContext: Context) {
                 (hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)
             if (external || onAnchor || request.method != "GET") return false
         }
-        if (redirectMode == 1) return false
         // 首次加载 / 空白页上的跳转不算重定向
         val from = pageHost
         if (from.isEmpty()) return false
         val targetHost = request.url.host.orEmpty()
-        if (!external) {
-            fun bare(h: String) = h.lowercase().removePrefix("www.")
-            if (targetHost.isNotEmpty() && bare(targetHost) == bare(from)) return false
+        // 同站（含子网站，如 m. / login. / www.）跳转视为页面内部导航，不拦截
+        if (!external && targetHost.isNotEmpty() && isSameSite(targetHost, from)) return false
+        // 总是允许：外部应用直接唤起；跨站跳转与「允许」一致，在新标签页打开（当前页不动）
+        if (redirectMode == 1) {
+            if (external) return false
+            onAllowed()
+            return true
         }
         val label = if (external) "打开其他应用" else "跳转到 ${targetHost.ifEmpty { request.url.toString().take(60) }}"
         if (redirectMode == 2) {
             notifyRedirectBlocked(external, targetHost)
-            if (!request.hasGesture()) bounceBackIfJustNavigated()
-            return true
-        }
-        val prompt = onPermissionPrompt
-        if (prompt == null) {
-            notifyRedirectBlocked(external, targetHost)
             return true
         }
         if (redirectPromptPending) return true
-        redirectPromptPending = true
-        // 无手势的自动跳转：说明当前页多半是刚被带来的中转页，拒绝后退回原页面
-        val autoRedirect = !request.hasGesture()
-        prompt(from, label) { allow ->
-            redirectPromptPending = false
-            if (allow) {
-                onAllowed()
-            } else {
-                notifyRedirectBlocked(external, targetHost)
-                if (autoRedirect) bounceBackIfJustNavigated()
-            }
+        // 拒绝只是不执行这次跳转 / 唤起：这次导航在 shouldOverrideUrlLoading 里就已被截下，
+        // 当前页面一直没有离开，所以这里什么都不用回退 —— 停留在网页，不能再 goBack 把页面「关掉」
+        askRedirect(from, label) { allow ->
+            if (allow) onAllowed() else notifyRedirectBlocked(external, targetHost)
         }
         return true
     }
 
-    /** 当前页面开始加载的时间，用于判断它是不是「刚被页面带过来的中转页」 */
-    private var pageStartedAt = 0L
+    private class DeferredPrompt(
+        val origin: String,
+        val what: String,
+        val decide: (Boolean) -> Unit,
+        val at: Long,
+    )
 
-    /**
-     * 重定向被拒绝 / 被放行到新标签后，当前标签不应停在跳转中转页（如 Loading…）上：
-     * 如果当前页是刚加载出来的（15 秒内）并且有上一页，就回到原页面。
-     */
-    private fun bounceBackIfJustNavigated() {
-        val fresh = android.os.SystemClock.elapsedRealtime() - pageStartedAt < 15_000
-        webView.post {
-            if (fresh && webView.canGoBack()) {
-                webView.stopLoading()
-                webView.goBack()
-            }
+    /** 后台标签没有弹窗载体时先挂起，切到该标签再弹，而不是悄悄当成拒绝 */
+    private var deferredPrompt: DeferredPrompt? = null
+
+    private fun askRedirect(origin: String, what: String, onResult: (Boolean) -> Unit) {
+        redirectPromptPending = true
+        val decide = { allow: Boolean ->
+            redirectPromptPending = false
+            onResult(allow)
+        }
+        val prompt = onPermissionPrompt
+        if (prompt != null) {
+            prompt(origin, what, decide)
+        } else {
+            deferredPrompt = DeferredPrompt(origin, what, decide, android.os.SystemClock.elapsedRealtime())
         }
     }
 
-    /** 允许重定向：目标在新标签页打开，当前标签回到原页面 */
-    private fun openRedirectInNewTab(target: String, bounce: Boolean) {
+    private fun flushDeferredPrompt() {
+        val d = deferredPrompt ?: return
+        val prompt = onPermissionPrompt ?: return
+        deferredPrompt = null
+        // 挂起太久（超过 1 分钟）的请求已无意义，按拒绝收尾
+        if (android.os.SystemClock.elapsedRealtime() - d.at > 60_000) d.decide(false) else prompt(d.origin, d.what, d.decide)
+    }
+
+    /**
+     * 唤起外部应用。支持 intent:// （含 S.browser_fallback_url）；没装对应应用时给出提示，
+     * 有回退网址就在当前页打开回退网址，否则什么都不发生 —— 页面本身保持不动。
+     */
+    private fun launchExternalApp(uri: Uri) {
+        val raw = uri.toString()
+        val isIntentScheme = uri.scheme.equals("intent", ignoreCase = true)
+        val intent = runCatching {
+            if (isIntentScheme) Intent.parseUri(raw, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, uri)
+        }.getOrNull()
+        if (intent == null) {
+            android.widget.Toast.makeText(appContext, "无法打开该链接", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        // 网页给出的 intent 不得指定组件 / selector，只允许按 BROWSABLE 解析，防止直指本应用或非导出组件
+        intent.addCategory(Intent.CATEGORY_BROWSABLE)
+        intent.component = null
+        intent.selector = null
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val started = runCatching { appContext.startActivity(intent) }.isSuccess
+        if (started) return
+        val fallback = if (isIntentScheme) intent.getStringExtra("browser_fallback_url") else null
+        if (!fallback.isNullOrBlank() && (fallback.startsWith("http://") || fallback.startsWith("https://"))) {
+            webView.post { loadUrl(fallback) }
+        } else {
+            android.widget.Toast.makeText(appContext, "未找到可打开的应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 允许重定向：目标在新标签页打开；原页面在导航被截下时就没有离开，无需回退 */
+    private fun openRedirectInNewTab(target: String) {
         val open = onOpenInNewTab
-        if (open != null) open(target) else loadUrl(target)
-        if (open != null && bounce) bounceBackIfJustNavigated()
+        if (open != null) open(target) else webView.post { loadUrl(target) }
     }
 
     /**
@@ -1291,11 +1358,15 @@ class BrowserTab(private val appContext: Context) {
 
     private fun handlePopupTarget(target: String, targetHost: String, linkClick: Boolean) {
         val open = onOpenInNewTab ?: return
-        fun bare(h: String) = h.lowercase().removePrefix("www.")
-        val sameSite = pageHost.isNotEmpty() && targetHost.isNotEmpty() && bare(targetHost) == bare(pageHost)
-        if (sameSite || linkClick || pageHost.isEmpty()) {
-            // 页面内正常的新窗口链接：默认在当前标签打开，开关打开才新开标签
+        val sameSite = pageHost.isNotEmpty() && targetHost.isNotEmpty() && isSameSite(targetHost, pageHost)
+        if (sameSite || pageHost.isEmpty()) {
+            // 同站新窗口链接：默认在当前标签打开，「同站链接新标签页打开」开关打开才新开标签
             if (sameSiteNewTab) open(target) else webView.post { loadUrl(target) }
+            return
+        }
+        // 用户亲手点的跨站 target=_blank 链接：就是要新窗口，直接新标签打开，不走重定向权限
+        if (linkClick) {
+            open(target)
             return
         }
         if (redirectMode == 1) {
@@ -1306,15 +1377,8 @@ class BrowserTab(private val appContext: Context) {
             notifyRedirectBlocked(false, targetHost)
             return
         }
-        val prompt = onPermissionPrompt
-        if (prompt == null) {
-            notifyRedirectBlocked(false, targetHost)
-            return
-        }
         if (redirectPromptPending) return
-        redirectPromptPending = true
-        prompt(pageHost, "跳转到 ${targetHost.ifEmpty { target.take(60) }}") { allow ->
-            redirectPromptPending = false
+        askRedirect(pageHost, "跳转到 ${targetHost.ifEmpty { target.take(60) }}") { allow ->
             if (allow) open(target) else notifyRedirectBlocked(false, targetHost)
         }
     }
@@ -1329,6 +1393,10 @@ class BrowserTab(private val appContext: Context) {
 
     /** 网页权限「询问」：由界面弹窗，decide(true/false) 只能调用一次 */
     var onPermissionPrompt: ((origin: String, what: String, decide: (Boolean) -> Unit) -> Unit)? = null
+        set(value) {
+            field = value
+            if (value != null) flushDeferredPrompt()
+        }
 
     /** 申请 Android 运行时权限，完成后回调（调用方再自行检查授予结果） */
     var requestAndroidPermissions: ((Array<String>, () -> Unit) -> Unit)? = null
@@ -1524,15 +1592,23 @@ class BrowserTab(private val appContext: Context) {
     /** 若这个标签正显示主页（页面被盖住），还原成原来的页面，不重新加载 */
     fun restoreFromHome() {
         if (url.isEmpty() && savedUrl.isNotBlank()) {
-            url = savedUrl
+            // 页面在主页下面可能又自己跳转过，以 WebView 当前地址为准
+            url = runCatching { webView.url }.getOrNull()?.takeIf { it.isNotBlank() } ?: savedUrl
             savedUrl = ""
+            parked = false
             syncNav()
         }
     }
 
+    private fun historyIndex(): Int =
+        runCatching { webView.copyBackForwardList().currentIndex }.getOrDefault(-1)
+
     fun goHome() {
+        // 已经在主页：不能再覆盖 savedUrl，否则被盖住的页面就丢了
+        if (url.isEmpty()) return
         savedUrl = url
         fromHome = false
+        parked = true
         url = ""
         errorText = null
         loading = false
@@ -1541,24 +1617,26 @@ class BrowserTab(private val appContext: Context) {
 
     fun goBack() {
         // 从主页返回：恢复刚才那页（WebView 没销毁，直接还原状态即可）
-        if (url.isEmpty() && savedUrl.isNotBlank()) {
-            url = savedUrl
-            savedUrl = ""
+        if (url.isEmpty()) {
+            restoreFromHome()
+            return
+        }
+        // 回到「从主页进入」的第一页：再返回就是主页，而不是继续翻进入主页之前的旧历史
+        if (fromHome && historyIndex() <= homeAnchor + 1) {
+            runCatching { webView.stopLoading() }
+            fromHome = false
+            parked = true
+            url = ""
+            errorText = null
+            loading = false
             syncNav()
             return
         }
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else if (fromHome) {
-            // 回到主页（主页是 Compose 覆盖层，把 url 清空即可），而不是退出
-            fromHome = false
-            url = ""
-            errorText = null
-            syncNav()
-        }
+        if (webView.canGoBack()) webView.goBack()
     }
 
     fun goForward() {
+        if (url.isEmpty()) return
         if (webView.canGoForward()) webView.goForward()
     }
 
@@ -1604,6 +1682,9 @@ class BrowserState(private val context: Context) {
     var activeIndex by mutableIntStateOf(0)
         private set
 
+    /** 最近激活过的标签 id（越靠后越新）：关闭当前标签时，没有 opener 就回到「上一个用过的」 */
+    private val recentIds = mutableListOf<Int>()
+
     val activeTab: BrowserTab
         get() = tabs[activeIndex.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))]
 
@@ -1611,7 +1692,40 @@ class BrowserState(private val context: Context) {
         newTab()
     }
 
-    fun newTab(target: String = "", incognito: Boolean = false) {
+    /** 唯一的切换入口：同时维护最近使用顺序 */
+    private fun activate(index: Int) {
+        if (index !in tabs.indices) return
+        activeIndex = index
+        val id = tabs[index].id
+        recentIds.remove(id)
+        recentIds.add(id)
+    }
+
+    private fun createTab(incognito: Boolean, opener: BrowserTab?): BrowserTab {
+        val tab = BrowserTab(context)
+        tab.customUserAgent = userAgent
+        tab.applyUserAgent()
+        tab.applyIncognito(incognito)
+        tab.openerId = opener?.id ?: -1
+        // 页面自己要开的新标签（window.open / 允许的重定向 / GM_openInTab）以它为 opener
+        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito, tab) }
+        tab.onOpenNewTab = tab.onOpenInNewTab
+        return tab
+    }
+
+    /**
+     * 新建标签页。[opener] 是打开它的标签（默认当前标签）：关闭新标签时会优先回到 opener。
+     * 当前已经是同模式的空白标签时，「新建空白标签」直接沿用它，不再叠出一张空卡片。
+     */
+    fun newTab(
+        target: String = "",
+        incognito: Boolean = false,
+        opener: BrowserTab? = tabs.getOrNull(activeIndex),
+    ) {
+        if (target.isEmpty()) {
+            val cur = tabs.getOrNull(activeIndex)
+            if (cur != null && cur.isBlank && cur.incognito == incognito) return
+        }
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
                 context,
@@ -1620,13 +1734,9 @@ class BrowserState(private val context: Context) {
             ).show()
             return
         }
-        val tab = BrowserTab(context)
-        tab.customUserAgent = userAgent
-        tab.applyUserAgent()
-        tab.applyIncognito(incognito)
-        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito) }
+        val tab = createTab(incognito, opener)
         tabs.add(tab)
-        activeIndex = tabs.lastIndex
+        activate(tabs.lastIndex)
         if (target.isNotEmpty()) tab.load(target)
     }
 
@@ -1678,11 +1788,8 @@ class BrowserState(private val context: Context) {
             ) {
                 existing.load(url)
             }
-            if (blank != null) {
-                tabs.remove(blank)
-                blank.close()
-            }
-            activeIndex = tabs.indexOf(existing).coerceAtLeast(0)
+            if (blank != null) detach(blank)
+            activate(tabs.indexOf(existing).coerceAtLeast(0))
             return
         }
         val cur = activeTab
@@ -1700,17 +1807,26 @@ class BrowserState(private val context: Context) {
     /** 切换当前标签无痕状态（无痕时新开标签，已有无痕则关闭回普通） */
     fun toggleIncognito() {
         if (activeTab.incognito) {
-            // 回到普通：关闭当前无痕标签，必要时新建普通标签
+            // 回到普通：关闭当前无痕标签，回到最近用过的普通标签；没有就新建一个
             closeTab(activeIndex)
-            if (tabs.isEmpty() || !tabs.any { !it.incognito }) {
+            val normal = lastUsed(incognito = false)
+            if (normal == null) {
                 newTab(incognito = false)
             } else {
-                val normal = tabs.indexOfFirst { !it.incognito }
-                if (normal >= 0) select(normal)
+                activate(tabs.indexOf(normal))
             }
         } else {
             newTab(incognito = true)
         }
+    }
+
+    /** 指定模式里最近用过的标签 */
+    private fun lastUsed(incognito: Boolean): BrowserTab? {
+        for (id in recentIds.asReversed()) {
+            val t = tabs.firstOrNull { it.id == id }
+            if (t != null && t.incognito == incognito) return t
+        }
+        return tabs.lastOrNull { it.incognito == incognito }
     }
 
     fun applyUserAgent(ua: String) {
@@ -1722,24 +1838,70 @@ class BrowserState(private val context: Context) {
     }
 
     fun select(index: Int) {
-        if (index in tabs.indices) activeIndex = index
+        activate(index)
+    }
+
+    /** 从列表里摘掉一个标签（不负责挑选下一个当前标签） */
+    private fun detach(tab: BrowserTab) {
+        tabs.remove(tab)
+        recentIds.remove(tab.id)
+        // 以它为 opener 的标签改挂到它的 opener 上，层级链不断
+        tabs.forEach { if (it.openerId == tab.id) it.openerId = tab.openerId }
+        tab.close()
+    }
+
+    /**
+     * 关闭当前标签后回到哪一个：
+     * 1. opener 链（打开它的标签，其次是打开 opener 的标签……）；
+     * 2. 最近用过的标签；
+     * 3. 列表里相邻的标签。
+     * 候选里优先同模式（无痕 / 普通）的，避免关掉无痕页莫名落到普通页。
+     */
+    private fun pickSuccessor(closing: BrowserTab): BrowserTab? {
+        val others = tabs.filter { it !== closing }
+        if (others.isEmpty()) return null
+        val candidates = mutableListOf<BrowserTab>()
+        val seen = HashSet<Int>()
+        var oid = closing.openerId
+        while (oid != -1 && seen.add(oid)) {
+            val parent = others.firstOrNull { it.id == oid } ?: break
+            candidates.add(parent)
+            oid = parent.openerId
+        }
+        for (id in recentIds.asReversed()) {
+            others.firstOrNull { it.id == id }?.let { candidates.add(it) }
+        }
+        val i = tabs.indexOf(closing)
+        tabs.getOrNull(i + 1)?.let { candidates.add(it) }
+        tabs.getOrNull(i - 1)?.let { candidates.add(it) }
+        candidates.addAll(others)
+        return candidates.firstOrNull { it.incognito == closing.incognito } ?: candidates.first()
     }
 
     fun closeTab(index: Int) {
         if (index !in tabs.indices) return
-        val tab = tabs.removeAt(index)
-        tab.close()
+        val closing = tabs[index]
+        val activeBefore = tabs[activeIndex.coerceIn(0, tabs.lastIndex)]
+        val wasActive = activeBefore === closing
+        val successor = if (wasActive) pickSuccessor(closing) else activeBefore
+        detach(closing)
         if (tabs.isEmpty()) {
             newTab()
-        } else {
-            activeIndex = index.coerceAtMost(tabs.lastIndex)
+            return
+        }
+        // 关掉的是后台标签时当前标签不能变；关掉当前标签才按层级回退
+        val target = successor?.let { tabs.indexOf(it) } ?: -1
+        if (wasActive) {
+            activate(if (target >= 0) target else index.coerceAtMost(tabs.lastIndex))
+        } else if (target >= 0) {
+            activeIndex = target
         }
     }
 
-    /** 后台打开，返回目标标签下标（同站已有则复用，失败返回 -1） */
-    fun newTabInBackground(target: String): Int {
+    /** 后台打开，返回目标标签下标（同站已有则复用，失败返回 -1）。无痕下打开的标签仍是无痕 */
+    fun newTabInBackground(target: String, incognito: Boolean = activeTab.incognito): Int {
         // 同站已有标签：切换前不抢焦点，由调用方决定是否 select
-        val idx = findSiteTab(target, false)
+        val idx = findSiteTab(target, incognito)
         if (idx >= 0) {
             val existing = tabs[idx]
             if (existing.url.isNotEmpty() && !isSiteRoot(toUrl(target)) &&
@@ -1757,10 +1919,7 @@ class BrowserState(private val context: Context) {
             ).show()
             return -1
         }
-        val tab = BrowserTab(context)
-        tab.customUserAgent = userAgent
-        tab.applyUserAgent()
-        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito) }
+        val tab = createTab(incognito, tabs.getOrNull(activeIndex))
         tabs.add(tab)
         tab.load(target)
         return tabs.lastIndex
@@ -1768,18 +1927,20 @@ class BrowserState(private val context: Context) {
 
     /**
      * 清空某一栏的标签：[incognito] 为 true 清无痕栏，false 清普通栏，另一栏不受影响。
-     * 当前标签被清掉时：清无痕栏且还有普通标签 → 回到最后一个普通标签；
+     * 当前标签被清掉时：清无痕栏且还有普通标签 → 回到最近用过的普通标签；
      * 否则在被清空的那一栏新建一个空白标签。
      */
     fun closeAllOf(incognito: Boolean) {
         val removed = tabs.filter { it.incognito == incognito }
         if (removed.isEmpty()) return
         val keep = activeTab.takeIf { it.incognito != incognito }
+        val fallback = if (incognito) lastUsed(incognito = false) else null
         removed.forEach { it.close() }
         tabs.removeAll(removed)
+        recentIds.removeAll { id -> tabs.none { it.id == id } }
         when {
             keep != null -> activeIndex = tabs.indexOf(keep).coerceAtLeast(0)
-            incognito && tabs.isNotEmpty() -> activeIndex = tabs.lastIndex
+            fallback != null && tabs.contains(fallback) -> activate(tabs.indexOf(fallback))
             else -> newTab(incognito = incognito)
         }
     }
@@ -1787,6 +1948,7 @@ class BrowserState(private val context: Context) {
     fun closeAll() {
         tabs.forEach { it.close() }
         tabs.clear()
+        recentIds.clear()
         newTab()
     }
 
