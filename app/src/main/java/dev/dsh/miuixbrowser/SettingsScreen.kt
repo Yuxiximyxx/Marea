@@ -92,6 +92,7 @@ fun SettingsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
+    var showFpSheet by remember { mutableStateOf(false) }
     var showProxyDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var reclaimable by remember { mutableStateOf(0L) }
@@ -269,6 +270,14 @@ fun SettingsScreen(
                         title = "网站权限管理",
                         summary = "摄像头 · 麦克风 · 定位 · 网站通知 · 剪贴板 · 媒体发声 · 网页重定向",
                         onClick = { showPermSheet = true },
+                    )
+                    SettingsRow(
+                        title = "指纹保护",
+                        summary = AdBlock.let { ab ->
+                            val n = listOf(ab.fpCanvas, ab.fpWebgl, ab.fpAudio, ab.fpFonts).count { it }
+                            if (n == 0) "已关闭 · Canvas · WebGL · Audio · Fonts" else "已开启 $n / 4 项 · Canvas · WebGL · Audio · Fonts"
+                        },
+                        onClick = { showFpSheet = true },
                     )
                     SwitchPreference(
                         title = "发送禁止跟踪请求",
@@ -552,6 +561,47 @@ fun SettingsScreen(
                             Text(text = "保存", style = MiuixTheme.textStyles.button)
                         }
                     }
+                }
+            }
+
+            GlassBottomSheet(
+                show = showFpSheet,
+                title = "指纹保护",
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { showFpSheet = false },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
+                    SwitchPreference(
+                        title = "Canvas 指纹",
+                        summary = "导出画布 / 读取像素时加入不可见的细微噪声",
+                        checked = AdBlock.fpCanvas,
+                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_CANVAS, it) },
+                    )
+                    SwitchPreference(
+                        title = "WebGL 指纹",
+                        summary = "伪装显卡型号，并给 readPixels / WebGL 画布导出加噪声",
+                        checked = AdBlock.fpWebgl,
+                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_WEBGL, it) },
+                    )
+                    SwitchPreference(
+                        title = "Audio 指纹",
+                        summary = "给音频缓冲 / 分析器输出加入听不出来的细微噪声",
+                        checked = AdBlock.fpAudio,
+                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_AUDIO, it) },
+                    )
+                    SwitchPreference(
+                        title = "Fonts 指纹",
+                        summary = "干扰字体探测（文字测量、本机字体加载），无法枚举已安装字体",
+                        checked = AdBlock.fpFonts,
+                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_FONTS, it) },
+                    )
+                    Text(
+                        text = "对新打开或刷新后的页面生效；去广告里「站点白名单」的网站不处理。" +
+                            "若某个网站的验证码、在线绘图 / 取色、音频工具异常，可关掉对应项或把该站点加入白名单。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                    )
                 }
             }
 

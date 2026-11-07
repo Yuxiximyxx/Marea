@@ -102,6 +102,15 @@ class BrowserTab(private val appContext: Context) {
     /** 打开本标签的标签 id（-1 = 无）：关闭本标签时优先回到它，形成层级回退 */
     var openerId: Int = -1
 
+    /**
+     * 本标签是由另一个标签里的链接（点击 / 长按「新标签页打开」/ window.open）打开的。
+     * 这种标签没有「主页」可回：在它的第一页点返回，直接关闭它并回到来源标签。
+     */
+    var openedFromLink = false
+
+    /** 请求关闭自己（由 [BrowserState] 接线），用于 [openedFromLink] 标签在第一页返回 */
+    var onRequestClose: (() -> Unit)? = null
+
     /** 从主页进入页面时 WebView 历史的当前下标（-1 = 历史为空）：回退到这一层就回主页，不再穿透到主页之前的旧页面 */
     private var homeAnchor = -1
 
@@ -1034,13 +1043,13 @@ class BrowserTab(private val appContext: Context) {
             canGoForward = false
             return
         }
-        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome
+        canGoBack = runCatching { webView.canGoBack() }.getOrDefault(false) || fromHome || openedFromLink
         canGoForward = runCatching { webView.canGoForward() }.getOrDefault(false)
     }
 
     fun load(input: String) {
         val target = toUrl(input, searchTemplate)
-        if (url.isEmpty()) {
+        if (url.isEmpty() && !openedFromLink) {
             // 从主页进入新页面：记下 WebView 历史的当前位置，返回到这一层就回主页
             fromHome = true
             homeAnchor = historyIndex()
@@ -1654,7 +1663,12 @@ class BrowserTab(private val appContext: Context) {
             syncNav()
             return
         }
-        if (webView.canGoBack()) webView.goBack()
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else if (openedFromLink) {
+            // 链接打开的标签已经在第一页：关掉它，回到来源标签（而不是先落到本标签的主页）
+            onRequestClose?.invoke()
+        }
     }
 
     fun goForward() {
@@ -1730,7 +1744,8 @@ class BrowserState(private val context: Context) {
         tab.applyIncognito(incognito)
         tab.openerId = opener?.id ?: -1
         // 页面自己要开的新标签（window.open / 允许的重定向 / GM_openInTab）以它为 opener
-        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito, tab) }
+        tab.onOpenInNewTab = { u -> newTab(u, tab.incognito, tab, fromLink = true) }
+        tab.onRequestClose = { closeTab(tabs.indexOf(tab)) }
         tab.onOpenNewTab = tab.onOpenInNewTab
         return tab
     }
@@ -1743,6 +1758,8 @@ class BrowserState(private val context: Context) {
         target: String = "",
         incognito: Boolean = false,
         opener: BrowserTab? = tabs.getOrNull(activeIndex),
+        /** 由页面里的链接打开：第一页返回直接关闭并回到 opener，不经过本标签的主页 */
+        fromLink: Boolean = false,
     ) {
         if (target.isEmpty()) {
             val cur = tabs.getOrNull(activeIndex)
@@ -1757,6 +1774,7 @@ class BrowserState(private val context: Context) {
             return
         }
         val tab = createTab(incognito, opener)
+        tab.openedFromLink = fromLink && opener != null && target.isNotEmpty()
         tabs.add(tab)
         activate(tabs.lastIndex)
         if (target.isNotEmpty()) tab.load(target)
@@ -1942,6 +1960,7 @@ class BrowserState(private val context: Context) {
             return -1
         }
         val tab = createTab(incognito, tabs.getOrNull(activeIndex))
+        tab.openedFromLink = true
         tabs.add(tab)
         tab.load(target)
         return tabs.lastIndex

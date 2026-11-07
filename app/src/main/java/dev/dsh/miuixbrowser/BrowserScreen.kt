@@ -1615,7 +1615,7 @@ fun BrowserScreen(
                 }
                 SheetRow(title = "在新标签页打开") {
                     sheet = Sheet.None
-                    state.newTab(linkUrl, tab.incognito)
+                    state.newTab(linkUrl, tab.incognito, fromLink = true)
                 }
                 SheetRow(title = "复制链接") {
                     sheet = Sheet.None
@@ -1665,7 +1665,7 @@ fun BrowserScreen(
                     }
                     SheetRow(title = "在新标签页打开") {
                         sheet = Sheet.None
-                        state.newTab(imageUrl, tab.incognito)
+                        state.newTab(imageUrl, tab.incognito, fromLink = true)
                     }
                 }
             }

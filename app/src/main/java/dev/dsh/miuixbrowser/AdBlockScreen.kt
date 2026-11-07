@@ -233,52 +233,6 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                         }
                     }
 
-                    item { SmallTitle(text = "指纹保护") }
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                            insideMargin = PaddingValues(0.dp),
-                        ) {
-                            SwitchPreference(
-                                title = "Canvas 指纹",
-                                summary = "导出画布 / 读取像素时加入不可见的细微噪声",
-                                checked = AdBlock.fpCanvas,
-                                onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_CANVAS, it) },
-                                enabled = AdBlock.enabled,
-                            )
-                            SwitchPreference(
-                                title = "WebGL 指纹",
-                                summary = "伪装显卡型号，并给 readPixels / WebGL 画布导出加噪声",
-                                checked = AdBlock.fpWebgl,
-                                onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_WEBGL, it) },
-                                enabled = AdBlock.enabled,
-                            )
-                            SwitchPreference(
-                                title = "Audio 指纹",
-                                summary = "给音频缓冲 / 分析器输出加入听不出来的细微噪声",
-                                checked = AdBlock.fpAudio,
-                                onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_AUDIO, it) },
-                                enabled = AdBlock.enabled,
-                            )
-                            SwitchPreference(
-                                title = "Fonts 指纹",
-                                summary = "干扰字体探测（文字测量、本机字体加载），无法枚举已安装字体",
-                                checked = AdBlock.fpFonts,
-                                onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_FONTS, it) },
-                                enabled = AdBlock.enabled,
-                            )
-                        }
-                    }
-                    item {
-                        Text(
-                            text = "对新打开或刷新后的页面生效，站点白名单里的网站不处理。若某个网站的验证码、" +
-                                "在线绘图 / 取色、音频工具异常，可关掉对应项或把该站点加入白名单。",
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                        )
-                    }
-
                     item { SmallTitle(text = "订阅源") }
                     if (subs.isEmpty()) {
                         item {

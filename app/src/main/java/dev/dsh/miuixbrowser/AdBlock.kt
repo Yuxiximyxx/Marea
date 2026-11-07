@@ -129,7 +129,7 @@ object AdBlock {
     var autoUpdate by mutableIntStateOf(2)
         private set
 
-    /* 指纹保护：每类一个开关，同时受去广告总开关和站点白名单控制 */
+    /* 指纹保护：每类一个开关（设置 → 隐私与安全），受站点白名单控制，独立于去广告总开关 */
     var fpCanvas by mutableStateOf(true)
         private set
     var fpWebgl by mutableStateOf(true)
@@ -483,11 +483,11 @@ object AdBlock {
 
     /**
      * 指纹保护配置（JS 桥调用，任意线程）。返回 "掩码:种子"；掩码 0 表示本页不处理
-     * （去广告关闭 / 四项全关 / 站点在白名单里）。
+     * （四项全关 / 站点在白名单里）。指纹保护在「隐私与安全」里，独立于去广告总开关。
      */
     fun fingerprintConfig(hostRaw: String?, topHostRaw: String?): String {
         val mask = fpMask
-        if (!fastEnabled || mask == 0) return "0:0"
+        if (mask == 0) return "0:0"
         val host = hostRaw?.trim()?.lowercase().orEmpty()
         val top = topHostRaw?.trim()?.lowercase().orEmpty()
         if ((host.isNotEmpty() && hostAllowed(host)) || (top.isNotEmpty() && hostAllowed(top))) return "0:0"
