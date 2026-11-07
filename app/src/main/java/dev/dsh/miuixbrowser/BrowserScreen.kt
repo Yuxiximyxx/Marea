@@ -1328,10 +1328,19 @@ fun BrowserScreen(
     }
 
     // Sheet 打开期间，页面（重新）加载完成后刷新脚本列表；停用时保留旧列表（仅置灰）
+    // 页面加载完成后先等一下再取，之后每 1.5 秒复查一次（document-idle 的脚本、延迟注册的菜单命令可能比首次查询晚出现）；
+    // 脚本被停用时刷新后页面里不会再有运行中的脚本，列表同步清空
     LaunchedEffect(scriptSheetShow, tab.loading, settings.scriptsEnabled) {
-        if (scriptSheetShow && !tab.loading && settings.scriptsEnabled) {
-            kotlinx.coroutines.delay(600)
-            refreshScriptSheet()
+        if (!scriptSheetShow) return@LaunchedEffect
+        if (!settings.scriptsEnabled) {
+            runningScripts = emptyList()
+            scriptMenuItems = emptyList()
+        } else if (!tab.loading) {
+            kotlinx.coroutines.delay(500)
+            while (true) {
+                refreshScriptSheet()
+                kotlinx.coroutines.delay(1500)
+            }
         }
     }
 
@@ -1923,8 +1932,11 @@ fun BrowserScreen(
             onScriptsEnabledChange = { on ->
                 settings.updateScriptsEnabled(on)
                 state.tabs.forEach { it.scriptsEnabled = on }
-                // 已注入的脚本无法撤销，刷新页面使开关生效
-                tab.reload()
+                // 旧列表对应的是切换前的页面，先清空，页面重载完成后由上面的刷新逻辑重新填充
+                runningScripts = emptyList()
+                scriptMenuItems = emptyList()
+                // 已注入的脚本无法撤销，刷新页面使开关生效（直接 reload：页面正在加载时 tab.reload() 只会停止加载）
+                runCatching { tab.webView.reload() }
             },
             onRunCommand = { cmd ->
                 scriptSheetShow = false

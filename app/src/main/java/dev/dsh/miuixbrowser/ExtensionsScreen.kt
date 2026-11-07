@@ -208,7 +208,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 32.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
                     item {
                         Card(
@@ -300,6 +300,24 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     }
                 }
             }
+
+            // 右下圆形添加按钮：新建脚本
+            LiquidGlassFab(
+                onClick = { creating = true },
+                backdrop = liquid,
+                primary = true,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(20.dp),
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Glass.Add,
+                    contentDescription = "新建脚本",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
         } // end outer Box
 
         GlassDialog(
@@ -380,14 +398,6 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 importing = true
             },
             icon = MiuixIcons.Glass.Download,
-        )
-        GlassPopupItem(
-            text = "新建脚本",
-            onClick = {
-                showMore = false
-                creating = true
-            },
-            icon = MiuixIcons.Glass.Add,
         )
         GlassPopupItem(
             text = if (updatingAll) "更新中…" else "全部更新",
