@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -93,6 +98,7 @@ fun SettingsScreen(
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
     var showFpSheet by remember { mutableStateOf(false) }
+    var showHomeSheet by remember { mutableStateOf(false) }
     var showFpExempt by remember { mutableStateOf(false) }
     var fpPending by remember { mutableStateOf<Int?>(null) } // 等待用户确认开启的指纹保护项
     var showProxyDialog by remember { mutableStateOf(false) }
@@ -208,6 +214,11 @@ fun SettingsScreen(
                         items = listOf("文字显示", "卡片显示"),
                         selectedIndex = settings.tabsStyle.coerceIn(0, 1),
                         onSelectedIndexChange = { settings.updateTabsStyle(it) },
+                    )
+                    SettingsRow(
+                        title = "首页内容显示",
+                        summary = homeContentSummary(settings),
+                        onClick = { showHomeSheet = true },
                     )
                     SwitchPreference(
                         title = "同站链接新标签页打开",
@@ -583,67 +594,181 @@ fun SettingsScreen(
             }
 
             GlassBottomSheet(
+                show = showHomeSheet,
+                title = "首页内容显示",
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { showHomeSheet = false },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        insideMargin = PaddingValues(0.dp),
+                    ) {
+                        listOf(
+                            HOME_FAVORITES to "个人收藏",
+                            HOME_PRIVACY to "隐私报告",
+                            HOME_RECENT to "最近浏览",
+                            HOME_DOWNLOADS to "下载项",
+                        ).forEach { (kind, label) ->
+                            GlassDropdownPreference(
+                                backdrop = if (glass) backdrop else null,
+                                title = label,
+                                items = listOf("显示", "隐藏"),
+                                selectedIndex = if (settings.isHomeShown(kind)) 0 else 1,
+                                onSelectedIndexChange = { settings.updateHomeShow(kind, it == 0) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = "在首页长按「隐私报告」「最近浏览」「下载项」卡片也可以直接隐藏；无痕标签页的首页不显示最近浏览。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                    )
+                }
+            }
+
+            GlassBottomSheet(
                 show = showFpSheet,
                 title = "指纹保护",
                 backdrop = if (glass) backdrop else null,
                 onDismissRequest = { showFpSheet = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
-                    SwitchPreference(
-                        title = "Canvas 指纹",
-                        summary = "导出画布 / 读取像素时加入不可见的细微噪声",
-                        checked = AdBlock.fpCanvas,
-                        onCheckedChange = { if (it) fpPending = AdBlock.FP_CANVAS else AdBlock.updateFingerprint(AdBlock.FP_CANVAS, false) },
-                    )
-                    SwitchPreference(
-                        title = "WebGL 指纹",
-                        summary = "给 readPixels / WebGL 画布导出加入细微噪声",
-                        checked = AdBlock.fpWebgl,
-                        onCheckedChange = { if (it) fpPending = AdBlock.FP_WEBGL else AdBlock.updateFingerprint(AdBlock.FP_WEBGL, false) },
-                    )
-                    SwitchPreference(
-                        title = "Audio 指纹",
-                        summary = "给音频缓冲 / 分析器输出加入听不出来的细微噪声",
-                        checked = AdBlock.fpAudio,
-                        onCheckedChange = { if (it) fpPending = AdBlock.FP_AUDIO else AdBlock.updateFingerprint(AdBlock.FP_AUDIO, false) },
-                    )
-                    SwitchPreference(
-                        title = "Fonts 指纹",
-                        summary = "干扰 Canvas 文字测量与本机字体加载，无法枚举已安装字体",
-                        checked = AdBlock.fpFonts,
-                        onCheckedChange = { if (it) fpPending = AdBlock.FP_FONTS else AdBlock.updateFingerprint(AdBlock.FP_FONTS, false) },
-                    )
-                    GlassDropdownPreference(
-                        backdrop = if (glass) backdrop else null,
-                        title = "未预注册页面的兜底",
-                        items = listOf("仅记录，不干预", "停止并在保护下重载", "停止加载"),
-                        selectedIndex = AdBlock.fpUnprotectedPolicy.coerceIn(0, 2),
-                        onSelectedIndexChange = { AdBlock.updateFpUnprotectedPolicy(it) },
-                    )
-                    ArrowPreference(
-                        title = "保护豁免站点",
-                        summary = if (AdBlock.fpExemptHosts.isEmpty()) {
-                            "这些站点（含子域名）不注入指纹保护"
-                        } else {
-                            "${AdBlock.fpExemptHosts.size} 个站点不注入指纹保护"
-                        },
-                        onClick = { showFpExempt = true },
-                    )
-                    if (AdBlock.fpReadsSession > 0) {
+                    // ① 隐私报告
+                    val fpOn = AdBlock.fpMaster
+                    val fpCount = listOf(AdBlock.fpCanvas, AdBlock.fpWebgl, AdBlock.fpAudio, AdBlock.fpFonts).count { it }
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "隐私报告",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = if (fpOn) "保护中 · $fpCount / 4 项" else "未开启",
+                                fontSize = 12.sp,
+                                color = if (fpOn) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.padding(top = 6.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Text(
+                                text = "${AdBlock.fpReads}",
+                                fontSize = 34.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = " 次指纹读取已被处理",
+                                fontSize = 14.sp,
+                                color = MiuixTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                            )
+                        }
                         Text(
-                            text = "本次启动以来，网页的 ${AdBlock.fpReadsSession} 次指纹读取已被处理（页面在隐藏或关闭时上报，仅作参考）",
+                            text = when {
+                                AdBlock.fpSince == 0L && !fpOn -> "开启保护后，这里会统计网页读取你设备指纹的次数"
+                                AdBlock.fpSince == 0L -> "已开启保护，暂未发现网页读取指纹"
+                                fpOn && AdBlock.fpReads == 0L -> "自 ${fpSinceText(AdBlock.fpSince)} 开启保护以来，暂未发现网页读取指纹"
+                                fpOn -> "自 ${fpSinceText(AdBlock.fpSince)} 开启保护以来的累计"
+                                else -> "保护已关闭 · 数字停留在 ${fpSinceText(AdBlock.fpSince)} 开启的那一轮"
+                            },
                             fontSize = 12.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Text(
+                            text = "网页在隐藏或关闭时上报，数字仅供参考",
+                            fontSize = 11.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 2.dp),
                         )
                     }
+
+                    // ② 总开关 + 展开的四项
+                    SmallTitle(text = "保护项")
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        insideMargin = PaddingValues(0.dp),
+                    ) {
+                        SwitchPreference(
+                            title = "指纹保护",
+                            summary = if (fpOn) "已开启，可在下方选择保护哪些项目" else "开启后可选择 Canvas · WebGL · Audio · Fonts",
+                            checked = fpOn,
+                            onCheckedChange = { if (it) fpPending = AdBlock.FP_ALL else AdBlock.setFingerprintMaster(false) },
+                        )
+                        AnimatedVisibility(
+                            visible = fpOn,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
+                            Column {
+                                SwitchPreference(
+                                    title = "Canvas 指纹",
+                                    summary = "导出画布 / 读取像素时加入不可见的细微噪声",
+                                    checked = AdBlock.fpCanvas,
+                                    onCheckedChange = { if (it) fpPending = AdBlock.FP_CANVAS else AdBlock.updateFingerprint(AdBlock.FP_CANVAS, false) },
+                                )
+                                SwitchPreference(
+                                    title = "WebGL 指纹",
+                                    summary = "给 readPixels / WebGL 画布导出加入细微噪声",
+                                    checked = AdBlock.fpWebgl,
+                                    onCheckedChange = { if (it) fpPending = AdBlock.FP_WEBGL else AdBlock.updateFingerprint(AdBlock.FP_WEBGL, false) },
+                                )
+                                SwitchPreference(
+                                    title = "Audio 指纹",
+                                    summary = "给音频缓冲和分析器输出加入听不出来的噪声",
+                                    checked = AdBlock.fpAudio,
+                                    onCheckedChange = { if (it) fpPending = AdBlock.FP_AUDIO else AdBlock.updateFingerprint(AdBlock.FP_AUDIO, false) },
+                                )
+                                SwitchPreference(
+                                    title = "Fonts 指纹",
+                                    summary = "干扰 Canvas 文字测量与本机字体加载，无法枚举已安装字体",
+                                    checked = AdBlock.fpFonts,
+                                    onCheckedChange = { if (it) fpPending = AdBlock.FP_FONTS else AdBlock.updateFingerprint(AdBlock.FP_FONTS, false) },
+                                )
+                            }
+                        }
+                    }
+
+                    // ③ 高级：兜底策略与豁免
+                    SmallTitle(text = "高级")
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        insideMargin = PaddingValues(0.dp),
+                    ) {
+                        GlassDropdownPreference(
+                            backdrop = if (glass) backdrop else null,
+                            title = "未预注册页面的兜底",
+                            items = listOf("仅记录，不干预", "停止并在保护下重载", "停止加载"),
+                            selectedIndex = AdBlock.fpUnprotectedPolicy.coerceIn(0, 2),
+                            onSelectedIndexChange = { AdBlock.updateFpUnprotectedPolicy(it) },
+                        )
+                        ArrowPreference(
+                            title = "保护豁免站点",
+                            summary = if (AdBlock.fpExemptHosts.isEmpty()) {
+                                "这些站点（含子域名）不注入指纹保护"
+                            } else {
+                                "${AdBlock.fpExemptHosts.size} 个站点不注入指纹保护"
+                            },
+                            onClick = { showFpExempt = true },
+                        )
+                    }
+
                     Text(
-                        text = "默认全部关闭。开启会改动网页读到的数据，可能引起兼容问题（开启时会有具体提示）；" +
+                        text = "默认关闭。开启会改动网页读到的数据，可能引起兼容问题（开启时会有具体提示）；" +
                             "对新打开或刷新后的页面生效。保护作用于页面本身、同站点子域名以及预注册清单内的跨源 iframe，" +
-                            "清单之外的跨源 iframe 不保护；若页面（如重定向落点）在注册前就开始加载，会按上面的兜底策略处理" +
-                            "（登录回调这类带一次性凭证的地址不会被重载）；" +
-                            "豁免列表与去广告的「站点白名单」相互独立。" +
-                            "若某个网站异常，可关掉对应项或把该站点加入豁免。",
+                            "清单之外的跨源 iframe 不保护；若页面（如重定向落点）在注册前就开始加载，会按「兜底」策略处理" +
+                            "（登录回调这类带一次性凭证的地址不会被重载）。" +
+                            "豁免列表与去广告的「站点白名单」相互独立；若某个网站异常，可关掉对应项或把该站点加入豁免。",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -695,6 +820,12 @@ fun SettingsScreen(
                                 "· 依赖精确测量的排版、编辑器、图表出现细微错位\n" +
                                 "· 使用本机字体的网页回退到其他字体\n" +
                                 "· 浏览器检测站点提示字体异常"
+                            AdBlock.FP_ALL -> "将恢复你上次选择的保护项（首次开启为 Canvas / WebGL / Audio / Fonts 全部四项）。" +
+                                "网页读到的 Canvas / WebGL 像素、音频输出和字体测量会带有极细微的噪声，可能引起：\n" +
+                                "· 在线绘图 / 取色 / 图片处理 / 3D 与地图工具的结果有细微差异\n" +
+                                "· 银行、验证码、风控类网站发现数据被改动，要求额外验证\n" +
+                                "· 依赖精确测量的排版 / 编辑器出现细微错位，本机字体回退\n" +
+                                "开启后可在列表里逐项关闭。"
                             else -> ""
                         },
                         fontSize = 14.sp,
@@ -718,7 +849,9 @@ fun SettingsScreen(
                         }
                         GlassDialogButton(
                             onClick = {
-                                fpAsk?.let { AdBlock.updateFingerprint(it, true) }
+                                fpAsk?.let {
+                                    if (it == AdBlock.FP_ALL) AdBlock.setFingerprintMaster(true) else AdBlock.updateFingerprint(it, true)
+                                }
                                 fpPending = null
                             },
                             modifier = Modifier.weight(1f),
@@ -972,4 +1105,17 @@ private fun SearchSheet(
             )
         }
     }
+}
+
+private fun fpSinceText(time: Long): String =
+    java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.getDefault()).format(java.util.Date(time))
+
+private fun homeContentSummary(settings: AppSettings): String {
+    val shown = buildList {
+        if (settings.homeShowFavorites) add("收藏")
+        if (settings.homeShowPrivacy) add("隐私报告")
+        if (settings.homeShowRecent) add("最近浏览")
+        if (settings.homeShowDownloads) add("下载项")
+    }
+    return if (shown.isEmpty()) "首页只显示标志" else shown.joinToString(" · ")
 }

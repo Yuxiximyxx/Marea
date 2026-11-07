@@ -32,6 +32,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.imePadding
@@ -1024,6 +1025,18 @@ fun BrowserScreen(
                         wallpaperBackdrop = wallpaperBackdrop,
                         blurEnabled = settings.blurEnabled,
                         favorites = favorites.items,
+                        showFavorites = settings.homeShowFavorites,
+                        showPrivacy = settings.homeShowPrivacy,
+                        showRecent = settings.homeShowRecent && !tab.incognito,
+                        showDownloads = settings.homeShowDownloads,
+                        recent = history.items,
+                        onOpenDownloads = { pushPage(AppRoute.Downloads) },
+                        onHide = { kind ->
+                            settings.updateHomeShow(kind, false)
+                            android.widget.Toast.makeText(
+                                context, "已隐藏，可在 设置 → 布局 → 首页内容显示 中恢复", android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        },
                         editing = favEditing,
                         onOpen = { state.openOrReuse(it, tab.incognito, fromStartPage = true) },
                         onToggleEdit = { favEditing = !favEditing },
@@ -2744,6 +2757,13 @@ private fun StartPage(
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
     favorites: List<Favorite>,
+    showFavorites: Boolean,
+    showPrivacy: Boolean,
+    showRecent: Boolean,
+    showDownloads: Boolean,
+    recent: List<HistoryEntry>,
+    onOpenDownloads: () -> Unit,
+    onHide: (kind: Int) -> Unit,
     editing: Boolean,
     onOpen: (String) -> Unit,
     onToggleEdit: () -> Unit,
@@ -2775,6 +2795,7 @@ private fun StartPage(
         }
         Spacer(Modifier.height(30.dp))
 
+        if (showFavorites) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -2857,6 +2878,246 @@ private fun StartPage(
             }
         }
         }
+        if (showPrivacy) {
+            Spacer(Modifier.height(if (showFavorites) 18.dp else 0.dp))
+            PrivacyReportCard(
+                wallpaperBackdrop = wallpaperBackdrop,
+                blurEnabled = blurEnabled,
+                onLongPress = { onHide(HOME_PRIVACY) },
+            )
+        }
+        if (showRecent) {
+            Spacer(Modifier.height(12.dp))
+            HomeCard(
+                title = "最近浏览",
+                wallpaperBackdrop = wallpaperBackdrop,
+                blurEnabled = blurEnabled,
+                onLongPress = { onHide(HOME_RECENT) },
+            ) {
+                val items = recent.take(3)
+                if (items.isEmpty()) {
+                    HomeEmptyText("还没有浏览记录")
+                } else {
+                    items.forEach { entry ->
+                        HomeRow(
+                            primary = entry.title.ifBlank { entry.url },
+                            secondary = runCatching { android.net.Uri.parse(entry.url).host }.getOrNull().orEmpty(),
+                            onClick = { onOpen(entry.url) },
+                        )
+                    }
+                }
+            }
+        }
+        if (showDownloads) {
+            Spacer(Modifier.height(12.dp))
+            HomeCard(
+                title = "下载项",
+                wallpaperBackdrop = wallpaperBackdrop,
+                blurEnabled = blurEnabled,
+                onLongPress = { onHide(HOME_DOWNLOADS) },
+                onClick = onOpenDownloads,
+            ) {
+                val tasks = Downloader.tasks.toList().takeLast(3).reversed()
+                if (tasks.isEmpty()) {
+                    HomeEmptyText("还没有下载任务")
+                } else {
+                    tasks.forEach { t ->
+                        HomeRow(
+                            primary = t.name,
+                            secondary = when (t.state) {
+                                DownloadState.RUNNING -> "下载中 ${(Downloader.progressOf(t) * 100).toInt()}%"
+                                DownloadState.PAUSED -> "已暂停"
+                                DownloadState.DONE -> "已完成"
+                                DownloadState.FAILED -> "失败"
+                            },
+                            onClick = onOpenDownloads,
+                        )
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+/** 首页卡片的玻璃底板：与收藏卡片同一套 miuix-glass blur，无采样 / 关模糊时回退到实色。 */
+@Composable
+private fun Modifier.homeGlass(wallpaperBackdrop: LayerBackdrop?, blurEnabled: Boolean, radius: Int = 16): Modifier {
+    val shape = RoundedCornerShape(radius.dp)
+    val dark = isAppDarkTheme()
+    val useGlass = blurEnabled && wallpaperBackdrop != null
+    return this.glassPanel(
+        backdrop = if (useGlass) wallpaperBackdrop else null,
+        shape = GlassShape(radius.dp),
+        style = GlassDefaults.style(dark),
+        material = if (useGlass) GlassMaterials.puredThinGlass(dark) else null,
+        stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
+        shading = false,
+        fallback = Modifier
+            .clip(shape)
+            .background(MiuixTheme.colorScheme.surfaceContainerHigh, shape)
+            .border(
+                width = 1.dp,
+                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                shape = shape,
+            ),
+    )
+}
+
+/** 首页通用卡片：标题 + 内容；长按隐藏，可选整卡点击。隐私报告 / 最近浏览 / 下载项共用。 */
+@Composable
+private fun HomeCard(
+    title: String,
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
+    onLongPress: () -> Unit,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .homeGlass(wallpaperBackdrop, blurEnabled)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onClick?.invoke() },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MiuixTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+@Composable
+private fun HomeEmptyText(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun HomeRow(primary: String, secondary: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = primary,
+            fontSize = 14.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = secondary,
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 隐私报告：拦截广告数、处理指纹读取数、频繁获取敏感权限的网站提醒。 */
+@Composable
+private fun PrivacyReportCard(
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
+    onLongPress: () -> Unit,
+) {
+    val context = LocalContext.current
+    // 拦截计数在后台线程累加、不是 Compose 状态：可见期间低频轮询
+    val blocked by produceState(AdBlock.blockedTotal) {
+        while (true) {
+            value = AdBlock.blockedTotal
+            delay(1500)
+        }
+    }
+    val frequent = PrivacyStats.frequent(context)
+    HomeCard(
+        title = "隐私报告",
+        wallpaperBackdrop = wallpaperBackdrop,
+        blurEnabled = blurEnabled,
+        onLongPress = onLongPress,
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PrivacyStat(blocked.toString(), "已拦截广告", Modifier.weight(1f))
+            PrivacyStat(
+                if (AdBlock.fingerprintActive) AdBlock.fpReads.toString() else "—",
+                if (AdBlock.fingerprintActive) "已处理指纹读取" else "指纹保护未开启",
+                Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        )
+        Spacer(Modifier.height(8.dp))
+        if (frequent.isEmpty()) {
+            HomeEmptyText("近 24 小时没有网站频繁请求敏感权限")
+        } else {
+            frequent.take(2).forEach { f ->
+                Text(
+                    text = "${f.host} 近 24 小时请求${f.kinds.joinToString("、")} ${f.count} 次",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(vertical = 2.dp),
+                )
+            }
+            if (frequent.size > 2) {
+                HomeEmptyText("另有 ${frequent.size - 2} 个网站")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrivacyStat(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = value,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

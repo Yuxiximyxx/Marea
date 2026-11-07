@@ -14,12 +14,46 @@ val DOWNLOAD_MIN_MB_OPTIONS = listOf(10, 50, 100, 200, 500, 1024)
 /** 阈值档位的显示文字 */
 fun downloadThresholdLabel(mb: Int): String = if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
 
+/** 首页内容块 */
+const val HOME_FAVORITES = 0
+const val HOME_PRIVACY = 1
+const val HOME_RECENT = 2
+const val HOME_DOWNLOADS = 3
+
 class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_settings", Context.MODE_PRIVATE)
 
     var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
         private set
+
+    /** 首页内容显示：收藏 / 隐私报告默认显示，最近浏览 / 下载项默认隐藏。 */
+    var homeShowFavorites by mutableStateOf(prefs.getBoolean(KEY_HOME_FAV, true))
+        private set
+    var homeShowPrivacy by mutableStateOf(prefs.getBoolean(KEY_HOME_PRIVACY, true))
+        private set
+    var homeShowRecent by mutableStateOf(prefs.getBoolean(KEY_HOME_RECENT, false))
+        private set
+    var homeShowDownloads by mutableStateOf(prefs.getBoolean(KEY_HOME_DOWNLOADS, false))
+        private set
+
+    fun isHomeShown(kind: Int): Boolean = when (kind) {
+        HOME_FAVORITES -> homeShowFavorites
+        HOME_PRIVACY -> homeShowPrivacy
+        HOME_RECENT -> homeShowRecent
+        else -> homeShowDownloads
+    }
+
+    fun updateHomeShow(kind: Int, show: Boolean) {
+        val e = prefs.edit()
+        when (kind) {
+            HOME_FAVORITES -> { homeShowFavorites = show; e.putBoolean(KEY_HOME_FAV, show) }
+            HOME_PRIVACY -> { homeShowPrivacy = show; e.putBoolean(KEY_HOME_PRIVACY, show) }
+            HOME_RECENT -> { homeShowRecent = show; e.putBoolean(KEY_HOME_RECENT, show) }
+            HOME_DOWNLOADS -> { homeShowDownloads = show; e.putBoolean(KEY_HOME_DOWNLOADS, show) }
+        }
+        e.apply()
+    }
 
     /** 用户点了“忽略此版本”的版本号；只有出现比它更新的版本才会再次提示 */
     var ignoredUpdate by mutableStateOf(prefs.getString(KEY_IGNORED_UPDATE, "") ?: "")
@@ -394,6 +428,10 @@ class AppSettings(context: Context) {
 
     private companion object {
         const val KEY_BLUR = "blur"
+        const val KEY_HOME_FAV = "home_show_favorites"
+        const val KEY_HOME_PRIVACY = "home_show_privacy"
+        const val KEY_HOME_RECENT = "home_show_recent"
+        const val KEY_HOME_DOWNLOADS = "home_show_downloads"
         const val KEY_SAME_SITE_TAB = "same_site_new_tab"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_IGNORED_UPDATE = "ignored_update"

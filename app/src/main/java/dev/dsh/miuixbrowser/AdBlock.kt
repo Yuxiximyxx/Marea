@@ -93,6 +93,7 @@ data class LegacyAdSub(val name: String, val url: String, val enabled: Boolean)
 object AdBlock {
 
     const val FP_CANVAS = 1
+    const val FP_ALL = 15
     const val FP_UNPROTECTED_OBSERVE = 0
     const val FP_UNPROTECTED_RELOAD = 1
     const val FP_UNPROTECTED_STOP = 2
@@ -206,6 +207,8 @@ object AdBlock {
         fpWebgl = prefs.getBoolean("fp_webgl", false)
         fpAudio = prefs.getBoolean("fp_audio", false)
         fpFonts = prefs.getBoolean("fp_fonts", false)
+        fpReads = prefs.getLong("fp_reads", 0L)
+        fpSince = prefs.getLong("fp_since", 0L)
         refreshFpMask()
 
         subs.addAll(loadSubs())
@@ -242,6 +245,7 @@ object AdBlock {
     }
 
     fun updateFingerprint(kind: Int, value: Boolean) {
+        val wasOn = fpMask != 0
         when (kind) {
             FP_CANVAS -> { fpCanvas = value; prefs.edit().putBoolean("fp_canvas", value).apply() }
             FP_WEBGL -> { fpWebgl = value; prefs.edit().putBoolean("fp_webgl", value).apply() }
@@ -249,6 +253,7 @@ object AdBlock {
             FP_FONTS -> { fpFonts = value; prefs.edit().putBoolean("fp_fonts", value).apply() }
         }
         refreshFpMask()
+        if (!wasOn && fpMask != 0) resetFpReport()
     }
 
     private fun refreshFpMask() {
@@ -577,12 +582,53 @@ object AdBlock {
     /** 四项开关里至少开了一项（豁免列表与 origin 另算）。 */
     val fingerprintActive: Boolean get() = fpMask != 0
 
-    /** 本次启动以来被指纹保护处理过的读取次数（页面经 [TrustedChannel] 低频上报，仅作展示）。 */
-    var fpReadsSession by mutableLongStateOf(0L)
+    /**
+     * 自上次「从全关到开启」以来被指纹保护处理过的读取次数（页面经 [TrustedChannel] 低频上报，仅作展示）；
+     * 持久化，重启不清零，全部关闭后再开启时重新计数。
+     */
+    var fpReads by mutableLongStateOf(0L)
+        private set
+
+    /** 上次开启保护的时间（毫秒），0 表示从未开启过。 */
+    var fpSince by mutableLongStateOf(0L)
         private set
 
     fun recordFingerprintReads(n: Long) {
-        if (n > 0) fpReadsSession += n
+        if (n <= 0) return
+        fpReads += n
+        prefs.edit().putLong("fp_reads", fpReads).apply()
+    }
+
+    private fun resetFpReport() {
+        fpReads = 0L
+        fpSince = System.currentTimeMillis()
+        prefs.edit().putLong("fp_reads", 0L).putLong("fp_since", fpSince).apply()
+    }
+
+    /** 总开关：任一项开启即为开。 */
+    val fpMaster: Boolean get() = fpMask != 0
+
+    /**
+     * 总开关。开启：恢复上次的选择（没有记录则四项全开）；关闭：记住当前选择后全部关闭。
+     * 只有「全关 → 有开」才重置隐私报告的计数。
+     */
+    fun setFingerprintMaster(on: Boolean) {
+        val wasOn = fpMask != 0
+        if (on) {
+            val last = prefs.getInt("fp_last_mask", FP_ALL).and(FP_ALL).let { if (it == 0) FP_ALL else it }
+            fpCanvas = last and FP_CANVAS != 0
+            fpWebgl = last and FP_WEBGL != 0
+            fpAudio = last and FP_AUDIO != 0
+            fpFonts = last and FP_FONTS != 0
+        } else {
+            if (fpMask != 0) prefs.edit().putInt("fp_last_mask", fpMask).apply()
+            fpCanvas = false; fpWebgl = false; fpAudio = false; fpFonts = false
+        }
+        prefs.edit()
+            .putBoolean("fp_canvas", fpCanvas).putBoolean("fp_webgl", fpWebgl)
+            .putBoolean("fp_audio", fpAudio).putBoolean("fp_fonts", fpFonts).apply()
+        refreshFpMask()
+        if (!wasOn && fpMask != 0) resetFpReport()
     }
 
     /** 某个 origin 的指纹保护配置，内联进该 origin 专属的注入脚本。 */

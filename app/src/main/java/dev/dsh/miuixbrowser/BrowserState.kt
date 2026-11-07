@@ -1646,6 +1646,8 @@ class BrowserTab(private val appContext: Context) {
         anyOk: Boolean = false,
         result: (Boolean) -> Unit,
     ) {
+        // 隐私报告：记录请求本身（允许 / 拒绝都算），无痕标签页不记
+        if (!incognito) PrivacyStats.recordPermission(appContext, origin, what)
         when (mode) {
             2 -> result(false)
             1 -> ensureAndroid(perms, anyOk, result)
