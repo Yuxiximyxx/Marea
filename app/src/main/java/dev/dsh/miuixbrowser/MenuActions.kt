@@ -32,6 +32,7 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     Refresh("refresh", "刷新", MiuixIcons.Glass.Refresh),
     CopyLink("copy", "复制链接", MiuixIcons.Glass.Copy),
     External("external", "外部打开", MiuixIcons.Glass.Link),
+    SendToDesktop("send_to_desktop", "发送到桌面", AppIcons.SendToDesktop),
     Settings("settings", "设置", MiuixIcons.Glass.Settings),
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),

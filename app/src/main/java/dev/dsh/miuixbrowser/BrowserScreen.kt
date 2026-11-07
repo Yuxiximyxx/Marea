@@ -1591,6 +1591,7 @@ fun BrowserScreen(
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tab.url)))
                                 }
                             }
+                            MenuAction.SendToDesktop -> ShortcutHelper.sendToDesktop(context, scope, tab)
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
                             MenuAction.Extensions -> pushPage(AppRoute.Extensions)
