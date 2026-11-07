@@ -63,18 +63,24 @@
       return h >>> 0;
     }
 
-    /** 用我们的函数替换原型上的方法，并让它们的 toString() 看起来仍是原生函数 */
+    /**
+     * 用 Proxy 包装原生函数：name / length / 无 prototype / 不可 new 等属性与原生完全一致，
+     * toString() 仍返回原生源码。（以前用普通 function 包装，带 prototype、可被 new，会被识别为「被篡改」）
+     */
+    function wrap(orig, impl) {
+      var p = new Proxy(orig, {
+        apply: function (t, thisArg, args) { return impl.apply(thisArg, args); }
+      });
+      try { fakeSrc.set(p, nativeToString.call(orig)); } catch (e) {}
+      return p;
+    }
+
     function hook(obj, name, make) {
       try {
         if (!obj) return;
         var d = Object.getOwnPropertyDescriptor(obj, name);
         if (!d || typeof d.value !== 'function') return;
-        var orig = d.value;
-        var fn = make(orig);
-        try { Object.defineProperty(fn, 'name', { value: name, configurable: true }); } catch (e) {}
-        try { Object.defineProperty(fn, 'length', { value: orig.length, configurable: true }); } catch (e) {}
-        fakeSrc.set(fn, nativeToString.call(orig));
-        d.value = fn;
+        d.value = wrap(d.value, make(d.value));
         Object.defineProperty(obj, name, d);
       } catch (e) {}
     }
@@ -84,35 +90,75 @@
         if (!obj) return;
         var d = Object.getOwnPropertyDescriptor(obj, name);
         if (!d || typeof d.get !== 'function') return;
-        var orig = d.get;
-        var fn = make(orig);
-        try { Object.defineProperty(fn, 'name', { value: 'get ' + name, configurable: true }); } catch (e) {}
-        fakeSrc.set(fn, nativeToString.call(orig));
-        d.get = fn;
+        d.get = wrap(d.get, make(d.get));
         Object.defineProperty(obj, name, d);
       } catch (e) {}
     }
 
-    var patchedToString = function toString() {
-      var s = fakeSrc.get(this);
-      return s !== undefined ? s : nativeToString.call(this);
-    };
-    fakeSrc.set(patchedToString, nativeToString.call(nativeToString));
+    /** 每个窗口用自己的 Function.prototype.toString 做 Proxy；被我们包装过的函数返回其原生源码 */
+    function patchToString(W) {
+      try {
+        var ts = W.Function.prototype.toString;
+        var p = new Proxy(ts, {
+          apply: function (t, thisArg, args) {
+            var s = (thisArg !== null && (typeof thisArg === 'function' || typeof thisArg === 'object')) ? fakeSrc.get(thisArg) : undefined;
+            return s !== undefined ? s : Reflect.apply(t, thisArg, args);
+          }
+        });
+        fakeSrc.set(p, nativeToString.call(ts));
+        var d = Object.getOwnPropertyDescriptor(W.Function.prototype, 'toString');
+        d.value = p;
+        Object.defineProperty(W.Function.prototype, 'toString', d);
+      } catch (e) {}
+    }
 
     /* ---------------- Canvas / WebGL 像素噪声 ---------------- */
 
-    /** 在 RGBA 数据里随机挑一些不透明像素，把某个颜色通道 ±1（不动 alpha） */
-    function noisePixels(data, pixels) {
-      if (!data || pixels < 64 || pixels > MAX_PIXELS || data.length < pixels * 4) return;
-      var r = nextRng();
-      var tries = 32 + Math.min(4000, (pixels / 100) | 0);
-      for (var k = 0; k < tries; k++) {
-        var i = ((r() * pixels) | 0) * 4;
-        if (data[i + 3] === 0) continue;
-        var c = i + ((r() * 3) | 0);
-        var v = data[c];
-        data[c] = v === 0 ? 1 : v === 255 ? 254 : (r() < 0.5 ? v - 1 : v + 1);
+    /** 按（种子, 画布坐标）得到稳定的 32 位哈希：同一站点同一会话里，同一像素永远得到同样的噪声 */
+    function pxHash(x, y) {
+      var h = (SEED ^ Math.imul(x + 1, 0x9E3779B1) ^ Math.imul(y + 1, 0x85EBCA6B)) >>> 0;
+      h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D);
+      h ^= h >>> 12; h = Math.imul(h, 0x297A2D39);
+      h ^= h >>> 15;
+      return h >>> 0;
+    }
+
+    /** 画面几乎是纯色（空白 / 纯色填充）：不加噪，避免被「纯色读回校验」识别为篡改 */
+    function isFlat(data, n) {
+      var seen = 0, c0 = -1, c1 = -1, c2 = -1;
+      for (var i = 0; i < n; i++) {
+        var o = i * 4;
+        var c = ((data[o] << 24) | (data[o + 1] << 16) | (data[o + 2] << 8) | data[o + 3]) >>> 0;
+        if (c === c0 || c === c1 || c === c2) continue;
+        if (seen === 0) c0 = c; else if (seen === 1) c1 = c; else c2 = c;
+        if (++seen > 3) return false;
       }
+      return true;
+    }
+
+    /**
+     * 确定性加噪：约 1/64 的像素把一个颜色通道 ±1（不动 alpha）。
+     * 噪声只取决于「种子 + 像素在整张画布里的坐标」，所以同一画布重复读取、getImageData / toDataURL / toBlob
+     * 之间、分块读取结果都一致——不会再出现「Canvas 不稳定」。(ox, oy) 是该块数据在画布里的左上角。
+     * changed 不为空时，记录被修改的像素下标。返回是否有修改。
+     */
+    function noisePixels(data, w, h, ox, oy, changed) {
+      var n = w * h;
+      if (!data || !(w > 0) || !(h > 0) || n < 256 || n > MAX_PIXELS || data.length < n * 4) return false;
+      if (isFlat(data, n)) return false;
+      var any = false;
+      for (var i = 0; i < n; i++) {
+        var o = i * 4;
+        if (data[o + 3] === 0) continue;
+        var hv = pxHash(ox + (i % w), oy + ((i / w) | 0));
+        if ((hv & 63) !== 0) continue;
+        var c = o + (((hv >>> 6) % 3));
+        var v = data[c];
+        data[c] = v === 0 ? 1 : v === 255 ? 254 : ((hv >>> 8) & 1 ? v - 1 : v + 1);
+        any = true;
+        if (changed) changed.push(i);
+      }
+      return any;
     }
 
     function noiseFloats(arr, step, rel) {
@@ -145,7 +191,7 @@
       if (installed.has(W)) return;
       installed.add(W);
 
-      try { W.Function.prototype.toString = patchedToString; } catch (e) {}
+      patchToString(W);
 
       var CP = W.HTMLCanvasElement && W.HTMLCanvasElement.prototype;
       var C2 = W.CanvasRenderingContext2D && W.CanvasRenderingContext2D.prototype;
@@ -161,7 +207,7 @@
         hook(CP, 'getContext', function (orig) {
           return function getContext(type) {
             var c = orig.apply(this, arguments);
-            if (c) { try { ctxType.set(this, String(type)); } catch (e) {} }
+            if (c) { try { if (!ctxType.has(this)) ctxType.set(this, String(type)); } catch (e) {} }
             return c;
           };
         });
@@ -172,77 +218,91 @@
           return /webgl|experimental/i.test(t) ? (MASK & WEBGL) !== 0 : (MASK & CANVAS) !== 0;
         };
 
-        var noisyCopy = function (src, w, h) {
-          var t = W.document.createElement('canvas');
-          t.width = w;
-          t.height = h;
-          var c = origGetContext.call(t, '2d');
-          origDrawImage.call(c, src, 0, 0);
-          var img = origGetImageData.call(c, 0, 0, w, h);
-          noisePixels(img.data, w * h);
-          origPutImageData.call(c, img, 0, 0);
-          return t;
+        /**
+         * 导出用：复制画布，仅把被改动的像素逐个写回（1x1 putImageData），其余像素由 drawImage 原样拷贝，
+         * 不做整幅 get/putImageData 往返（半透明像素预乘往返会产生额外误差）。
+         * 画面是纯色 / 没有任何像素被改动时返回 null，调用方直接用原画布导出。
+         */
+        var noisyCopy = function (src, w, h, make2D, getData, putData, draw, mkImageData) {
+          var c = make2D();
+          draw.call(c, src, 0, 0);
+          var img = getData.call(c, 0, 0, w, h);
+          var changed = [];
+          if (!noisePixels(img.data, w, h, 0, 0, changed)) return null;
+          for (var k = 0; k < changed.length; k++) {
+            var i = changed[k], o = i * 4;
+            var one = mkImageData();
+            one.data[0] = img.data[o]; one.data[1] = img.data[o + 1];
+            one.data[2] = img.data[o + 2]; one.data[3] = img.data[o + 3];
+            putData.call(c, one, i % w, (i / w) | 0);
+          }
+          return c.canvas;
         };
 
-        hook(CP, 'toDataURL', function (orig) {
-          return function toDataURL() {
+        var copyHtml = function (canvas, w, h) {
+          var t;
+          return noisyCopy(canvas, w, h, function () {
+            t = W.document.createElement('canvas');
+            t.width = w; t.height = h;
+            return origGetContext.call(t, '2d');
+          }, origGetImageData, origPutImageData, origDrawImage, function () { return new W.ImageData(1, 1); });
+        };
+
+        var exporter = function (orig) {
+          return function () {
             try {
               var w = this.width, h = this.height;
               if (w > 0 && h > 0 && w * h <= MAX_PIXELS && farbleCanvas(this)) {
-                return orig.apply(noisyCopy(this, w, h), arguments);
+                var t = copyHtml(this, w, h);
+                if (t) return orig.apply(t, arguments);
               }
             } catch (e) {} // 画布被污染等情况：交给原函数照常报错
             return orig.apply(this, arguments);
           };
-        });
-
-        hook(CP, 'toBlob', function (orig) {
-          return function toBlob() {
-            try {
-              var w = this.width, h = this.height;
-              if (w > 0 && h > 0 && w * h <= MAX_PIXELS && farbleCanvas(this)) {
-                return orig.apply(noisyCopy(this, w, h), arguments);
-              }
-            } catch (e) {}
-            return orig.apply(this, arguments);
-          };
-        });
+        };
+        hook(CP, 'toDataURL', function (orig) { var f = exporter(orig); return function toDataURL() { return f.apply(this, arguments); }; });
+        hook(CP, 'toBlob', function (orig) { var f = exporter(orig); return function toBlob() { return f.apply(this, arguments); }; });
 
         if (MASK & CANVAS) {
-          hook(C2, 'getImageData', function (orig) {
-            return function getImageData() {
+          var gid = function (orig) {
+            return function getImageData(sx, sy, sw, sh) {
               var img = orig.apply(this, arguments);
-              try { if (img && img.data) noisePixels(img.data, img.width * img.height); } catch (e) {}
-              return img;
-            };
-          });
-
-          var OC = W.OffscreenCanvasRenderingContext2D && W.OffscreenCanvasRenderingContext2D.prototype;
-          hook(OC, 'getImageData', function (orig) {
-            return function getImageData() {
-              var img = orig.apply(this, arguments);
-              try { if (img && img.data) noisePixels(img.data, img.width * img.height); } catch (e) {}
-              return img;
-            };
-          });
-
-          var OCV = W.OffscreenCanvas && W.OffscreenCanvas.prototype;
-          hook(OCV, 'convertToBlob', function (orig) {
-            return function convertToBlob() {
               try {
-                var w = this.width, h = this.height;
-                if (w > 0 && h > 0 && w * h <= MAX_PIXELS) {
-                  var t = new W.OffscreenCanvas(w, h);
-                  var c = t.getContext('2d');
-                  c.drawImage(this, 0, 0);
-                  var img = c.getImageData(0, 0, w, h); // 这里会经过上面的 getImageData 加噪
-                  c.putImageData(img, 0, 0);
-                  return orig.apply(t, arguments);
+                if (img && img.data) {
+                  var ox = Math.floor(+sx || 0), oy = Math.floor(+sy || 0);
+                  if (sw < 0) ox += Math.floor(sw);
+                  if (sh < 0) oy += Math.floor(sh);
+                  noisePixels(img.data, img.width, img.height, ox, oy, null);
                 }
               } catch (e) {}
-              return orig.apply(this, arguments);
+              return img;
             };
-          });
+          };
+          hook(C2, 'getImageData', gid);
+
+          var OC = W.OffscreenCanvasRenderingContext2D && W.OffscreenCanvasRenderingContext2D.prototype;
+          var origOGetImageData = OC && OC.getImageData;
+          var origOPutImageData = OC && OC.putImageData;
+          var origODrawImage = OC && OC.drawImage;
+          hook(OC, 'getImageData', gid);
+
+          var OCV = W.OffscreenCanvas && W.OffscreenCanvas.prototype;
+          if (OC && OCV) {
+            hook(OCV, 'convertToBlob', function (orig) {
+              return function convertToBlob() {
+                try {
+                  var w = this.width, h = this.height;
+                  if (w > 0 && h > 0 && w * h <= MAX_PIXELS) {
+                    var t = noisyCopy(this, w, h, function () {
+                      return new W.OffscreenCanvas(w, h).getContext('2d');
+                    }, origOGetImageData, origOPutImageData, origODrawImage, function () { return new W.ImageData(1, 1); });
+                    if (t) return orig.apply(t, arguments);
+                  }
+                } catch (e) {}
+                return orig.apply(this, arguments);
+              };
+            });
+          }
         }
       }
 
@@ -265,7 +325,7 @@
               var r = orig.apply(this, arguments);
               try {
                 if (format === 0x1908 && type === 0x1401 && pixels && pixels.length >= w * h * 4) {
-                  noisePixels(pixels, w * h);
+                  noisePixels(pixels, w, h, x, y, null);
                 }
               } catch (e) {}
               return r;
