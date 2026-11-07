@@ -42,6 +42,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -80,6 +81,7 @@ fun AboutScreen(
     val scope = rememberCoroutineScope()
     val kernel = webViewVersion() ?: "未知"
     val ua = remember { runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault("未知") }
+    val dependencyGroups = remember { parseDependencyVersions(BuildConfig.DEP_VERSIONS) }
     var checkingUpdate by remember { mutableStateOf(false) }
 
     val pageBackdrop = rememberLayerBackdrop()
@@ -234,9 +236,11 @@ fun AboutScreen(
                         selectedIndex = updateChannel.coerceIn(0, 1),
                         onSelectedIndexChange = onUpdateChannelChange,
                     )
-                    AboutRow("miuix", "0.9.4 · miuix-glass")
                     AboutRow("内核版本", kernel)
                 }
+
+                SmallTitle(text = "依赖版本")
+                DependencyVersionsCard(dependencyGroups)
 
                 SmallTitle(text = "本机 UA")
                 Card(
@@ -278,12 +282,24 @@ fun AboutScreen(
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Text(
-                    text = "Mafari · 基于 miuix 与系统 WebView",
-                    fontSize = 12.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "Mafari · 基于 miuix 与系统 WebView",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = COPYRIGHT,
+                        fontSize = 11.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
 
             // 应用内下载更新（不再跳浏览器）
@@ -346,6 +362,7 @@ data class AppRelease(
 )
 
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
+private const val COPYRIGHT = "Copyright © 2026 rosenii. All rights reserved."
 private const val RELEASES_API = "https://api.github.com/repos/rosenii/mafari/releases?per_page=30"
 
 /** 预览类后缀；带这些后缀的 tag 归入 dev 分支（-dev 为主，其余预览后缀一并算 dev） */
@@ -430,6 +447,78 @@ private fun AboutRow(title: String, value: String) {
             fontSize = 12.sp,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 依赖版本分组：BuildConfig.DEP_VERSIONS 里的分组标识 → 界面标题 */
+private val DEP_GROUP_TITLES = mapOf(
+    "ui" to "界面",
+    "androidx" to "AndroidX",
+    "build" to "构建工具链",
+)
+
+private class DependencyGroup(val title: String, val items: List<Pair<String, String>>)
+
+/** 解析 "分组|名称|版本;分组|名称|版本…"（由 app/build.gradle.kts 生成），保持声明顺序 */
+private fun parseDependencyVersions(raw: String): List<DependencyGroup> =
+    raw.split(';')
+        .mapNotNull { entry ->
+            val p = entry.split('|')
+            if (p.size == 3) Triple(p[0], p[1], p[2]) else null
+        }
+        .groupBy({ it.first }, { it.second to it.third })
+        .map { (key, items) -> DependencyGroup(DEP_GROUP_TITLES[key] ?: key, items) }
+
+/** 依赖版本：分组小标题 + 两列紧凑网格（名称在上、版本在下） */
+@Composable
+private fun DependencyVersionsCard(groups: List<DependencyGroup>) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        groups.forEachIndexed { index, group ->
+            if (index > 0) Spacer(Modifier.height(10.dp))
+            Text(
+                text = group.title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(3.dp))
+            group.items.chunked(2).forEach { pair ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    pair.forEach { (name, version) ->
+                        DependencyCell(name, version, Modifier.weight(1f))
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DependencyCell(name: String, version: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = name,
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = version,
+            fontSize = 11.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }

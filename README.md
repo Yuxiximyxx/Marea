@@ -68,7 +68,7 @@
 
 ```bash
 # 需要 JDK 17+（推荐 21）、Android SDK（platforms;android-37.0、build-tools;36.0.0）
-# 根工程 Gradle 9.8.2；miuix 源码在 ./miuix，由 includeBuild 参与构建
+# 根工程 Gradle 9.9.0；miuix 源码在 ./miuix，由 includeBuild 参与构建
 ./gradlew :app:assembleDebug     # app/build/outputs/apk/debug/app-debug.apk
 ```
 

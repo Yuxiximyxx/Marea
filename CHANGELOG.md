@@ -2,6 +2,18 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.5-dev]
+
+- 新增：关于页「依赖版本」——位于「版本」与「本机 UA」之间，按「界面 / AndroidX / 构建工具链」分组，两列紧凑显示各依赖版本（miuix-glass、Backdrop、Compose Multiplatform、Activity Compose、Core KTX、WebKit、Credentials、Browser、NavigationEvent、Kotlin、AGP、Gradle）；版本号由 `app/build.gradle.kts` 统一声明并写入 `BuildConfig.DEP_VERSIONS`，不再在界面里硬编码；「版本」卡中原来手写的 miuix 一行并入此处
+- 新增：关于页底部加入 Copyright 信息
+- 依赖：androidx.core:core-ktx 1.17.0 → 1.19.1
+- 依赖：androidx.credentials:credentials / credentials-play-services-auth 1.5.0 → 1.6.0
+- 依赖：androidx.browser:browser 1.8.0 → 1.10.0
+- 依赖：Android Gradle Plugin 9.4.1 → 9.5.0（app 与 miuix 子工程同步）
+- 依赖：Gradle 9.8.2 → 9.9.0
+- 依赖：GitHub Actions——checkout v4 → v7、setup-java v4 → v5、setup-gradle v4 → v6（缓存使用开源的 basic 实现）、cache v4 → v5、upload-artifact v4 → v7、action-gh-release v2 → v3
+- 依赖：已是最新、无需变动——androidx.webkit 1.18.0、androidx.activity:activity-compose 1.13.0、androidx.navigationevent:navigationevent-compose 1.2.0、Kotlin 2.4.21、Compose Multiplatform 1.12.2、Backdrop 2.0.1
+
 ## [1.8.2-dev]
 
 - 重构：指纹保护改为「origin-scoped document-start 注入 + 原生内联配置」——每个 origin 单独生成脚本并按 origin 注册，配置只存在于脚本闭包，页面无法再询问或枚举其他站点的配置；移除页面可调用的 `MafariAdblock.fp(host, topHost)`（去广告的 `css()` 桥不变）
@@ -16,7 +28,6 @@
 - 新增：首页「隐私报告」卡（玻璃 blur）：已拦截广告数、已处理指纹读取数、近 24 小时频繁请求摄像头 / 麦克风 / 定位的网站提醒（次数 ≥ 3，只记主机名与时间，无痕不记）；长按可隐藏
 - 新增：设置 → 布局 →「首页内容显示」——个人收藏 / 隐私报告 / 最近浏览 / 下载项逐项显示或隐藏；最近浏览、下载项复用隐私报告同一套卡片布局（默认隐藏，无痕首页不显示最近浏览）
 - 新增：指纹保护的重定向 / 跨源 iframe 缺口收窄（预注册 + 落地检测 + 明确边界）——按「站点」分组注册（裸域 + `*.站点` 同一份脚本、同一个 seed，覆盖 www ↔ m ↔ login 站内跳转；站点下有豁免条目时不使用通配）；`assets/mafari_fp_prereg.json` 预注册清单（redirects：站点 → 重定向落点；embeds：嵌入方 → 被嵌入的跨源框架，首次导航前批量注册并固定）；脚本按「规则集合 + 允许的嵌入方」校验 self.origin 与祖先链，清单外的跨源 iframe 仍不保护；onPageStarted / doUpdateVisitedHistory 检测「落在未注册 origin」，设置 → 指纹保护 →「未预注册页面的兜底」可选仅记录 / 停止并在保护下重载（默认，带一次性凭证的登录回调除外）/ 停止加载
-
 
 ## [1.8.1-dev]
 
