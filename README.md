@@ -90,6 +90,10 @@ git tag v3.3.0 && git push origin v3.3.0
 | `KEY_ALIAS` | key 别名 |
 | `KEY_PASSWORD` | key 口令 |
 
+## 许可证
+
+本项目以 [Apache License 2.0](LICENSE) 发布；内置的 `miuix/` 子工程同为 Apache-2.0，见 [miuix/LICENSE](miuix/LICENSE)。
+
 ## 项目地址
 
 https://github.com/rosenii/mafari

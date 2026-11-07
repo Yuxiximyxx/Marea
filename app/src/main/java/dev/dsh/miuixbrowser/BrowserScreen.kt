@@ -129,6 +129,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
+import kotlinx.coroutines.CoroutineStart
 
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -1029,6 +1035,8 @@ fun BrowserScreen(
                         showPrivacy = settings.homeShowPrivacy,
                         showRecent = settings.homeShowRecent && !tab.incognito,
                         showDownloads = settings.homeShowDownloads,
+                        order = settings.homeOrder,
+                        onReorder = { settings.updateHomeOrder(it) },
                         recent = history.items,
                         onOpenDownloads = { pushPage(AppRoute.Downloads) },
                         onHide = { kind ->
@@ -2750,6 +2758,142 @@ private fun removeElementJs(selector: String): String =
 
 /* ------------------------------ 主页 ------------------------------ */
 
+/** 首页内容块的拖动排序状态（收藏整体算一个块）。 */
+private class HomeReorderState {
+    var dragging by mutableIntStateOf(-1)
+    var offset by mutableFloatStateOf(0f)
+    var live by mutableStateOf<List<Int>>(emptyList())
+    var suppressClick = false
+    var colWindowTop = 0f
+    var rootTop = 0f
+    var rootHeight = 0f
+    val tops = HashMap<Int, Float>()
+    val heights = HashMap<Int, Float>()
+    private val anims = HashMap<Int, Animatable<Float, AnimationVector1D>>()
+
+    fun animFor(kind: Int): Animatable<Float, AnimationVector1D> = anims.getOrPut(kind) { Animatable(0f) }
+
+    /** 被拖块的中线越过相邻块的中线就交换位置，并补偿偏移让它始终跟手。 */
+    fun swapIfNeeded(gapPx: Float) {
+        val k = dragging
+        val list = live
+        val i = list.indexOf(k)
+        if (i < 0) return
+        val kTop = tops[k] ?: return
+        val kH = heights[k] ?: return
+        val center = kTop + offset + kH / 2f
+        if (i > 0) {
+            val p = list[i - 1]
+            val pTop = tops[p] ?: return
+            val pH = heights[p] ?: return
+            if (center < pTop + pH / 2f) {
+                offset += kTop - pTop
+                tops[p] = pTop + kH + gapPx
+                tops[k] = pTop
+                live = list.toMutableList().also { it[i - 1] = k; it[i] = p }
+                return
+            }
+        }
+        if (i < list.lastIndex) {
+            val n = list[i + 1]
+            val nH = heights[n] ?: return
+            val nTop = tops[n] ?: return
+            if (center > nTop + nH / 2f) {
+                val newTop = kTop + nH + gapPx
+                offset += kTop - newTop
+                tops[n] = kTop
+                tops[k] = newTop
+                live = list.toMutableList().also { it[i] = n; it[i + 1] = k }
+            }
+        }
+    }
+}
+
+/** 记录块位置 / 高度；顺序变化时其它块平滑让位，被拖块跟随手指。 */
+@Composable
+private fun Modifier.homeReorderItem(kind: Int, st: HomeReorderState): Modifier {
+    val scope = rememberCoroutineScope()
+    val anim = remember(kind) { st.animFor(kind) }
+    val lastTop = remember { floatArrayOf(Float.NaN) }
+    return this
+        .onGloballyPositioned { c ->
+            val top = c.positionInParent().y
+            st.heights[kind] = c.size.height.toFloat()
+            val prev = lastTop[0]
+            if (!prev.isNaN() && prev != top && st.dragging != kind) {
+                scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    anim.snapTo(anim.value + prev - top)
+                    anim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                }
+            }
+            lastTop[0] = top
+            st.tops[kind] = top
+        }
+        .graphicsLayer {
+            val d = st.dragging == kind
+            translationY = if (d) st.offset else anim.value
+            val sc = if (d) 1.02f else 1f
+            scaleX = sc
+            scaleY = sc
+        }
+        .zIndex(if (st.dragging == kind) 1f else 0f)
+}
+
+/** 长按后上下拖动的手势；松手时把新顺序交给 [onCommit]。 */
+@Composable
+private fun Modifier.homeReorderHandle(
+    kind: Int,
+    st: HomeReorderState,
+    visible: List<Int>,
+    gapPx: Float,
+    onCommit: (List<Int>) -> Unit,
+): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val visibleNow by rememberUpdatedState(visible)
+    val commit by rememberUpdatedState(onCommit)
+    val finish = {
+        if (st.dragging == kind) {
+            val anim = st.animFor(kind)
+            commit(st.live)
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                anim.snapTo(st.offset)
+                st.dragging = -1
+                st.offset = 0f
+                anim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+            }
+            scope.launch {
+                delay(250)
+                st.suppressClick = false
+            }
+        }
+    }
+    return this.pointerInput(kind) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                st.suppressClick = true
+                st.live = visibleNow
+                st.offset = st.animFor(kind).value
+                st.dragging = kind
+            },
+            onDrag = { change, amount ->
+                change.consume()
+                st.offset += amount.y
+                st.swapIfNeeded(gapPx)
+            },
+            onDragEnd = { finish() },
+            onDragCancel = { finish() },
+        )
+    }
+}
+
+/** 把「可见块的新顺序」合并回完整顺序：隐藏块的位置保持不变。 */
+private fun mergeHomeOrder(full: List<Int>, visible: List<Int>): List<Int> {
+    val it = visible.iterator()
+    return full.map { k -> if (k in visible && it.hasNext()) it.next() else k }
+}
+
 @Composable
 private fun StartPage(
     scrollState: ScrollState,
@@ -2761,6 +2905,8 @@ private fun StartPage(
     showPrivacy: Boolean,
     showRecent: Boolean,
     showDownloads: Boolean,
+    order: List<Int>,
+    onReorder: (List<Int>) -> Unit,
     recent: List<HistoryEntry>,
     onOpenDownloads: () -> Unit,
     onHide: (kind: Int) -> Unit,
@@ -2771,10 +2917,57 @@ private fun StartPage(
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
+    val density = LocalDensity.current
+    val gapPx = with(density) { 14.dp.toPx() }
+    val hasWallpaper = wallpaper != null
+    val st = remember { HomeReorderState() }
+    val visibleKinds = order.filter {
+        when (it) {
+            HOME_FAVORITES -> showFavorites
+            HOME_PRIVACY -> showPrivacy
+            HOME_RECENT -> showRecent
+            else -> showDownloads
+        }
+    }
+    val shown = if (st.dragging >= 0) st.live else visibleKinds
+    val commit: (List<Int>) -> Unit = { onReorder(mergeHomeOrder(order, it)) }
+    // 长按拖动结束后的短时间内忽略点击，避免松手触发卡片 / 条目的点击
+    val guard: (() -> Unit) -> (() -> Unit) = { f -> { if (!st.suppressClick) f() } }
+
+    // 拖到视口边缘时自动滚动
+    LaunchedEffect(st.dragging) {
+        if (st.dragging < 0) return@LaunchedEffect
+        val topEdge = with(density) { 90.dp.toPx() }
+        val bottomEdge = with(density) { 150.dp.toPx() }
+        while (st.dragging >= 0) {
+            val k = st.dragging
+            val top = st.colWindowTop - st.rootTop + (st.tops[k] ?: 0f) + st.offset
+            val bottom = top + (st.heights[k] ?: 0f)
+            val limit = st.rootHeight - bottomEdge
+            val dy = when {
+                top < topEdge -> -(topEdge - top) / topEdge * 24f
+                st.rootHeight > 0f && bottom > limit -> (bottom - limit) / bottomEdge * 24f
+                else -> 0f
+            }.coerceIn(-24f, 24f)
+            if (dy != 0f) {
+                val consumed = scrollState.scrollBy(dy)
+                if (consumed != 0f) {
+                    st.offset += consumed
+                    st.swapIfNeeded(gapPx)
+                }
+            }
+            delay(16)
+        }
+    }
+
     // 根 Box 吸收空白区点击，避免穿透到下层 WebView（子项仍优先命中）
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned {
+                st.rootTop = it.positionInWindow().y
+                st.rootHeight = it.size.height.toFloat()
+            }
             .pointerInput(Unit) {
                 detectTapGestures { /* absorb empty-area taps on home */ }
             },
@@ -2786,18 +2979,127 @@ private fun StartPage(
                 .padding(horizontal = 20.dp)
                 .padding(top = 44.dp, bottom = 150.dp),
         ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            GlassLogoText("Mafari", fontSize = 58)
-        }
-        Spacer(Modifier.height(30.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassLogoText("Mafari", fontSize = 58)
+            }
+            Spacer(Modifier.height(30.dp))
 
-        if (showFavorites) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { st.colWindowTop = it.positionInWindow().y },
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                shown.forEach { kind ->
+                    key(kind) {
+                        val itemMod = Modifier.homeReorderItem(kind, st)
+                        val handle = Modifier.homeReorderHandle(kind, st, visibleKinds, gapPx, commit)
+                        when (kind) {
+                            HOME_FAVORITES -> FavoritesBlock(
+                                modifier = itemMod,
+                                headerModifier = handle,
+                                favorites = favorites,
+                                wallpaper = wallpaper,
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                blurEnabled = blurEnabled,
+                                editing = editing,
+                                guard = guard,
+                                onOpen = onOpen,
+                                onToggleEdit = onToggleEdit,
+                                onRemove = onRemove,
+                                onEdit = onEdit,
+                                onAdd = onAdd,
+                            )
+                            HOME_PRIVACY -> PrivacyReportCard(
+                                modifier = itemMod.then(handle),
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                blurEnabled = blurEnabled,
+                                hasWallpaper = hasWallpaper,
+                                onRemove = { onHide(HOME_PRIVACY) },
+                            )
+                            HOME_RECENT -> HomeCard(
+                                modifier = itemMod.then(handle),
+                                title = "最近浏览",
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                blurEnabled = blurEnabled,
+                                hasWallpaper = hasWallpaper,
+                                onRemove = { onHide(HOME_RECENT) },
+                            ) {
+                                val items = recent.take(3)
+                                if (items.isEmpty()) {
+                                    HomeEmptyText("还没有浏览记录")
+                                } else {
+                                    items.forEach { entry ->
+                                        HomeRow(
+                                            primary = entry.title.ifBlank { entry.url },
+                                            secondary = runCatching { android.net.Uri.parse(entry.url).host }.getOrNull().orEmpty(),
+                                            onClick = guard { onOpen(entry.url) },
+                                        )
+                                    }
+                                }
+                            }
+                            else -> HomeCard(
+                                modifier = itemMod.then(handle),
+                                title = "下载项",
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                blurEnabled = blurEnabled,
+                                hasWallpaper = hasWallpaper,
+                                onRemove = { onHide(HOME_DOWNLOADS) },
+                                onClick = guard(onOpenDownloads),
+                            ) {
+                                val tasks = Downloader.tasks.toList().takeLast(3).reversed()
+                                if (tasks.isEmpty()) {
+                                    HomeEmptyText("还没有下载任务")
+                                } else {
+                                    tasks.forEach { t ->
+                                        HomeRow(
+                                            primary = t.name,
+                                            secondary = when (t.state) {
+                                                DownloadState.RUNNING -> "下载中 ${(Downloader.progressOf(t) * 100).toInt()}%"
+                                                DownloadState.PAUSED -> "已暂停"
+                                                DownloadState.DONE -> "已完成"
+                                                DownloadState.FAILED -> "失败"
+                                            },
+                                            onClick = guard(onOpenDownloads),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 个人收藏：整体作为一个大块参与排序；长按「收藏」标题行拖动，磁贴长按仍是进入编辑。 */
+@Composable
+private fun FavoritesBlock(
+    modifier: Modifier,
+    headerModifier: Modifier,
+    favorites: List<Favorite>,
+    wallpaper: ImageBitmap?,
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
+    editing: Boolean,
+    guard: (() -> Unit) -> (() -> Unit),
+    onOpen: (String) -> Unit,
+    onToggleEdit: () -> Unit,
+    onRemove: (Int) -> Unit,
+    onEdit: (Int) -> Unit,
+    onAdd: () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 32.dp)
+                .then(headerModifier),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -2821,7 +3123,7 @@ private fun StartPage(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             favorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
                 Row(
@@ -2837,7 +3139,7 @@ private fun StartPage(
                             blurEnabled = blurEnabled,
                             editing = editing,
                             modifier = Modifier.weight(1f),
-                            onClick = {
+                            onClick = guard {
                                 if (editing) onEdit(index) else onOpen(favorite.url)
                             },
                             onLongPress = {
@@ -2847,9 +3149,6 @@ private fun StartPage(
                         )
                     }
                     repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                    if (editing && rowIndex == favorites.chunked(3).lastIndex && rowItems.size == 3) {
-                        // 满行时最后单独加一行
-                    }
                 }
             }
             if (editing) {
@@ -2877,72 +3176,17 @@ private fun StartPage(
                 }
             }
         }
-        }
-        if (showPrivacy) {
-            Spacer(Modifier.height(if (showFavorites) 18.dp else 0.dp))
-            PrivacyReportCard(
-                wallpaperBackdrop = wallpaperBackdrop,
-                blurEnabled = blurEnabled,
-                onLongPress = { onHide(HOME_PRIVACY) },
-            )
-        }
-        if (showRecent) {
-            Spacer(Modifier.height(12.dp))
-            HomeCard(
-                title = "最近浏览",
-                wallpaperBackdrop = wallpaperBackdrop,
-                blurEnabled = blurEnabled,
-                onLongPress = { onHide(HOME_RECENT) },
-            ) {
-                val items = recent.take(3)
-                if (items.isEmpty()) {
-                    HomeEmptyText("还没有浏览记录")
-                } else {
-                    items.forEach { entry ->
-                        HomeRow(
-                            primary = entry.title.ifBlank { entry.url },
-                            secondary = runCatching { android.net.Uri.parse(entry.url).host }.getOrNull().orEmpty(),
-                            onClick = { onOpen(entry.url) },
-                        )
-                    }
-                }
-            }
-        }
-        if (showDownloads) {
-            Spacer(Modifier.height(12.dp))
-            HomeCard(
-                title = "下载项",
-                wallpaperBackdrop = wallpaperBackdrop,
-                blurEnabled = blurEnabled,
-                onLongPress = { onHide(HOME_DOWNLOADS) },
-                onClick = onOpenDownloads,
-            ) {
-                val tasks = Downloader.tasks.toList().takeLast(3).reversed()
-                if (tasks.isEmpty()) {
-                    HomeEmptyText("还没有下载任务")
-                } else {
-                    tasks.forEach { t ->
-                        HomeRow(
-                            primary = t.name,
-                            secondary = when (t.state) {
-                                DownloadState.RUNNING -> "下载中 ${(Downloader.progressOf(t) * 100).toInt()}%"
-                                DownloadState.PAUSED -> "已暂停"
-                                DownloadState.DONE -> "已完成"
-                                DownloadState.FAILED -> "失败"
-                            },
-                            onClick = onOpenDownloads,
-                        )
-                    }
-                }
-            }
-        }
-        }
     }
 }
 
 /** 首页卡片的玻璃底板：与收藏卡片同一套 miuix-glass blur，无采样 / 关模糊时回退到实色。 */
 @Composable
-private fun Modifier.homeGlass(wallpaperBackdrop: LayerBackdrop?, blurEnabled: Boolean, radius: Int = 16): Modifier {
+private fun Modifier.homeGlass(
+    wallpaperBackdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
+    hasWallpaper: Boolean = true,
+    radius: Int = 16,
+): Modifier {
     val shape = RoundedCornerShape(radius.dp)
     val dark = isAppDarkTheme()
     val useGlass = blurEnabled && wallpaperBackdrop != null
@@ -2961,43 +3205,84 @@ private fun Modifier.homeGlass(wallpaperBackdrop: LayerBackdrop?, blurEnabled: B
                 color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                 shape = shape,
             ),
-    )
+    ).homeNoWallpaperOutline(hasWallpaper, radius.dp)
 }
 
-/** 首页通用卡片：标题 + 内容；长按隐藏，可选整卡点击。隐私报告 / 最近浏览 / 下载项共用。 */
+/**
+ * 无壁纸时玻璃高光描边（白色）落在浅色底上几乎看不见：补一圈对角渐变的实线描边，
+ * 左上较亮、右下较淡，仍保留「高光」的方向感；有壁纸时不处理，沿用玻璃自带的高光。
+ */
+@Composable
+private fun Modifier.homeNoWallpaperOutline(hasWallpaper: Boolean, radius: Dp): Modifier {
+    if (hasWallpaper) return this
+    val dark = isAppDarkTheme()
+    val brush = Brush.linearGradient(
+        listOf(
+            if (dark) Color.White.copy(alpha = 0.40f) else Color.Black.copy(alpha = 0.22f),
+            if (dark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f),
+        ),
+    )
+    return this.border(width = 1.dp, brush = brush, shape = RoundedCornerShape(radius))
+}
+
+/** 首页通用卡片：标题 + 内容；右上角 × 从首页移除，长按拖动排序（手势由 [modifier] 提供），可选整卡点击。 */
 @Composable
 private fun HomeCard(
     title: String,
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
-    onLongPress: () -> Unit,
+    hasWallpaper: Boolean,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val haptic = LocalHapticFeedback.current
-    Column(
-        modifier = Modifier
+    Box(
+        modifier = modifier
             .fillMaxWidth()
-            .homeGlass(wallpaperBackdrop, blurEnabled)
-            .combinedClickable(
+            .homeGlass(wallpaperBackdrop, blurEnabled, hasWallpaper)
+            .clickable(
+                enabled = onClick != null,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = { onClick?.invoke() },
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            ),
     ) {
-        Text(
-            text = title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MiuixTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
-        content()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(end = 28.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            content()
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onRemove,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "×",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
     }
 }
 
@@ -3046,9 +3331,11 @@ private fun HomeRow(primary: String, secondary: String, onClick: () -> Unit) {
 /** 隐私报告：拦截广告数、处理指纹读取数、频繁获取敏感权限的网站提醒。 */
 @Composable
 private fun PrivacyReportCard(
+    modifier: Modifier,
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
-    onLongPress: () -> Unit,
+    hasWallpaper: Boolean,
+    onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
     // 拦截计数在后台线程累加、不是 Compose 状态：可见期间低频轮询
@@ -3060,10 +3347,12 @@ private fun PrivacyReportCard(
     }
     val frequent = PrivacyStats.frequent(context)
     HomeCard(
+        modifier = modifier,
         title = "隐私报告",
         wallpaperBackdrop = wallpaperBackdrop,
         blurEnabled = blurEnabled,
-        onLongPress = onLongPress,
+        hasWallpaper = hasWallpaper,
+        onRemove = onRemove,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PrivacyStat(blocked.toString(), "已拦截广告", Modifier.weight(1f))
@@ -3157,6 +3446,7 @@ private fun FavoriteTile(
                         shape = shape,
                     ),
             )
+            .homeNoWallpaperOutline(wallpaper == null, 16.dp)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

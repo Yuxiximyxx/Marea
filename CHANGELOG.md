@@ -2,6 +2,13 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.7-dev]
+
+- 新增：根目录 `LICENSE`（Apache License 2.0）
+- 修复：首页卡片（收藏 / 隐私报告 / 最近浏览 / 下载项）在无壁纸时高光描边不明显——无壁纸下补一圈对角渐变描边（浅色深线、深色亮线）
+- 调整：首页「隐私报告 / 最近浏览 / 下载项」取消长按隐藏，改为长按后上下拖动排序（个人收藏按整体大矩形参与排序，长按「收藏」标题行拖动），顺序持久化；拖到屏幕边缘自动滚动
+- 新增：上述三张卡片右上角加 ×，点击从首页移除（可在 设置 → 布局 → 首页内容显示 恢复）
+
 ## [1.8.5-dev]
 
 - 新增：关于页「依赖版本」——位于「版本」与「本机 UA」之间，按「界面 / AndroidX / 构建工具链」分组，两列紧凑显示各依赖版本（miuix-glass、Backdrop、Compose Multiplatform、Activity Compose、Core KTX、WebKit、Credentials、Browser、NavigationEvent、Kotlin、AGP、Gradle）；版本号由 `app/build.gradle.kts` 统一声明并写入 `BuildConfig.DEP_VERSIONS`，不再在界面里硬编码；「版本」卡中原来手写的 miuix 一行并入此处

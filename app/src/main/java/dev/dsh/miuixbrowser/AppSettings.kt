@@ -20,6 +20,14 @@ const val HOME_PRIVACY = 1
 const val HOME_RECENT = 2
 const val HOME_DOWNLOADS = 3
 
+/** 解析首页内容块顺序；缺失 / 非法项补齐，默认 收藏 → 隐私报告 → 最近浏览 → 下载项。 */
+fun parseHomeOrder(raw: String?): List<Int> {
+    val all = listOf(HOME_FAVORITES, HOME_PRIVACY, HOME_RECENT, HOME_DOWNLOADS)
+    val parsed = raw.orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+        .filter { it in all }.distinct()
+    return parsed + all.filter { it !in parsed }
+}
+
 class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_settings", Context.MODE_PRIVATE)
@@ -36,6 +44,16 @@ class AppSettings(context: Context) {
         private set
     var homeShowDownloads by mutableStateOf(prefs.getBoolean(KEY_HOME_DOWNLOADS, false))
         private set
+
+    /** 首页内容块的显示顺序（含隐藏项的位置），长按拖动后持久化。 */
+    var homeOrder by mutableStateOf(parseHomeOrder(prefs.getString(KEY_HOME_ORDER, null)))
+        private set
+
+    fun updateHomeOrder(order: List<Int>) {
+        val fixed = parseHomeOrder(order.joinToString(","))
+        homeOrder = fixed
+        prefs.edit().putString(KEY_HOME_ORDER, fixed.joinToString(",")).apply()
+    }
 
     fun isHomeShown(kind: Int): Boolean = when (kind) {
         HOME_FAVORITES -> homeShowFavorites
@@ -432,6 +450,7 @@ class AppSettings(context: Context) {
         const val KEY_HOME_PRIVACY = "home_show_privacy"
         const val KEY_HOME_RECENT = "home_show_recent"
         const val KEY_HOME_DOWNLOADS = "home_show_downloads"
+        const val KEY_HOME_ORDER = "home_order"
         const val KEY_SAME_SITE_TAB = "same_site_new_tab"
         const val KEY_APP_ICON = "app_icon"
         const val KEY_IGNORED_UPDATE = "ignored_update"
