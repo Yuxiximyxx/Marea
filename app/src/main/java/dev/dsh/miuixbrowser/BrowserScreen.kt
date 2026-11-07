@@ -2143,6 +2143,7 @@ fun BrowserScreen(
             onOpenDownloads = { pushPage(AppRoute.Downloads) },
             onOpenScripts = { pushPage(AppRoute.Extensions) },
             onOpenAdBlock = { pushPage(AppRoute.AdBlockPage) },
+            onOpenFingerprint = { pushPage(AppRoute.FingerprintPage) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
             onPageEnhancementsChange = { extensions.setAllEnabled(it) },
@@ -2171,6 +2172,12 @@ fun BrowserScreen(
     entry<AppRoute.AdBlockPage> {
         AdBlockScreen(
             settings = settings,
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.FingerprintPage> {
+        FingerprintScreen(
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
         )

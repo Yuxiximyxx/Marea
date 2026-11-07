@@ -2,6 +2,11 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.8-dev]
+
+- 调整：设置 → 隐私与安全 → 指纹保护由底部 sheet 改为独立二级页面（`FingerprintScreen`，新增路由 `AppRoute.FingerprintPage`），与脚本 / 去广告 / 下载页同一套布局，隐私报告、保护项、高级与确认弹窗全部移入页面
+- 修复：设置 → 布局 →「首页内容显示」sheet 里的菜单列表多出白底卡片、内边距过大，改为与「网站权限管理」sheet 一致的无底板紧凑列表
+
 ## [1.8.7-dev]
 
 - 新增：根目录 `LICENSE`（Apache License 2.0）

@@ -19,6 +19,9 @@ sealed interface AppRoute : NavKey {
     /** 设置 → 高级 → 去广告 */
     data object AdBlockPage : AppRoute
 
+    /** 设置 → 隐私与安全 → 指纹保护 */
+    data object FingerprintPage : AppRoute
+
     /** 书签 / 历史库。[tab] 0 = 书签，1 = 历史。 */
     data class Library(val tab: Int) : AppRoute
 }
