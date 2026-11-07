@@ -132,6 +132,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -1038,17 +1039,9 @@ fun BrowserScreen(
                     )
                 }
             }
-            if (tab.url.isNotEmpty()) {
-                PullRefreshArea(
-                    canPull = { tab.webView.scrollY <= 0 },
-                    onRefresh = { tab.webView.reload() },
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
-            }
-            if (tab.pullProgress >= 0.99f) {
+            if (tab.pullProgress > 0.05f) {
                 RefreshSpinner(
-                    progress = 1f,
-                    refreshing = false,
+                    progress = tab.pullProgress,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 18.dp),
@@ -1591,7 +1584,7 @@ fun BrowserScreen(
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tab.url)))
                                 }
                             }
-                            MenuAction.SendToDesktop -> ShortcutHelper.sendToDesktop(context, scope, tab)
+                            MenuAction.AddToDesktop -> ShortcutHelper.addToDesktop(context, scope, tab)
                             MenuAction.Home -> tab.goHome()
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
                             MenuAction.Extensions -> pushPage(AppRoute.Extensions)
@@ -3580,55 +3573,6 @@ private val GoogleColors = listOf(
     Color(0xFFEA4335),
 )
 
-/** 顶部下拉刷新：只响应页面已在顶部时的向下拖动 */
-@Composable
-private fun PullRefreshArea(
-    canPull: () -> Boolean,
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var drag by remember { mutableFloatStateOf(0f) }
-    val threshold = 140f
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onDragStart = { drag = 0f },
-                    onVerticalDrag = { change, dy ->
-                        if (canPull() && dy > 0 && drag < threshold * 1.6f) {
-                            drag += dy
-                            change.consume()
-                        }
-                    },
-                    onDragEnd = {
-                        if (drag > threshold) onRefresh()
-                        drag = 0f
-                    },
-                    onDragCancel = { drag = 0f },
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (drag > 12f) {
-            Box(
-                modifier = Modifier
-                    .size((24 + (drag / 6f)).coerceIn(24f, 40f).dp)
-                    .clip(CircleShape)
-                    .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.9f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = if (drag > threshold) "松手刷新" else "下拉",
-                    fontSize = 9.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun GlassLogoText(text: String, fontSize: Int) {
     val brush = Brush.verticalGradient(
@@ -3687,37 +3631,31 @@ private fun fetchRemoteScript(url: String): String? = runCatching {
     }
 }.getOrNull()
 
-/** 顶部下拉刷新指示器 */
+/** 顶部下拉刷新指示器：直接复用轻应用（WebAppActivity）的 RefreshSpinnerView，观感与动效完全一致 */
 @Composable
-private fun RefreshSpinner(progress: Float, refreshing: Boolean, modifier: Modifier = Modifier) {
-    val rotation = if (refreshing) {
-        val transition = rememberInfiniteTransition(label = "refresh")
-        val angle by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Restart),
-            label = "angle",
-        )
-        angle
-    } else {
-        progress * 360f
-    }
-    Box(
+private fun RefreshSpinner(progress: Float, modifier: Modifier = Modifier) {
+    val bg = MiuixTheme.colorScheme.surface.copy(alpha = 0.92f).toArgb()
+    AndroidView(
         modifier = modifier
             .size(34.dp)
-            .clip(CircleShape)
-            .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.92f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = MiuixIcons.Glass.Refresh,
-            contentDescription = "刷新",
-            tint = MiuixTheme.colorScheme.primary.copy(alpha = if (refreshing) 1f else 0.4f + 0.6f * progress),
-            modifier = Modifier
-                .size(18.dp)
-                .graphicsLayer { rotationZ = rotation },
-        )
-    }
+            .shadow(6.dp, CircleShape),
+        factory = { ctx ->
+            RefreshSpinnerView(ctx).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(bg)
+                }
+            }
+        },
+        update = { v ->
+            (v.background as? android.graphics.drawable.GradientDrawable)?.setColor(bg)
+            v.progress = progress
+            v.alpha = 0.4f + 0.6f * progress
+            val scale = 0.7f + 0.3f * progress
+            v.scaleX = scale
+            v.scaleY = scale
+        },
+    )
 }
 
 /** 从 content:// 读壁纸 */

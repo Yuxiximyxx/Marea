@@ -43,7 +43,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 「发送到桌面」生成的轻应用：独立任务、无底栏；同一网址再次点图标回到已打开的那一个 -->
+        <!-- 「添加到桌面」生成的轻应用：独立任务、无底栏；同一网址再次点图标回到已打开的那一个 -->
         <activity
             android:name=".WebAppActivity"
             android:exported="false"

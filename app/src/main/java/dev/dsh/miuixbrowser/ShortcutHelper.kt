@@ -27,7 +27,7 @@ import java.io.File
 import kotlin.coroutines.resume
 
 /**
- * 「发送到桌面」：把当前网页做成桌面图标（固定快捷方式），点开进入无底栏的轻应用 [WebAppActivity]。
+ * 「添加到桌面」：把当前网页做成桌面图标（固定快捷方式），点开进入无底栏的轻应用 [WebAppActivity]。
  *
  * 流程：
  * 1. 小米 / 红米 / POCO 上有单独的「桌面快捷方式」权限（AppOps 10017），首次点击先引导到权限页开启，
@@ -98,12 +98,12 @@ object ShortcutHelper {
     private fun toast(context: Context, text: String) =
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
-    /** 菜单「发送到桌面」入口（主线程调用） */
-    fun sendToDesktop(context: Context, scope: CoroutineScope, tab: BrowserTab) {
+    /** 菜单「添加到桌面」入口（主线程调用） */
+    fun addToDesktop(context: Context, scope: CoroutineScope, tab: BrowserTab) {
         val url = tab.url
         val scheme = runCatching { Uri.parse(url).scheme?.lowercase() }.getOrNull()
         if (url.isBlank() || (scheme != "http" && scheme != "https")) {
-            toast(context, "当前页面无法发送到桌面")
+            toast(context, "当前页面无法添加到桌面")
             return
         }
 
@@ -114,7 +114,7 @@ object ShortcutHelper {
         if (isXiaomi() && (state == PermState.Denied || (firstTime && state != PermState.Granted))) {
             prefs.edit().putBoolean(KEY_ASKED, true).apply()
             if (openPermissionSettings(context)) {
-                toast(context, "请先开启「桌面快捷方式」权限，然后回来再点一次「发送到桌面」")
+                toast(context, "请先开启「桌面快捷方式」权限，然后回来再点一次「添加到桌面」")
             } else {
                 toast(context, "请在系统设置里为 Mafari 开启「桌面快捷方式」权限后再试")
             }

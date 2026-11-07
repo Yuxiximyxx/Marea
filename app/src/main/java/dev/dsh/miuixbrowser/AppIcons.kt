@@ -49,13 +49,13 @@ object AppIcons {
         )
     }
 
-    /** 发送到桌面：圆角屏幕 + 向下的箭头。 */
-    val SendToDesktop: ImageVector by lazy {
+    /** 添加到桌面：圆角方框 + 加号（[+]）。 */
+    val AddToDesktop: ImageVector by lazy {
         stroked(
-            "SendToDesktop",
+            "AddToDesktop",
             "M4,6.5A2.5,2.5 0 0 1 6.5,4H17.5A2.5,2.5 0 0 1 20,6.5V17.5A2.5,2.5 0 0 1 17.5,20H6.5A2.5,2.5 0 0 1 4,17.5Z",
-            "M12,8.2V15",
-            "M8.9,12L12,15.1L15.1,12",
+            "M12,8V16",
+            "M8,12H16",
         )
     }
 }

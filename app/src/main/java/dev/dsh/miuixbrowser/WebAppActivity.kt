@@ -48,7 +48,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 
 /**
- * 「发送到桌面」生成的轻应用：只有一个全屏 WebView，没有地址栏、底栏、标签页。
+ * 「添加到桌面」生成的轻应用：只有一个全屏 WebView，没有地址栏、底栏、标签页。
  *
  * - 与 Mafari 浏览器共用同一份 WebView 数据（Cookie / 登录态 / 本地存储），也沿用代理、去广告网络拦截、深浅色设置。
  * - 同站跳转留在轻应用内；用户点击的跨站链接交给 Mafari 浏览器打开；登录 / 支付等无手势的跨站跳转原地放行。
@@ -658,7 +658,7 @@ class WebAppActivity : ComponentActivity() {
 }
 
 /** 下拉刷新指示：圆形底 + 随下拉进度旋转的环形箭头（与浏览器的 RefreshSpinner 同款观感） */
-private class RefreshSpinnerView(context: Context) : View(context) {
+internal class RefreshSpinnerView(context: Context) : View(context) {
 
     var progress = 0f
         set(value) {

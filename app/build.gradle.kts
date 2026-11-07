@@ -16,8 +16,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 36
-        versionCode = 214
-        versionName = "v1.7.16-dev"
+        versionCode = 215
+        versionName = "v1.7.17-dev"
     }
 
     buildFeatures {

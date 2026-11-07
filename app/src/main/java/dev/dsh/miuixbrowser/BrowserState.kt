@@ -27,23 +27,75 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.setValue
 import java.net.URLEncoder
 
+private val SCHEME_REGEX = Regex("^[A-Za-z][A-Za-z0-9+.\\-]*://")
+private val DOMAIN_REGEX = Regex("^[A-Za-z0-9\\-._~%]+(\\.[A-Za-z0-9\\-._~%]+)+$")
+private val IPV4_REGEX = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$")
+private val SINGLE_LABEL_REGEX = Regex("^[A-Za-z0-9][A-Za-z0-9\\-_]*$")
+
+/** 拆出「主机」「端口」；不合法返回 null。支持 [IPv6]:端口。 */
+private fun splitHostPort(authority: String): Pair<String, Int?>? {
+    var host = authority.substringAfterLast('@') // 去掉 user:pass@
+    var port: Int? = null
+    if (host.startsWith("[")) {
+        val end = host.indexOf(']')
+        if (end < 0) return null
+        val rest = host.substring(end + 1)
+        if (rest.isNotEmpty()) {
+            if (!rest.startsWith(":")) return null
+            port = rest.drop(1).toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+        }
+        host = host.substring(0, end + 1)
+        return host to port
+    }
+    val idx = host.lastIndexOf(':')
+    if (idx >= 0) {
+        val p = host.substring(idx + 1)
+        if (p.isNotEmpty()) port = p.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+        host = host.substring(0, idx)
+    }
+    return host to port
+}
+
+private fun isIpv4(host: String): Boolean {
+    val m = IPV4_REGEX.matchEntire(host) ?: return false
+    return m.groupValues.drop(1).all { it.toInt() in 0..255 }
+}
+
+/** 没写协议时该补 http 还是 https：IP / localhost / .local / 单段主机名（局域网服务）走 http，其余走 https */
+private fun defaultSchemeFor(host: String, port: Int?): String {
+    val h = host.lowercase()
+    val local = h == "localhost" || h.startsWith("[") || isIpv4(h) || h.endsWith(".local") || !h.contains('.')
+    return if (local && port != 443) "http" else "https"
+}
+
 /** 判断输入是网址还是搜索词。 */
 fun looksLikeUrl(input: String): Boolean {
     val s = input.trim()
-    if (s.isEmpty() || s.contains(" ")) return false
-    if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("file://") || s.startsWith("about:")) return true
-    if (s == "localhost" || s.startsWith("localhost:")) return true
-    return Regex("^[A-Za-z0-9\\-._~%]+(\\.[A-Za-z0-9\\-._~%]+)+(/.*)?$").matches(s)
+    if (s.isEmpty() || s.any { it.isWhitespace() }) return false
+    if (s.startsWith("about:", ignoreCase = true)) return true
+    if (SCHEME_REGEX.containsMatchIn(s)) return true
+    // 无协议：主机[:端口][/路径?查询#片段]
+    val authority = s.substringBefore('/').substringBefore('?').substringBefore('#')
+    val (host, port) = splitHostPort(authority) ?: return false
+    if (host.isEmpty()) return false
+    return when {
+        host.equals("localhost", ignoreCase = true) -> true
+        host.startsWith("[") -> true                       // IPv6 字面量
+        isIpv4(host) -> true                               // 192.168.1.1 / 192.168.1.1:8080
+        DOMAIN_REGEX.matches(host) -> true                 // example.com / example.com:8443/path
+        port != null && SINGLE_LABEL_REGEX.matches(host) -> true // nas:5000 这类局域网主机名
+        else -> false
+    }
 }
 
 /** 把地址栏输入变成可加载的 URL，不像网址就走搜索。 */
 fun toUrl(input: String, searchTemplate: String = "https://www.baidu.com/s?wd=%s"): String {
     val s = input.trim()
-    return if (looksLikeUrl(s)) {
-        if (s.startsWith("http") || s.startsWith("file") || s.startsWith("about")) s else "https://$s"
-    } else {
-        searchTemplate.replace("%s", URLEncoder.encode(s, "UTF-8"))
-    }
+    if (!looksLikeUrl(s)) return searchTemplate.replace("%s", URLEncoder.encode(s, "UTF-8"))
+    if (s.startsWith("about:", ignoreCase = true) || SCHEME_REGEX.containsMatchIn(s)) return s
+    val authority = s.substringBefore('/').substringBefore('?').substringBefore('#')
+    val (host, port) = splitHostPort(authority) ?: return "https://$s"
+    return "${defaultSchemeFor(host, port)}://$s"
 }
 
 fun hostOf(url: String): String {
