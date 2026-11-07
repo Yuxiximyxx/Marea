@@ -12,15 +12,22 @@
  * 配置对象：
  *   mask  1 = Canvas   2 = WebGL   4 = Audio   8 = Fonts
  *   seed  32 位无符号整数，由原生侧按「会话密钥 + 可注册域名」派生
- *   origin  注册时的 origin；运行时必须等于 self.origin，否则整段脚本不执行
+ *   rules / embedders  见下文「来源校验」
  *
  * 降级路径（WebView 不支持 DOCUMENT_START_SCRIPT）：占位符保持为 null，脚本改为调用
  * 无参的 MafariFp.fp()（仅降级时才安装该桥）。原生侧只返回「它自己维护的顶层 origin」的配置，
  * 脚本再核对返回的 origin 与 self.origin 一致后才使用。该路径只保护主框架 / 同源 iframe，
  * 且无法在页面第一个脚本之前就位，也无法对页面隐藏 seed，见文档中的安全边界。
  *
- * 跨源 iframe：本脚本不信任、不为其工作。即使某个跨源 frame 的 origin 恰好已被注册，
- * 只要它的任一祖先 origin 与自身不同就直接退出（location.ancestorOrigins 由浏览器提供，页面无法改写）。
+ * 来源校验（rules / embedders）：
+ *   rules      注册时的来源规则集合，形如 "https://a.com" 或 "https://*.a.com"（通配符只能是前导 "*."，
+ *              且不匹配裸域，裸域须单独写一条）。self.origin 必须命中其中一条，否则整段脚本不执行。
+ *   embedders  允许嵌入本 frame 的跨源祖先规则（同样的规则语法），由原生按「预注册的嵌入方清单」内联；
+ *              没有清单的 origin 此项为空。
+ *
+ * 祖先链判定：location.ancestorOrigins（浏览器提供，页面无法改写）里的每一个祖先，必须
+ * 等于自身 origin、或命中自己的 rules（同站点跨子域）、或命中 embedders，否则直接退出。
+ * 所以：集合外的跨源 iframe、以及「被未登记的站点嵌入」的已登记 origin，一律不保护（fail-open，这是有意的）。
  *
  * 本脚本不声称覆盖 Worker、WebGL2 PBO、所有 CSS 字体探测或 OfflineAudioContext 的 getChannelData 路径。
  */
@@ -32,12 +39,46 @@
     try { OWN = String(self.origin); } catch (_) {}
     if (!OWN || OWN === 'null') return;
 
-    // 只处理主框架 / 祖先链全部同源的 iframe。
+    // 来源规则匹配：规则只有两种形态，scheme://host[:port] 与 scheme://*.host[:port]。
+    function matchRule(rule, origin) {
+      if (typeof rule !== 'string' || typeof origin !== 'string') return false;
+      var ri = rule.indexOf('://');
+      var oi = origin.indexOf('://');
+      if (ri < 1 || oi < 1) return false;
+      if (rule.slice(0, ri) !== origin.slice(0, oi)) return false;
+      var rh = rule.slice(ri + 3);
+      var oh = origin.slice(oi + 3);
+      if (rh.indexOf('*.') === 0) {
+        var suffix = rh.slice(1); // ".host[:port]"
+        return oh.length > suffix.length && oh.slice(oh.length - suffix.length) === suffix;
+      }
+      return rh === oh;
+    }
+
+    function matchAny(list, origin) {
+      if (!list || typeof list.length !== 'number') return false;
+      for (var i = 0; i < list.length; i++) {
+        if (matchRule(list[i], origin)) return true;
+      }
+      return false;
+    }
+
+    var RULES = CFG ? CFG.rules : null;
+    var EMBEDDERS = CFG ? CFG.embedders : null;
+
+    // 主路径：self.origin 必须命中注册规则。
+    if (CFG && !matchAny(RULES, OWN)) return;
+
+    // 祖先链：每个祖先都得是自己人（同源 / 同规则集 / 预注册的嵌入方），否则不保护。
+    // 降级路径（无 CFG）没有规则可用，只接受同源祖先。
     try {
       var ancestors = location.ancestorOrigins;
       if (ancestors) {
         for (var ai = 0; ai < ancestors.length; ai++) {
-          if (ancestors[ai] !== OWN) return;
+          var anc = ancestors[ai];
+          if (anc === OWN) continue;
+          if (CFG && (matchAny(RULES, anc) || matchAny(EMBEDDERS, anc))) continue;
+          return;
         }
       } else if (window.top !== window) {
         return;
@@ -48,8 +89,7 @@
     var SEED = 0;
 
     if (CFG) {
-      // 主路径：原生按 origin 内联的配置。
-      if (CFG.origin !== OWN) return;
+      // 主路径：原生内联的配置（来源已在上面校验）。
       MASK = Number(CFG.mask) | 0;
       SEED = Number(CFG.seed) >>> 0;
     } else {

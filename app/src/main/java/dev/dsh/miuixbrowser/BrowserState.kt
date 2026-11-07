@@ -603,6 +603,12 @@ class BrowserTab(private val appContext: Context) {
         if (!fpInjector.docStartSupported) {
             runCatching { webView.addJavascriptInterface(FpFallbackBridge(fpInjector), "MafariFp") }
         }
+        // 落在未预注册 origin 时的兜底：重载走带请求头的 loadUrl；STOP 策略在页面上给出提示
+        fpInjector.loader = { target -> loadUrl(target) }
+        fpInjector.onUnprotectedBlocked = { target ->
+            loading = false
+            errorText = "指纹保护：${runCatching { Uri.parse(target).host }.getOrNull().orEmpty()} 未能在加载前注册保护，已停止加载"
+        }
         // 低频可信通道（豁免请求、统计上报）：来源由 WebView 校验，与指纹配置无关；不支持时静默跳过
         TrustedChannel.install(webView, object : TrustedChannel.Host {
             override fun onFingerprintExemptRequested(origin: WebOrigin) = handleFpExemptRequest(origin)
@@ -732,6 +738,8 @@ class BrowserTab(private val appContext: Context) {
             }
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
+                // 服务端重定向的最终落点只有这里看得到：未预注册就按策略兜底
+                fpInjector.onCommitted(pageUrl)
                 if (!parked) pageUrl?.let { url = it }
                 updatePageHost(pageUrl)
                 syncNav()

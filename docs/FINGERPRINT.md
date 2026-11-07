@@ -21,7 +21,8 @@ prepare(url)  ──生成 origin 专属脚本（配置内联）──▶ addDoc
 - 页面里没有任何指纹相关的 JS 桥、全局变量或可调用接口。页面无法通过伪造 `host` / `topHost` 枚举其他站点的配置，
   因为根本没有可以传参的入口。
 - seed = HMAC-SHA256(会话密钥, 可注册域名) 的前 32 位；会话密钥只存在于原生进程内，重启后变化。
-- 脚本运行时还会自检：`self.origin` 必须等于内联的 origin，否则整段不执行（防止规则匹配与预期不一致，例如 about:blank 继承来源）。
+- 注册粒度是「站点」（scheme + 可注册域名）：同一站点的来源规则（裸域、`*.站点`、清单里的落点 / frame）合并为一份脚本、一组规则，同一个 seed。
+- 脚本运行时还会自检：`self.origin` 必须命中内联的 `rules`（精确来源或前导 `*.` 子域通配，通配不含裸域），否则整段不执行（防止规则匹配与预期不一致，例如 about:blank 继承来源）。祖先链见 §3 / §9。
 
 ### 已移除
 `@JavascriptInterface fun fp(host, topHost)`（`MafariAdblock.fp`）已删除。它既不能提供严格的来源验证，
@@ -49,14 +50,17 @@ prepare(url)  ──生成 origin 专属脚本（配置内联）──▶ addDoc
 | `reload()` | 先 `prepare(webView.url)`（设置变更后旧注册已作废） | 可靠 |
 | 前进 / 后退 | 先为目标历史项 `prepareHistory(±1)` | 可靠 |
 | 用户点击链接 / 脚本触发的主框架导航 | `shouldOverrideUrlLoading` 里先注册，再放行 | 尽力而为 |
-| 服务端重定向的落地页 | 同上（重定向也会回调），但与加载存在竞态 | 尽力而为 |
-| 没经过任何回调的导航 | `onPageStarted` 补注册，**只对之后的加载生效** | 本次加载无保护 |
-| 跨源 iframe | 不注册 | **默认不保护** |
+| 同站点重定向（裸域 / www / m / login …） | `prepare` 时把裸域和 `*.站点` 一起注册（§9.1） | 可靠（需实机确认通配 / 裸域语义） |
+| 预注册清单里的重定向落点（IdP 等） | 导航到清单里的站点前，落点一并注册（§9.1） | 可靠（仅限清单内） |
+| 其它服务端重定向的落地页 | `shouldOverrideUrlLoading` 补注册；`doUpdateVisitedHistory` 检测最终落点并按兜底策略处理（§9.2） | 尽力而为；本次加载可能无保护 |
+| 没经过任何回调的导航 | `onPageStarted` 检测 + 补注册，补注册**只对之后的加载生效**，本次按兜底策略处理 | 本次加载可能无保护 |
+| 预注册清单里的跨源 iframe | 清单 frame 在首次导航前批量注册并固定；嵌入方作为允许的祖先内联（§9.3） | 仅限清单内 |
+| 清单之外的跨源 iframe | 不注册 | **不保护（fail-open，有意如此）** |
 
 **不能宣传为「所有未知跨源框架都能自动获得保护」。**
 
-关于跨源 iframe：脚本内置检查，只要任一祖先 origin（`location.ancestorOrigins`）与自身不同就直接退出。
-所以即使某个跨源 frame 的 origin 因为曾经作为顶层页面访问过而仍在注册表里，它被嵌入别处时也不会被保护。
+关于跨源 iframe：脚本内置检查，`location.ancestorOrigins` 里的每个祖先都必须是「自己人」——等于自身、命中自己的规则集合（同站点跨子域），或命中预注册清单为它内联的嵌入方——否则直接退出。
+所以即使某个跨源 frame 的 origin 因为曾经作为顶层页面访问过而仍在注册表里，它被清单之外的站点嵌入时也不会被保护。
 同源 iframe 能否拿到脚本取决于 WebView 对 origin 规则的匹配（`about:blank` / `srcdoc` 子框架是否匹配尚未在多机型上验证）。
 
 设置或豁免列表变化后，已注册的脚本里内联着旧配置：`fingerprintGeneration` 递增，各 WebView 在下一次 `prepare`
@@ -118,4 +122,72 @@ Worker、WebGL2 PBO、所有 CSS 字体探测、OfflineAudioContext 的 `getChan
 3. bfcache 恢复的页面（不会重新执行脚本，沿用首次加载时的配置）；
 4. 一个 WebView 注册 16 个 origin 时的内存与启动开销；
 5. `MafariTrusted` 对象注入先于 document-start 脚本执行（脚本依赖这一点来捕获通道；没有时只是不上报）；
-6. 升级到 webkit 1.18.0 后的编译（1.18 有若干 API 重命名，本项目用到的 API 预计不受影响，但未实际编译）。
+6. `https://*.example.com` 规则是否同时匹配裸域 `https://example.com`（原生统一把裸域另写一条，不依赖这一点；但需确认两条同时存在时不会重复注入、不会冲突）；
+7. 「同步注册后放行」（`shouldOverrideUrlLoading`）是否等价于 renderer 在 document-start 前已收到注册；
+8. 同一 WebView 内一个站点的规则集合 / 嵌入方变化时「先注册新脚本再撤销旧脚本」是否会出现短暂的重复执行（脚本无状态标记，重复执行只会叠加噪声，需确认是否可见）；
+9. `doUpdateVisitedHistory` 在各类服务端重定向（301/302/307、meta refresh、JS 跳转）下给出的是否都是最终地址，以及 RELOAD 兜底对 POST 落地页的影响（重载会变成 GET）；
+10. 升级到 webkit 1.18.0 后的编译（1.18 有若干 API 重命名，本项目用到的 API 预计不受影响，但未实际编译）。
+
+
+## 9. 重定向与跨源 iframe：预注册 + 落地检测 + 边界声明
+
+`addDocumentStartJavaScript` 的注入判定严格发生在文档开始加载之前，原生侧不可能在页面已经开始加载后再补上 document-start。
+所以收窄这两个缺口只有三类手段：**加载前尽量多注册**、**加载后检测并止损**、**对外口径写清楚边界**。
+
+### 9.1 预注册（主要手段）
+
+预注册清单：`assets/mafari_fp_prereg.json`（产品 / 运营侧维护，默认空）。
+
+```json
+{
+  "version": 1,
+  "redirects": [
+    { "site": "example.com",
+      "targets": ["https://login.idp.example", "https://*.idp.example"] }
+  ],
+  "embeds": [
+    { "embedders": ["https://*.example.org"],
+      "frames":    ["https://player.vendor.example", "https://*.comments.example"] }
+  ]
+}
+```
+
+- 规则语法（`OriginRule`）只有两种：`scheme://host[:port]` 与 `scheme://*.host[:port]`；通配**只匹配子域名，不含裸域**，裸域要另写一条。
+  不接受裸 `*`、中间 / 末尾通配、公共后缀通配（`*.com`、`*.co.uk`）、IP 通配、非 http(s)。非法条目静默丢弃。
+- **自动同站点兄弟**：导航到某个普通域名（默认端口、非 IP）时，原生自动把 `scheme://站点` 和 `scheme://*.站点` 一起注册进同一份脚本，
+  覆盖 www ↔ m ↔ login 这类站内重定向，不需要人工维护清单。站点下只要有任何豁免条目，就退回精确来源、不使用通配，避免把保护注入到被豁免的子域名。
+- **redirects**：导航到 `site`（可注册域名）之前，`targets` 一并注册（进入普通 LRU，每个 WebView 最多 16 个站点）。
+- **embeds.frames**：WebView 初始化后、首次导航前（第一次 `prepare` 触发 `ensurePreregistered`）批量注册，**固定**，不被 LRU 驱逐，最多 24 个站点；
+  设置 / 豁免列表变化后随 `clear()` 失效并在下一次 `prepare` 重新注册。
+- 不支持把嵌入方写成 `*`：那等于放弃来源边界。确实需要时，只能作为明确的产品取舍（例如只用于登录流程的独立 WebView 实例），不得与「严格来源验证」混用口径。
+
+### 9.2 落地检测与兜底（不是注入时机）
+
+`onPageStarted` 给的是重定向**之前**的地址；服务端重定向的最终落点要在 `doUpdateVisitedHistory`（提交时）才看得到。
+两处都会调用同一个检测：主框架落在一个「本应保护、却没有任何注册覆盖」的 http(s) origin 上，就是漏网。
+检测一定发生在补注册之前，否则永远通过。无论策略如何，都会先补注册（对之后的加载生效）。
+
+设置 → 指纹保护 →「未预注册页面的兜底」：
+
+| 选项 | 行为 |
+|---|---|
+| 仅记录，不干预 | 只记日志并补注册，页面照常加载 |
+| 停止并在保护下重载（默认） | `stopLoading()` 后用已注册的保护重新加载一次（同一 URL 只重载一次，防循环）。**带一次性凭证的地址**（`code=` / `state=` / `token=` / `ticket=` / `SAMLResponse=` 等，见 `looksSingleUse`）退化为仅记录，避免登录回调被重复提交而失败 |
+| 停止加载 | `stopLoading()` 并在页面上提示，不继续加载 |
+
+局限：这是止损而不是补救——被检测到的那一次加载，页面脚本可能已经执行过一部分；重载会把 POST 落地页变成 GET；
+没有「转入系统浏览器」选项（把用户从隐私浏览器里扔进系统浏览器，通常比无保护加载更糟）。
+
+### 9.3 跨源 iframe：清单是唯一可靠路径
+
+- 被嵌入的 frame 脚本里内联了「允许它的跨源祖先」（只含与该 frame 站点有关的条目，不泄露清单里别的站点）。
+  `location.ancestorOrigins` 里的每个祖先必须等于自身、命中自己的规则集合，或命中这份嵌入方列表，否则脚本退出。
+- 同站点跨子域的 iframe（`www.example.com` 嵌 `m.example.com`）因为同属一个规则集合，现在也会得到保护，且与顶层页面同 seed。
+- 可控的第三方嵌入内容，也可以自己在内部实现指纹保护并通过 `postMessage` 与主页面协作；这不属于本机制的覆盖范围，与原生注入解耦。
+
+### 9.4 对外口径
+
+> 对预注册 origin 集合内的框架（含同站点子域名、清单内的重定向落点与被嵌入的跨源框架）提供严格来源验证 + document-start 同步保护；
+> 集合外的跨源框架不保护；未预注册的重定向落点按「兜底策略」止损，但那一次加载本身可能没有保护。
+
+不要写成「自动覆盖所有跨源 iframe」或「所有重定向都受保护」。

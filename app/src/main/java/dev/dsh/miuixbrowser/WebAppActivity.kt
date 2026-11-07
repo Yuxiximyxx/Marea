@@ -160,6 +160,9 @@ class WebAppActivity : ComponentActivity() {
         root = FrameLayout(this).apply { setBackgroundColor(defaultBg) }
         webView = WebView(this).apply { setBackgroundColor(defaultBg) }
         fpInjector = FingerprintInjector(webView)
+        fpInjector.onUnprotectedBlocked = { target ->
+            showErrorPage(webView, target, "指纹保护：该页面未能在加载前注册保护，已停止加载")
+        }
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             visibility = View.GONE
@@ -297,6 +300,7 @@ class WebAppActivity : ComponentActivity() {
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                fpInjector.onCommitted(url)
                 runCatching { Uri.parse(url).host }.getOrNull()?.takeIf { it.isNotBlank() }?.let { pageHost = it }
             }
 

@@ -613,6 +613,13 @@ fun SettingsScreen(
                         checked = AdBlock.fpFonts,
                         onCheckedChange = { if (it) fpPending = AdBlock.FP_FONTS else AdBlock.updateFingerprint(AdBlock.FP_FONTS, false) },
                     )
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
+                        title = "未预注册页面的兜底",
+                        items = listOf("仅记录，不干预", "停止并在保护下重载", "停止加载"),
+                        selectedIndex = AdBlock.fpUnprotectedPolicy.coerceIn(0, 2),
+                        onSelectedIndexChange = { AdBlock.updateFpUnprotectedPolicy(it) },
+                    )
                     ArrowPreference(
                         title = "保护豁免站点",
                         summary = if (AdBlock.fpExemptHosts.isEmpty()) {
@@ -632,7 +639,9 @@ fun SettingsScreen(
                     }
                     Text(
                         text = "默认全部关闭。开启会改动网页读到的数据，可能引起兼容问题（开启时会有具体提示）；" +
-                            "对新打开或刷新后的页面生效。保护只作用于页面本身及其同源 iframe，跨源 iframe 默认不保护；" +
+                            "对新打开或刷新后的页面生效。保护作用于页面本身、同站点子域名以及预注册清单内的跨源 iframe，" +
+                            "清单之外的跨源 iframe 不保护；若页面（如重定向落点）在注册前就开始加载，会按上面的兜底策略处理" +
+                            "（登录回调这类带一次性凭证的地址不会被重载）；" +
                             "豁免列表与去广告的「站点白名单」相互独立。" +
                             "若某个网站异常，可关掉对应项或把该站点加入豁免。",
                         fontSize = 12.sp,

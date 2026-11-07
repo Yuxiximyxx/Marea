@@ -93,6 +93,9 @@ data class LegacyAdSub(val name: String, val url: String, val enabled: Boolean)
 object AdBlock {
 
     const val FP_CANVAS = 1
+    const val FP_UNPROTECTED_OBSERVE = 0
+    const val FP_UNPROTECTED_RELOAD = 1
+    const val FP_UNPROTECTED_STOP = 2
     const val FP_WEBGL = 2
     const val FP_AUDIO = 4
     const val FP_FONTS = 8
@@ -126,6 +129,13 @@ object AdBlock {
      * 与 [allowHosts]（去广告豁免）是两个独立的概念，互不影响；只按「frame 自己的 host」判断，从不看顶层站点。
      */
     val fpExemptHosts = mutableStateListOf<String>()
+
+    /**
+     * 「落地在未预注册 origin」时的处理（见 FingerprintInjector.UnprotectedPolicy）：
+     * 0 仅记录并补注册（对之后的加载生效）　1 停止并在保护下重新加载　2 停止加载。
+     */
+    var fpUnprotectedPolicy by mutableIntStateOf(FP_UNPROTECTED_RELOAD)
+        private set
 
     var enabled by mutableStateOf(true)
         private set
@@ -192,6 +202,7 @@ object AdBlock {
         fastEnabled = enabled
         fastCosmetic = cosmetic
         fpCanvas = prefs.getBoolean("fp_canvas", false)
+        fpUnprotectedPolicy = prefs.getInt("fp_unprotected_policy", FP_UNPROTECTED_RELOAD).coerceIn(0, 2)
         fpWebgl = prefs.getBoolean("fp_webgl", false)
         fpAudio = prefs.getBoolean("fp_audio", false)
         fpFonts = prefs.getBoolean("fp_fonts", false)
@@ -225,6 +236,11 @@ object AdBlock {
     }
 
     /** kind：[FP_CANVAS] / [FP_WEBGL] / [FP_AUDIO] / [FP_FONTS]；对新打开（或刷新）的页面生效。 */
+    fun updateFpUnprotectedPolicy(policy: Int) {
+        fpUnprotectedPolicy = policy.coerceIn(0, 2)
+        prefs.edit().putInt("fp_unprotected_policy", fpUnprotectedPolicy).apply()
+    }
+
     fun updateFingerprint(kind: Int, value: Boolean) {
         when (kind) {
             FP_CANVAS -> { fpCanvas = value; prefs.edit().putBoolean("fp_canvas", value).apply() }
@@ -521,6 +537,15 @@ object AdBlock {
         persistFpExempt()
     }
 
+    /**
+     * 豁免列表里是否有落在 [site]（可注册域名）之下的条目（site 自己或它的任一子域名）。
+     * 有的话不能给该站点注册 `*.site` 通配规则，否则会把保护注入到被豁免的子域名上。
+     */
+    fun fpExemptUnder(site: String): Boolean {
+        val s = site.lowercase()
+        return fastFpExempt.any { it == s || it.endsWith(".$s") }
+    }
+
     /** frame 自己的 host（或其父域名）在豁免列表里。 */
     fun isFingerprintExempt(host: String): Boolean = hostIn(fastFpExempt, host.lowercase())
 
@@ -568,10 +593,15 @@ object AdBlock {
      * 指纹保护在「隐私与安全」里，独立于去广告总开关。只看 frame 自己的 origin，不涉及顶层站点。
      */
     fun fingerprintConfigFor(origin: WebOrigin): FpConfig? {
+        if (isFingerprintExempt(origin.host)) return null
+        return fingerprintSiteConfig(AdMatch.registrable(origin.host))
+    }
+
+    /** 按可注册域名取配置（同一站点下的所有来源规则共用一份脚本、一个 seed）；四项全关返回 null。豁免由调用方先过滤。 */
+    fun fingerprintSiteConfig(site: String): FpConfig? {
         val mask = fpMask
         if (mask == 0) return null
-        if (isFingerprintExempt(origin.host)) return null
-        return FpConfig(mask, deriveSeed(AdMatch.registrable(origin.host)))
+        return FpConfig(mask, deriveSeed(site))
     }
 
     /** seed = HMAC-SHA256(会话密钥, 可注册域名) 的前 32 位。 */
@@ -585,14 +615,19 @@ object AdBlock {
 
     private const val FP_CFG_TOKEN = "/*@MAFARI_FP_CFG@*/null"
 
-    /** 把配置内联进脚本模板，得到该 origin 专属的 document-start 脚本。 */
-    fun fingerprintScriptFor(origin: WebOrigin, config: FpConfig): String {
+    /**
+     * 把配置内联进脚本模板，得到这组来源规则专属的 document-start 脚本。
+     * rules：脚本运行时 self.origin 必须命中的规则（同时也是注册规则）；
+     * embedders：允许嵌入它的跨源祖先规则（没有预注册的嵌入方清单时为空）。
+     */
+    fun fingerprintScriptFor(rules: Collection<String>, embedders: Collection<String>, config: FpConfig): String {
         val template = fingerprintJs()
-        if (template.isEmpty() || !template.contains(FP_CFG_TOKEN)) return ""
+        if (template.isEmpty() || !template.contains(FP_CFG_TOKEN) || rules.isEmpty()) return ""
         val json = JSONObject()
             .put("mask", config.mask)
             .put("seed", config.seed)
-            .put("origin", origin.origin)
+            .put("rules", JSONArray(rules.toList()))
+            .put("embedders", JSONArray(embedders.toList()))
             .toString()
         return template.replace(FP_CFG_TOKEN, json)
     }
@@ -606,6 +641,19 @@ object AdBlock {
             appContext.assets.open("mafari_fingerprint.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
         }.onFailure { Diag.log("adblock: fingerprint script load failed ${it.message}") }.getOrDefault("")
         fpJs = text
+        return text
+    }
+
+    @Volatile private var fpPreregJson: String? = null
+
+    /** 预注册清单（assets/mafari_fp_prereg.json，见 [FpPreregistry]），读一次后缓存；缺失 / 读取失败按空清单。 */
+    fun fingerprintPreregJson(): String {
+        fpPreregJson?.let { return it }
+        val text = runCatching {
+            appContext.assets.open("mafari_fp_prereg.json").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.onFailure { Diag.log("fingerprint: prereg list load failed ${it.message}") }.getOrNull()
+            ?: return "" // 读取失败（如 AdBlock 尚未初始化）不缓存，下次重试
+        fpPreregJson = text
         return text
     }
 

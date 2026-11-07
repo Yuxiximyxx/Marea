@@ -516,6 +516,19 @@ object AdMatch {
         return parts.takeLast(n).joinToString(".")
     }
 
+    /**
+     * host 不是公共后缀本身（粗略判断，与 [registrable] 同一套启发式）：至少两段，且不是 co.uk 这一类。
+     * 用于拒绝 `*.com` / `*.co.uk` 这样的过宽通配符规则。
+     */
+    fun isRegistrableOrDeeper(host: String): Boolean {
+        val parts = host.split('.')
+        if (parts.size < 2 || parts.any { it.isEmpty() }) return false
+        val last = parts[parts.size - 1]
+        val second = parts[parts.size - 2]
+        if (parts.size == 2 && last.length == 2 && second in SLD) return false
+        return true
+    }
+
     fun isThirdParty(host: String, pageHost: String): Boolean {
         if (pageHost.isEmpty() || host.isEmpty()) return false
         return registrable(host) != registrable(pageHost)
