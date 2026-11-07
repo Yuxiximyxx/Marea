@@ -129,14 +129,14 @@ object AdBlock {
     var autoUpdate by mutableIntStateOf(2)
         private set
 
-    /* 指纹保护：每类一个开关（设置 → 隐私与安全），受站点白名单控制，独立于去广告总开关 */
-    var fpCanvas by mutableStateOf(true)
+    /* 指纹保护：默认全部关闭；每类一个开关（设置 → 隐私与安全），受站点白名单控制，独立于去广告总开关 */
+    var fpCanvas by mutableStateOf(false)
         private set
-    var fpWebgl by mutableStateOf(true)
+    var fpWebgl by mutableStateOf(false)
         private set
-    var fpAudio by mutableStateOf(true)
+    var fpAudio by mutableStateOf(false)
         private set
-    var fpFonts by mutableStateOf(true)
+    var fpFonts by mutableStateOf(false)
         private set
 
     /** 当前引擎里生效的规则条数（含内置基础规则与自定义规则） */
@@ -179,10 +179,10 @@ object AdBlock {
         baseTotal = prefs.getLong("blocked_total", 0L)
         fastEnabled = enabled
         fastCosmetic = cosmetic
-        fpCanvas = prefs.getBoolean("fp_canvas", true)
-        fpWebgl = prefs.getBoolean("fp_webgl", true)
-        fpAudio = prefs.getBoolean("fp_audio", true)
-        fpFonts = prefs.getBoolean("fp_fonts", true)
+        fpCanvas = prefs.getBoolean("fp_canvas", false)
+        fpWebgl = prefs.getBoolean("fp_webgl", false)
+        fpAudio = prefs.getBoolean("fp_audio", false)
+        fpFonts = prefs.getBoolean("fp_fonts", false)
         refreshFpMask()
 
         subs.addAll(loadSubs())

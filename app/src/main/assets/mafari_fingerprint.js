@@ -4,6 +4,8 @@
  * 配置由 Kotlin 侧 AdBlockBridge.fp(host, topHost) 提供，格式 "掩码:种子"：
  *   掩码 1 = Canvas，2 = WebGL，4 = Audio，8 = Fonts；0 = 本站不处理（总开关关闭 / 站点白名单）。
  *
+ * WebGL 只对 readPixels / WebGL 画布导出加噪，不再伪装显卡型号（固定型号与真实参数不一致，反而更独特）。
+ *
  * 做法是「农场化」（farbling）：不禁用 API，而是在读出指纹的那一刻加极小的噪声 / 换掉可识别的值，
  * 让同一设备每次读出的指纹都不一样，无法被用来跨站、跨会话追踪；正常绘图 / 播放不受影响。
  */
@@ -169,13 +171,6 @@
       }
     }
 
-    var WEBGL_GPUS = [
-      ['Google Inc. (Qualcomm)', 'ANGLE (Qualcomm, Adreno (TM) 650, OpenGL ES 3.2)'],
-      ['Google Inc. (ARM)', 'ANGLE (ARM, Mali-G78, OpenGL ES 3.2)'],
-      ['Google Inc. (Qualcomm)', 'ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)'],
-      ['Google Inc. (ARM)', 'ANGLE (ARM, Mali-G710, OpenGL ES 3.2)']
-    ];
-
     var COMMON_FONTS = {
       'arial': 1, 'helvetica': 1, 'times new roman': 1, 'times': 1, 'courier new': 1, 'courier': 1,
       'georgia': 1, 'verdana': 1, 'tahoma': 1, 'trebuchet ms': 1, 'impact': 1, 'roboto': 1,
@@ -308,18 +303,9 @@
 
       /* ===== WebGL ===== */
       if (MASK & WEBGL) {
-        var gpu = WEBGL_GPUS[SEED % WEBGL_GPUS.length];
         ['WebGLRenderingContext', 'WebGL2RenderingContext'].forEach(function (n) {
           var P = W[n] && W[n].prototype;
           if (!P) return;
-          hook(P, 'getParameter', function (orig) {
-            return function getParameter(p) {
-              // UNMASKED_VENDOR_WEBGL / UNMASKED_RENDERER_WEBGL：真实显卡型号是最强的 WebGL 指纹
-              if (p === 0x9245) return gpu[0];
-              if (p === 0x9246) return gpu[1];
-              return orig.apply(this, arguments);
-            };
-          });
           hook(P, 'readPixels', function (orig) {
             return function readPixels(x, y, w, h, format, type, pixels) {
               var r = orig.apply(this, arguments);
@@ -396,7 +382,7 @@
 
       /* ===== Fonts ===== */
       if (MASK & FONTS) {
-        // 1) canvas measureText：宽度等乘以 (1±0.03%)。系数由「字体串+文本」决定，同一会话里同一次测量结果稳定，
+        // 1) canvas measureText（不再改动 DOM 的 offsetWidth / getBoundingClientRect，避免影响页面布局）：宽度等乘以 (1±0.03%)。系数由「字体串+文本」决定，同一会话里同一次测量结果稳定，
         //    但「候选字体」与「基准字体」的系数不同 → 探测脚本看到所有字体都「有差异」，无法枚举已安装字体。
         var wrapMetrics = function (ctx, text, m) {
           var k = hash(String(ctx.font) + '|' + String(text));
@@ -417,46 +403,7 @@
           });
         });
 
-        // 2) DOM 探测：元素带内联 font-family 且文字很短（典型的「测宽」探针）时，给 offsetWidth/Height、
-        //    getBoundingClientRect 加按字体串决定的微小偏移，同样让「不存在的字体」也显得有差异。
-        var probeKey = function (el) {
-          try {
-            var ff = el.style && el.style.fontFamily;
-            if (!ff) return null;
-            var t = el.textContent;
-            if (t && t.length > 120) return null;
-            return ff + '|' + (t || '');
-          } catch (e) { return null; }
-        };
-        var HE = W.HTMLElement && W.HTMLElement.prototype;
-        hookGetter(HE, 'offsetWidth', function (orig) {
-          return function () {
-            var v = orig.call(this);
-            var k = probeKey(this);
-            return k === null ? v : Math.max(0, v + (hash('w' + k) % 3) - 1);
-          };
-        });
-        hookGetter(HE, 'offsetHeight', function (orig) {
-          return function () {
-            var v = orig.call(this);
-            var k = probeKey(this);
-            return k === null ? v : Math.max(0, v + (hash('h' + k) % 3) - 1);
-          };
-        });
-        hook(W.Element && W.Element.prototype, 'getBoundingClientRect', function (orig) {
-          return function getBoundingClientRect() {
-            var r = orig.apply(this, arguments);
-            try {
-              var k = probeKey(this);
-              if (k === null) return r;
-              var dw = (((hash('bw' + k) % 2001) - 1000) / 1000) * 0.4;
-              var dh = (((hash('bh' + k) % 2001) - 1000) / 1000) * 0.4;
-              return new W.DOMRect(r.x, r.y, Math.max(0, r.width + dw), Math.max(0, r.height + dh));
-            } catch (e) { return r; }
-          };
-        });
-
-        // 3) FontFace + local()：通过「能否加载本机字体」枚举字体。纯 local() 来源的字体，只对常见字体返回成功。
+        // 2) FontFace + local()：通过「能否加载本机字体」枚举字体。纯 local() 来源的字体，只对常见字体返回成功。
         try {
           var OrigFontFace = W.FontFace;
           if (OrigFontFace) {
@@ -488,7 +435,7 @@
           }
         } catch (e) {}
 
-        // 4) Local Font Access API
+        // 3) Local Font Access API
         try {
           if (typeof W.queryLocalFonts === 'function') {
             var deny = function queryLocalFonts() {

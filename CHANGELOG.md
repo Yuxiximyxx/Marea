@@ -2,8 +2,11 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
-## [1.7.12-dev]
+## [1.7.13-dev]
 
+- 调整：指纹保护四项（Canvas / WebGL / Audio / Fonts）默认全部关闭；开启任一项时弹出确认框，说明可能引起的问题（细微像素差异、风控 / 验证码异常、检测站点提示被篡改等），确认后才生效
+- 调整：WebGL 不再伪装显卡型号（固定型号与真实参数不一致，反而更独特、更易被风控标记），只保留 readPixels / 画布导出加噪
+- 调整：Fonts 不再改动 DOM 的 offsetWidth / offsetHeight / getBoundingClientRect，避免影响页面布局；保留 Canvas 文字测量扰动、本机字体加载限制与 queryLocalFonts 拒绝
 - 修复：开启指纹保护后，浏览器检测提示「Canvas exception（Canvas 不稳定）」——原先每次读取 Canvas 都叠加新的随机噪声，同一画布连续读两次结果不同；现改为确定性噪声（只取决于站点种子 + 像素在画布中的坐标），同一站点同一会话内重复读取、getImageData / toDataURL / toBlob 之间结果完全一致，换站点或重启应用后仍会变化
 - 修复：提示「Canvas Tampering（Canvas 被篡改）」——被拦截的函数改用 Proxy 包装，name / length / 无 prototype / 不可 new 等属性与原生函数一致，Function.prototype.toString 同样改为 Proxy 并按窗口（含同源 iframe）安装，toString() 仍返回原生源码
 - 优化：Canvas 加噪更克制——纯色 / 空白画布不加噪（纯色填充读回校验不再失真）；约 1/64 像素的单个颜色通道 ±1，不动 alpha；导出（toDataURL / toBlob / convertToBlob）只改写被扰动的像素，其余由 drawImage 原样拷贝，避免整幅 get/putImageData 往返造成半透明像素误差；WebGL readPixels 同样使用确定性噪声

@@ -93,6 +93,7 @@ fun SettingsScreen(
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
     var showFpSheet by remember { mutableStateOf(false) }
+    var fpPending by remember { mutableStateOf<Int?>(null) } // 等待用户确认开启的指纹保护项
     var showProxyDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var reclaimable by remember { mutableStateOf(0L) }
@@ -575,33 +576,101 @@ fun SettingsScreen(
                         title = "Canvas 指纹",
                         summary = "导出画布 / 读取像素时加入不可见的细微噪声",
                         checked = AdBlock.fpCanvas,
-                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_CANVAS, it) },
+                        onCheckedChange = { if (it) fpPending = AdBlock.FP_CANVAS else AdBlock.updateFingerprint(AdBlock.FP_CANVAS, false) },
                     )
                     SwitchPreference(
                         title = "WebGL 指纹",
-                        summary = "伪装显卡型号，并给 readPixels / WebGL 画布导出加噪声",
+                        summary = "给 readPixels / WebGL 画布导出加入细微噪声",
                         checked = AdBlock.fpWebgl,
-                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_WEBGL, it) },
+                        onCheckedChange = { if (it) fpPending = AdBlock.FP_WEBGL else AdBlock.updateFingerprint(AdBlock.FP_WEBGL, false) },
                     )
                     SwitchPreference(
                         title = "Audio 指纹",
                         summary = "给音频缓冲 / 分析器输出加入听不出来的细微噪声",
                         checked = AdBlock.fpAudio,
-                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_AUDIO, it) },
+                        onCheckedChange = { if (it) fpPending = AdBlock.FP_AUDIO else AdBlock.updateFingerprint(AdBlock.FP_AUDIO, false) },
                     )
                     SwitchPreference(
                         title = "Fonts 指纹",
-                        summary = "干扰字体探测（文字测量、本机字体加载），无法枚举已安装字体",
+                        summary = "干扰 Canvas 文字测量与本机字体加载，无法枚举已安装字体",
                         checked = AdBlock.fpFonts,
-                        onCheckedChange = { AdBlock.updateFingerprint(AdBlock.FP_FONTS, it) },
+                        onCheckedChange = { if (it) fpPending = AdBlock.FP_FONTS else AdBlock.updateFingerprint(AdBlock.FP_FONTS, false) },
                     )
                     Text(
-                        text = "对新打开或刷新后的页面生效；去广告里「站点白名单」的网站不处理。" +
-                            "若某个网站的验证码、在线绘图 / 取色、音频工具异常，可关掉对应项或把该站点加入白名单。",
+                        text = "默认全部关闭。开启会改动网页读到的数据，可能引起兼容问题（开启时会有具体提示）；" +
+                            "对新打开或刷新后的页面生效；去广告里「站点白名单」的网站不处理。" +
+                            "若某个网站异常，可关掉对应项或把该站点加入白名单。",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                     )
+                }
+            }
+
+            val fpAsk = fpPending
+            GlassDialog(
+                show = fpAsk != null,
+                title = when (fpAsk) {
+                    AdBlock.FP_CANVAS -> "开启 Canvas 指纹保护？"
+                    AdBlock.FP_WEBGL -> "开启 WebGL 指纹保护？"
+                    AdBlock.FP_AUDIO -> "开启 Audio 指纹保护？"
+                    AdBlock.FP_FONTS -> "开启 Fonts 指纹保护？"
+                    else -> "开启指纹保护？"
+                },
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { fpPending = null },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = when (fpAsk) {
+                            AdBlock.FP_CANVAS -> "网页读到的 Canvas 像素会带有极细微的噪声（约 1/64 的像素 ±1），可能引起：\n" +
+                                "· 在线绘图 / 取色 / 图片处理 / 截图工具的结果与原图有细微差异\n" +
+                                "· 银行、验证码、风控类网站发现数据被改动，要求额外验证或拒绝登录\n" +
+                                "· 浏览器检测站点提示 Canvas 被篡改\n" +
+                                "· 导出的图片与原画布不再逐字节一致"
+                            AdBlock.FP_WEBGL -> "WebGL 读回的像素会带有极细微的噪声，可能引起：\n" +
+                                "· 3D / 地图 / 游戏截图、读像素的工具结果有细微差异\n" +
+                                "· 风控类网站发现渲染数据被改动，要求额外验证\n" +
+                                "· 浏览器检测站点提示 WebGL 被篡改"
+                            AdBlock.FP_AUDIO -> "音频缓冲和分析器输出会带有听不出来的噪声，可能引起：\n" +
+                                "· 音频分析 / 调音 / 频谱类工具读数有微小偏差\n" +
+                                "· 依赖音频指纹的校验或风控失败"
+                            AdBlock.FP_FONTS -> "Canvas 文字测量结果会有极小偏差，本机字体加载对非常见字体会失败，可能引起：\n" +
+                                "· 依赖精确测量的排版、编辑器、图表出现细微错位\n" +
+                                "· 使用本机字体的网页回退到其他字体\n" +
+                                "· 浏览器检测站点提示字体异常"
+                            else -> ""
+                        },
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Text(
+                        text = "指纹保护只能降低被跨站追踪的概率，不等于匿名。若遇到问题可随时关闭，或把该网站加入去广告「站点白名单」。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        GlassDialogButton(
+                            onClick = { fpPending = null },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        GlassDialogButton(
+                            onClick = {
+                                fpAsk?.let { AdBlock.updateFingerprint(it, true) }
+                                fpPending = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "仍要开启", style = MiuixTheme.textStyles.button)
+                        }
+                    }
                 }
             }
 
