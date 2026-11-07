@@ -34,6 +34,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Column
@@ -2771,6 +2772,8 @@ private class HomeReorderState {
     var offset by mutableFloatStateOf(0f)
     var live by mutableStateOf<List<Int>>(emptyList())
     var suppressClick = false
+    /** 长按过首页卡片后进入的编辑态：卡片右上角显示 ×，点空白处 / 任意卡片退出。 */
+    var homeEditing by mutableStateOf(false)
     var colWindowTop = 0f
     var rootTop = 0f
     var rootHeight = 0f
@@ -2880,6 +2883,7 @@ private fun Modifier.homeReorderHandle(
             onDragStart = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 st.suppressClick = true
+                st.homeEditing = true
                 st.live = visibleNow
                 st.offset = st.animFor(kind).value
                 st.dragging = kind
@@ -2939,7 +2943,14 @@ private fun StartPage(
     val shown = if (st.dragging >= 0) st.live else visibleKinds
     val commit: (List<Int>) -> Unit = { onReorder(mergeHomeOrder(order, it)) }
     // 长按拖动结束后的短时间内忽略点击，避免松手触发卡片 / 条目的点击
-    val guard: (() -> Unit) -> (() -> Unit) = { f -> { if (!st.suppressClick) f() } }
+    // 编辑态下的点击只用来退出编辑
+    val guard: (() -> Unit) -> (() -> Unit) = { f ->
+        {
+            if (!st.suppressClick) {
+                if (st.homeEditing) st.homeEditing = false else f()
+            }
+        }
+    }
 
     // 拖到视口边缘时自动滚动
     LaunchedEffect(st.dragging) {
@@ -2976,7 +2987,7 @@ private fun StartPage(
                 st.rootHeight = it.size.height.toFloat()
             }
             .pointerInput(Unit) {
-                detectTapGestures { /* absorb empty-area taps on home */ }
+                detectTapGestures { st.homeEditing = false } // 吸收空白处点击，并退出编辑态
             },
     ) {
         Column(
@@ -3026,6 +3037,8 @@ private fun StartPage(
                                 wallpaperBackdrop = wallpaperBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
+                                showRemove = st.homeEditing,
+                                onClick = guard {},
                                 onRemove = { onHide(HOME_PRIVACY) },
                             )
                             HOME_RECENT -> HomeCard(
@@ -3034,6 +3047,8 @@ private fun StartPage(
                                 wallpaperBackdrop = wallpaperBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
+                                showRemove = st.homeEditing,
+                                onClick = guard {},
                                 onRemove = { onHide(HOME_RECENT) },
                             ) {
                                 val items = recent.take(3)
@@ -3055,6 +3070,7 @@ private fun StartPage(
                                 wallpaperBackdrop = wallpaperBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
+                                showRemove = st.homeEditing,
                                 onRemove = { onHide(HOME_DOWNLOADS) },
                                 onClick = guard(onOpenDownloads),
                             ) {
@@ -3212,33 +3228,39 @@ private fun Modifier.homeGlass(
                 color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                 shape = shape,
             ),
-    ).homeNoWallpaperOutline(hasWallpaper, radius.dp)
+    )
 }
 
 /**
- * 无壁纸时玻璃高光描边（白色）落在浅色底上几乎看不见：补一圈对角渐变的实线描边，
- * 左上较亮、右下较淡，仍保留「高光」的方向感；有壁纸时不处理，沿用玻璃自带的高光。
+ * 无壁纸时玻璃自带的白色高光描边落在浅色底上几乎看不见：在卡片最上层叠一圈对角渐变描边
+ * （左上较亮、右下较淡；浅色主题用深线，深色主题用亮线）。必须作为子层叠在玻璃之上，
+ * 否则会被玻璃材质盖住。有壁纸时不画，沿用玻璃自带的高光。
  */
 @Composable
-private fun Modifier.homeNoWallpaperOutline(hasWallpaper: Boolean, radius: Dp): Modifier {
-    if (hasWallpaper) return this
+private fun BoxScope.HomeOutlineOverlay(hasWallpaper: Boolean, radius: Dp) {
+    if (hasWallpaper) return
     val dark = isAppDarkTheme()
     val brush = Brush.linearGradient(
         listOf(
-            if (dark) Color.White.copy(alpha = 0.40f) else Color.Black.copy(alpha = 0.22f),
-            if (dark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f),
+            if (dark) Color.White.copy(alpha = 0.45f) else Color.Black.copy(alpha = 0.26f),
+            if (dark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.10f),
         ),
     )
-    return this.border(width = 1.dp, brush = brush, shape = RoundedCornerShape(radius))
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .border(width = 1.dp, brush = brush, shape = RoundedCornerShape(radius)),
+    )
 }
 
-/** 首页通用卡片：标题 + 内容；右上角 × 从首页移除，长按拖动排序（手势由 [modifier] 提供），可选整卡点击。 */
+/** 首页通用卡片：标题 + 内容；长按进入编辑后右上角出现 × 可从首页移除，长按拖动排序（手势由 [modifier] 提供），可选整卡点击。 */
 @Composable
 private fun HomeCard(
     title: String,
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
     hasWallpaper: Boolean,
+    showRemove: Boolean,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
@@ -3270,7 +3292,8 @@ private fun HomeCard(
             Spacer(Modifier.height(8.dp))
             content()
         }
-        Box(
+        HomeOutlineOverlay(hasWallpaper, 16.dp)
+        if (showRemove) Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(8.dp)
@@ -3342,6 +3365,8 @@ private fun PrivacyReportCard(
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
     hasWallpaper: Boolean,
+    showRemove: Boolean,
+    onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -3359,6 +3384,8 @@ private fun PrivacyReportCard(
         wallpaperBackdrop = wallpaperBackdrop,
         blurEnabled = blurEnabled,
         hasWallpaper = hasWallpaper,
+        showRemove = showRemove,
+        onClick = onClick,
         onRemove = onRemove,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3453,7 +3480,6 @@ private fun FavoriteTile(
                         shape = shape,
                     ),
             )
-            .homeNoWallpaperOutline(wallpaper == null, 16.dp)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -3508,6 +3534,7 @@ private fun FavoriteTile(
                 Text(text = "×", fontSize = 11.sp, color = Color.White)
             }
         }
+        HomeOutlineOverlay(wallpaper == null, 16.dp)
     }
 }
 
