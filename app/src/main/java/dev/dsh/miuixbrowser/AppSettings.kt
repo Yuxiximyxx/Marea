@@ -320,7 +320,7 @@ class AppSettings(context: Context) {
     var proxyPort by mutableStateOf(prefs.getInt(KEY_PROXY_PORT, 0))
         private set
 
-    /** 代理认证（HTTP 挑战时提交；SOCKS5 官方 ProxyConfig 不支持） */
+    /** 代理认证（HTTP 挑战时提交；SOCKS5 官方 ProxyConfig 不支持，由本机 Socks5Relay 代为向上游认证） */
     var proxyAuth by mutableStateOf(prefs.getBoolean(KEY_PROXY_AUTH, false))
         private set
 

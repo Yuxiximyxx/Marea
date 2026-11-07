@@ -460,7 +460,7 @@ fun SettingsScreen(
             var proxyUser by remember(showProxyDialog) { mutableStateOf(settings.proxyUser) }
             var proxyPass by remember(showProxyDialog) { mutableStateOf(settings.proxyPass) }
             // SOCKS5 官方 API 不支持账密：认证开关置灰；代理关闭时仍可先配好认证
-            val authSwitchEnabled = proxyType != 1
+            val authSwitchEnabled = true
             GlassDialog(
                 show = showProxyDialog,
                 title = "代理",
@@ -520,6 +520,22 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             label = "密码",
                             singleLine = true,
+                        )
+                    }
+                    if (proxyAuth && proxyType == 1) {
+                        Text(
+                            text = "SOCKS5 认证由应用内本机中转（127.0.0.1 随机端口）完成，WebView 自身不支持 SOCKS5 认证。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    WebViewProxy.lastError?.let { err ->
+                        Text(
+                            text = err,
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                     Row(
