@@ -32,6 +32,11 @@
 - **自定义规则**、**站点白名单**；长按网页元素「标记为广告」会写入自定义规则
 - 不支持：正则规则、`$redirect / $removeparam / $csp / $replace`、`#?#` 扩展选择器、`+js()`（解析时跳过）
 - 订阅源是第三方内容，元素隐藏选择器注入前会校验，拒绝含 `{ } ;` 的选择器
+- **指纹保护**（去广告页 → 指纹保护，四项可单独开关，受总开关与站点白名单控制）：document-start 注入所有框架（含页面自建的同源 iframe），不禁用 API，只在读出指纹时「农场化」
+  - Canvas：`toDataURL / toBlob / getImageData / OffscreenCanvas` 读出时加入 ±1 的随机像素噪声，原画布内容不变
+  - WebGL：伪装 `UNMASKED_VENDOR / RENDERER`，`readPixels` 与 WebGL 画布导出加噪声
+  - Audio：`AudioBuffer`（含 OfflineAudioContext 渲染结果）与 `AnalyserNode` 输出加入 -100 dB 级别噪声
+  - Fonts：干扰 `measureText`、带内联 `font-family` 的探针元素尺寸、`FontFace local()` 加载与 `queryLocalFonts`，无法枚举已安装字体
 - 旧版本放在脚本列表里的去广告订阅，首次启动会自动迁移并重新下载
 
 ## 功能

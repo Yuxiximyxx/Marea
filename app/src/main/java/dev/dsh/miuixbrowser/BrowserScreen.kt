@@ -1689,7 +1689,10 @@ fun BrowserScreen(
                         subtitle = "记住这条规则，下次访问该站点自动隐藏",
                     ) {
                         sheet = Sheet.None
-                        AdBlock.addUserCosmetic(hostOf(tab.url), hit.selector)
+                        if (!AdBlock.addUserCosmetic(hostOf(tab.url), hit.selector)) {
+                            // 选择器不安全 / 站点名不合法时规则没有保存，不能让人以为下次会自动隐藏
+                            android.widget.Toast.makeText(context, "这个元素无法生成规则，本次仅移除", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                         tab.webView.evaluateJavascript(removeElementJs(hit.selector), null)
                     }
                     SheetRow(title = "仅移除该元素") {

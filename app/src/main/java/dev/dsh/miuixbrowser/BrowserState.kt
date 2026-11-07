@@ -505,6 +505,15 @@ class BrowserTab(private val appContext: Context) {
         webView.evaluateJavascript(js, null)
     }
 
+    /**
+     * onPageStarted 只在导航开始时给一次（重定向前）的地址：http→https、短链跳转、站内 pushState 之后
+     * pageHost 会是旧站点，导致 $third-party / $domain= / 站点白名单判错。这里用最终地址刷新。
+     */
+    private fun updatePageHost(pageUrl: String?) {
+        val h = runCatching { Uri.parse(pageUrl).host }.getOrNull()
+        if (!h.isNullOrEmpty()) pageHost = h
+    }
+
     /** 去广告元素隐藏脚本是否已作为 document-start 脚本装上（没装上时由页面加载回调兜底注入） */
     private var adblockDocStart = false
 
@@ -521,6 +530,13 @@ class BrowserTab(private val appContext: Context) {
                     androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, cacheJs, setOf("*"))
                 }.onFailure { Diag.log("blob cache install failed: ${it.message}") }
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
+                // 指纹保护（Canvas / WebGL / Audio / Fonts）：开关与白名单在页面里经桥实时查询，改设置后刷新即生效
+                runCatching {
+                    val fpJs = AdBlock.fingerprintJs()
+                    if (fpJs.isNotEmpty()) {
+                        androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, fpJs, setOf("*"))
+                    }
+                }.onFailure { Diag.log("adblock: fingerprint install failed ${it.message}") }
                 adblockDocStart = true
             }
         }.onFailure { Diag.log("adblock: document-start install failed ${it.message}") }
@@ -597,7 +613,10 @@ class BrowserTab(private val appContext: Context) {
                 errorText = null
                 syncNav()
                 syncUserScripts()
-                if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+                if (!adblockDocStart) {
+                    view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+                    view.evaluateJavascript(AdBlock.fingerprintJs(), null)
+                }
             }
 
             /** HTTP 代理认证：挑战主机等于代理主机时自动提交设置里的账号密码 */
@@ -625,6 +644,8 @@ class BrowserTab(private val appContext: Context) {
 
                 injectMissingUserScripts(view)
                 if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+                // 重定向 / 跳转后以最终地址为准更新页面主机名，去广告的第三方判定、白名单、$domain 都依赖它
+                updatePageHost(pageUrl)
                 installElementInspector(view)
                 // 稍等布局稳定再截标签缩略图
                 view.postDelayed({ captureThumbnail(view) }, 350)
@@ -632,6 +653,7 @@ class BrowserTab(private val appContext: Context) {
 
             override fun doUpdateVisitedHistory(view: WebView, pageUrl: String?, isReload: Boolean) {
                 if (!parked) pageUrl?.let { url = it }
+                updatePageHost(pageUrl)
                 syncNav()
             }
 

@@ -91,6 +91,11 @@ data class LegacyAdSub(val name: String, val url: String, val enabled: Boolean)
  */
 object AdBlock {
 
+    const val FP_CANVAS = 1
+    const val FP_WEBGL = 2
+    const val FP_AUDIO = 4
+    const val FP_FONTS = 8
+
     private const val PREFS = "mafari_adblock"
     private const val MAX_BYTES = 24 * 1024 * 1024
     private const val CUSTOM_FILE = "custom.txt"
@@ -124,6 +129,16 @@ object AdBlock {
     var autoUpdate by mutableIntStateOf(2)
         private set
 
+    /* 指纹保护：每类一个开关，同时受去广告总开关和站点白名单控制 */
+    var fpCanvas by mutableStateOf(true)
+        private set
+    var fpWebgl by mutableStateOf(true)
+        private set
+    var fpAudio by mutableStateOf(true)
+        private set
+    var fpFonts by mutableStateOf(true)
+        private set
+
     /** 当前引擎里生效的规则条数（含内置基础规则与自定义规则） */
     var loadedRules by mutableIntStateOf(0)
         private set
@@ -139,6 +154,10 @@ object AdBlock {
     @Volatile private var fastEnabled = false
     @Volatile private var fastCosmetic = true
     @Volatile private var fastAllow: Set<String> = emptySet()
+    @Volatile private var fpMask = 0
+
+    /** 本次启动的随机种子：同一站点本次启动内的「稳定伪装值」（如 WebGL 显卡型号）一致，重启后变化 */
+    private val sessionSeed: Int = java.security.SecureRandom().nextInt()
 
     private val blockedSession = AtomicLong(0)
     private var baseTotal = 0L
@@ -160,6 +179,11 @@ object AdBlock {
         baseTotal = prefs.getLong("blocked_total", 0L)
         fastEnabled = enabled
         fastCosmetic = cosmetic
+        fpCanvas = prefs.getBoolean("fp_canvas", true)
+        fpWebgl = prefs.getBoolean("fp_webgl", true)
+        fpAudio = prefs.getBoolean("fp_audio", true)
+        fpFonts = prefs.getBoolean("fp_fonts", true)
+        refreshFpMask()
 
         subs.addAll(loadSubs())
         subsShadow = subs.toList()
@@ -185,6 +209,26 @@ object AdBlock {
         cosmetic = value
         fastCosmetic = value
         prefs.edit().putBoolean("cosmetic", value).apply()
+    }
+
+    /** kind：[FP_CANVAS] / [FP_WEBGL] / [FP_AUDIO] / [FP_FONTS]；对新打开（或刷新）的页面生效。 */
+    fun updateFingerprint(kind: Int, value: Boolean) {
+        when (kind) {
+            FP_CANVAS -> { fpCanvas = value; prefs.edit().putBoolean("fp_canvas", value).apply() }
+            FP_WEBGL -> { fpWebgl = value; prefs.edit().putBoolean("fp_webgl", value).apply() }
+            FP_AUDIO -> { fpAudio = value; prefs.edit().putBoolean("fp_audio", value).apply() }
+            FP_FONTS -> { fpFonts = value; prefs.edit().putBoolean("fp_fonts", value).apply() }
+        }
+        refreshFpMask()
+    }
+
+    private fun refreshFpMask() {
+        var m = 0
+        if (fpCanvas) m = m or FP_CANVAS
+        if (fpWebgl) m = m or FP_WEBGL
+        if (fpAudio) m = m or FP_AUDIO
+        if (fpFonts) m = m or FP_FONTS
+        fpMask = m
     }
 
     fun updateAutoUpdate(mode: Int) {
@@ -313,8 +357,9 @@ object AdBlock {
         val now = System.currentTimeMillis()
         if (now - prefs.getLong("last_auto", 0L) < days * 86_400_000L) return
         if (subsShadow.none { it.enabled && it.url.isNotBlank() }) return
-        prefs.edit().putLong("last_auto", now).apply()
-        refreshAll()
+        // 至少有一个订阅更新成功才记时间；没网时全部失败，下次启动再试，而不是白白等几天
+        val (ok, _) = refreshAll()
+        if (ok > 0) prefs.edit().putLong("last_auto", now).apply()
     }
 
     /** 旧版本脚本列表里的去广告订阅 → 迁移到这里，并在后台把规则下载回来。 */
@@ -436,6 +481,33 @@ object AdBlock {
         return engine?.cssFor(host).orEmpty()
     }
 
+    /**
+     * 指纹保护配置（JS 桥调用，任意线程）。返回 "掩码:种子"；掩码 0 表示本页不处理
+     * （去广告关闭 / 四项全关 / 站点在白名单里）。
+     */
+    fun fingerprintConfig(hostRaw: String?, topHostRaw: String?): String {
+        val mask = fpMask
+        if (!fastEnabled || mask == 0) return "0:0"
+        val host = hostRaw?.trim()?.lowercase().orEmpty()
+        val top = topHostRaw?.trim()?.lowercase().orEmpty()
+        if ((host.isNotEmpty() && hostAllowed(host)) || (top.isNotEmpty() && hostAllowed(top))) return "0:0"
+        val site = AdMatch.registrable(top.ifEmpty { host })
+        val seed = (sessionSeed * 31 + site.hashCode()).toLong() and 0xFFFFFFFFL
+        return "$mask:$seed"
+    }
+
+    @Volatile private var fpJs: String? = null
+
+    /** 指纹保护的 document-start 脚本（assets/mafari_fingerprint.js），读一次后缓存。 */
+    fun fingerprintJs(): String {
+        fpJs?.let { return it }
+        val text = runCatching {
+            appContext.assets.open("mafari_fingerprint.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.onFailure { Diag.log("adblock: fingerprint script load failed ${it.message}") }.getOrDefault("")
+        fpJs = text
+        return text
+    }
+
     private val EMPTY = ByteArray(0)
 
     // 1x1 透明 GIF
@@ -461,7 +533,7 @@ object AdBlock {
     const val COSMETIC_JS = """(function(){
   try {
     if (window.__mafariAdblockInit) return;
-    window.__mafariAdblockInit = 1;
+    // 先确认桥已就绪再占位：桥没准备好时，后面的兜底注入还能再试
     if (typeof MafariAdblock === 'undefined') return;
     var host = location.hostname;
     if (!host) return;
@@ -472,7 +544,17 @@ object AdBlock {
     } catch (e) {}
     var css = '';
     try { css = MafariAdblock.css(host, topHost); } catch (e) { return; }
+    window.__mafariAdblockInit = 1;
     if (!css) return;
+    // 首选 adoptedStyleSheets：不受页面 CSP（style-src）限制，严格 CSP 的站点（GitHub 等）也能生效
+    try {
+      if (typeof CSSStyleSheet === 'function' && 'adoptedStyleSheets' in document) {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync(css);
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet]);
+        return;
+      }
+    } catch (e) {}
     var st = null;
     function mount() {
       var root = document.head || document.documentElement;
@@ -751,8 +833,12 @@ object AdBlock {
 """
 }
 
-/** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS，不泄露任何用户数据。 */
+/** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS / 指纹保护开关，不泄露任何用户数据。 */
 class AdBlockBridge {
     @JavascriptInterface
     fun css(host: String?, topHost: String?): String = AdBlock.cosmeticCss(host, topHost)
+
+    /** 指纹保护配置，见 [AdBlock.fingerprintConfig]。 */
+    @JavascriptInterface
+    fun fp(host: String?, topHost: String?): String = AdBlock.fingerprintConfig(host, topHost)
 }
