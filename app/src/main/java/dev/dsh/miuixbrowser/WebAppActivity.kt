@@ -2,15 +2,26 @@ package dev.dsh.miuixbrowser
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.animation.ValueAnimator
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.HttpAuthHandler
@@ -58,6 +69,18 @@ class WebAppActivity : ComponentActivity() {
     private var appTitle = ""
     private var dark = false
     private var defaultBg = Color.WHITE
+
+    // 沉浸浏览：顶部状态栏留白随滚动收起 / 回落（与浏览器主界面一致）
+    private var topInset = 0
+    private var sideLeft = 0
+    private var sideRight = 0
+    private var imeBottom = 0
+    private var topPad = 0
+    private var topCollapsed = false
+    private var topAnimator: ValueAnimator? = null
+
+    // 下拉刷新
+    private lateinit var refreshSpinner: RefreshSpinnerView
 
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
@@ -143,16 +166,38 @@ class WebAppActivity : ComponentActivity() {
             progress,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.density * 2.5f).toInt()),
         )
+        val density = resources.displayMetrics.density
+        refreshSpinner = RefreshSpinnerView(this).apply {
+            visibility = View.GONE
+            elevation = 6f * density
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (dark) 0xEB2A2A2A.toInt() else 0xEBFFFFFF.toInt())
+            }
+        }
+        root.addView(
+            refreshSpinner,
+            FrameLayout.LayoutParams((34 * density).toInt(), (34 * density).toInt(), Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+                .apply { topMargin = (18 * density).toInt() },
+        )
         setContentView(root)
 
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+        // 沉浸：网页一直铺到手势小白条下方（底部只在软键盘弹出时让出），顶部状态栏留白由滚动控制
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            topInset = bars.top
+            sideLeft = bars.left
+            sideRight = bars.right
+            imeBottom = ime.bottom
+            if (topAnimator?.isRunning != true) topPad = if (topCollapsed) 0 else topInset
+            applyRootPadding()
             insets
         }
 
         configureWebView()
+        setupImmersiveScroll()
+        setupPullRefresh()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
@@ -371,6 +416,107 @@ class WebAppActivity : ComponentActivity() {
         }
     }
 
+    // ------------------------------------------------- 沉浸浏览 / 下拉刷新
+
+    private fun applyRootPadding() = root.setPadding(sideLeft, topPad, sideRight, imeBottom)
+
+    private fun setTopCollapsed(collapsed: Boolean) {
+        if (topCollapsed == collapsed) return
+        topCollapsed = collapsed
+        val target = if (collapsed) 0 else topInset
+        topAnimator?.cancel()
+        topAnimator = ValueAnimator.ofInt(topPad, target).apply {
+            duration = 260
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                topPad = it.animatedValue as Int
+                applyRootPadding()
+            }
+            start()
+        }
+    }
+
+    /** 状态栏：初始留白，向下滚动顶满，回顶回落（阈值与浏览器一致：下滚约 100px 收起，上滚约 120px 或回顶恢复） */
+    private fun setupImmersiveScroll() {
+        var lastShow = 0
+        var downAccum = 0f
+        var upAccum = 0f
+        webView.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            val offset = scrollY.coerceAtLeast(0)
+            val dy = offset - oldScrollY.coerceAtLeast(0)
+            when {
+                offset <= 12 -> {
+                    setTopCollapsed(false)
+                    lastShow = offset
+                    downAccum = 0f
+                    upAccum = 0f
+                }
+                dy > 0 -> {
+                    upAccum = 0f
+                    downAccum += dy
+                    if (downAccum >= 100f && offset - lastShow >= 96) {
+                        setTopCollapsed(true)
+                        downAccum = 0f
+                        upAccum = 0f
+                    }
+                }
+                dy < 0 -> {
+                    downAccum = 0f
+                    upAccum += -dy
+                    if (topCollapsed && upAccum >= 120f) {
+                        setTopCollapsed(false)
+                        lastShow = offset
+                        upAccum = 0f
+                    } else if (!topCollapsed) {
+                        lastShow = offset
+                    }
+                }
+            }
+        }
+    }
+
+    /** 下拉刷新：页面在顶部时下拉约 4cm 松手触发（与浏览器一致），带触感反馈与顶部旋转指示 */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupPullRefresh() {
+        val thresholdPx = resources.displayMetrics.xdpi / 2.54f * 4f
+        var touchDownY = 0f
+        var pulled = 0f
+        fun reset() {
+            pulled = 0f
+            refreshSpinner.visibility = View.GONE
+        }
+        webView.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchDownY = event.y
+                    pulled = 0f
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (webView.scrollY <= 0 && event.y > touchDownY) {
+                        pulled = event.y - touchDownY
+                        val progress = (pulled / thresholdPx).coerceIn(0f, 1f)
+                        if (progress > 0.05f) {
+                            refreshSpinner.visibility = View.VISIBLE
+                            refreshSpinner.progress = progress
+                            refreshSpinner.alpha = 0.4f + 0.6f * progress
+                            val scale = 0.7f + 0.3f * progress
+                            refreshSpinner.scaleX = scale
+                            refreshSpinner.scaleY = scale
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (pulled > thresholdPx && webView.scrollY <= 0) {
+                        webView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        webView.reload()
+                    }
+                    reset()
+                }
+            }
+            false
+        }
+    }
+
     // ------------------------------------------------------------- helpers
 
     private fun hideCustomView() {
@@ -508,5 +654,52 @@ class WebAppActivity : ComponentActivity() {
     private fun updateTaskDescription(title: String) {
         val icon = ShortcutHelper.readSavedIcon(this, intent?.getStringExtra(ShortcutHelper.EXTRA_ICON))
         setTaskDescription(ActivityManager.TaskDescription(title, icon))
+    }
+}
+
+/** 下拉刷新指示：圆形底 + 随下拉进度旋转的环形箭头（与浏览器的 RefreshSpinner 同款观感） */
+private class RefreshSpinnerView(context: Context) : View(context) {
+
+    var progress = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    private val d = resources.displayMetrics.density
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * d
+        strokeCap = Paint.Cap.ROUND
+        color = 0xFF3B7DFF.toInt()
+    }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0xFF3B7DFF.toInt()
+    }
+    private val arrow = Path()
+
+    override fun onDraw(canvas: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = 6.5f * d
+        canvas.save()
+        canvas.rotate(progress * 360f, cx, cy)
+        canvas.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), -90f, 280f, false, stroke)
+        // 箭头：弧线末端沿顺时针切线方向
+        val theta = Math.toRadians(190.0)
+        val px = cx + r * Math.cos(theta).toFloat()
+        val py = cy + r * Math.sin(theta).toFloat()
+        val tx = -Math.sin(theta).toFloat()
+        val ty = Math.cos(theta).toFloat()
+        val nx = Math.cos(theta).toFloat()
+        val ny = Math.sin(theta).toFloat()
+        arrow.reset()
+        arrow.moveTo(px + tx * 3.6f * d, py + ty * 3.6f * d)
+        arrow.lineTo(px + nx * 3.2f * d, py + ny * 3.2f * d)
+        arrow.lineTo(px - nx * 3.2f * d, py - ny * 3.2f * d)
+        arrow.close()
+        canvas.drawPath(arrow, fill)
+        canvas.restore()
     }
 }
