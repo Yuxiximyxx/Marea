@@ -255,6 +255,11 @@ fun BrowserScreen(
         true
     }
     LaunchedEffect(Unit) { AdBlock.autoUpdateIfDue() }
+    // 首次打开 app：自动拉取并安装推荐脚本（每个只自动装一次，失败的下次启动重试）；之后按设置的间隔后台自动更新脚本
+    LaunchedEffect(Unit) {
+        runCatching { extensions.bootstrapRecommended() }
+        runCatching { extensions.autoUpdateIfDue() }
+    }
     val history = remember { HistoryStore(context) }
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
@@ -1835,6 +1840,40 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(text = "从文件选择", style = MiuixTheme.textStyles.button)
+                }
+            }
+        }
+
+        // HTML5 视频全屏：沉浸播放，完全隐藏状态栏和底部导航条（边缘上滑可临时唤出），退出全屏时恢复
+        val videoFullscreen = customView != null
+        DisposableEffect(videoFullscreen) {
+            val window = (context as? Activity)?.window
+            val controller = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, it.decorView) }
+            var oldCutout = -1
+            if (videoFullscreen && window != null && controller != null) {
+                controller.systemBarsBehavior =
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    oldCutout = window.attributes.layoutInDisplayCutoutMode
+                    val attrs = window.attributes
+                    attrs.layoutInDisplayCutoutMode =
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R)
+                            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    window.attributes = attrs
+                }
+            }
+            onDispose {
+                if (videoFullscreen && window != null && controller != null) {
+                    controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    controller.systemBarsBehavior =
+                        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                    if (oldCutout >= 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        val attrs = window.attributes
+                        attrs.layoutInDisplayCutoutMode = oldCutout
+                        window.attributes = attrs
+                    }
                 }
             }
         }

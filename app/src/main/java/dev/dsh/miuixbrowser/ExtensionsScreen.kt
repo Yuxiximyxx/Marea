@@ -1,5 +1,7 @@
 package dev.dsh.miuixbrowser
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,6 +73,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.glass.GlassIconButton
@@ -79,12 +82,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
+/** 脚本页：布局与「去广告」一致 —— 顶部设置卡（自动更新）、已安装脚本、推荐脚本；右上角菜单可导入（URL / 本地文件）、新建、全部更新。 */
 @Composable
 fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boolean = true) {
     var editing by remember { mutableStateOf<UserScript?>(null) }
     var creating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
+    var busyIds by remember { mutableStateOf(setOf<String>()) }
+    var installingUrls by remember { mutableStateOf(setOf<String>()) }
+    var importBusy by remember { mutableStateOf(false) }
     var updatingAll by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<UserScript?>(null) }
     val context = LocalContext.current
@@ -100,36 +106,56 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
     var showMore by remember { mutableStateOf(false) }
     var moreAnchor by remember { mutableStateOf(Rect.Zero) }
-    val updateAll: () -> Unit = {
-        if (!updatingAll) {
-            val targets = store.items.filter { it.sourceUrl.isNotBlank() }
-            if (targets.isEmpty()) {
-                android.widget.Toast.makeText(context, "没有可更新的脚本", android.widget.Toast.LENGTH_SHORT).show()
-            } else {
-                updatingAll = true
-                busy = true
-                scope.launch {
-                    var ok = 0
-                    targets.forEach { target ->
-                        val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            fetchScript(target.sourceUrl)
-                        }
-                        if (fresh != null) {
-                            store.update(target.id, target.name, fresh, target.enabled, target.match)
-                            ok++
-                        }
-                    }
-                    busy = false
-                    updatingAll = false
-                    android.widget.Toast.makeText(
-                        context,
-                        "已更新 $ok/${targets.size} 个脚本",
-                        android.widget.Toast.LENGTH_SHORT,
-                    ).show()
+
+    fun toast(msg: String) = android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    /** 导入 URL：脚本 → 安装；去广告规则 → 交给「去广告」。 */
+    fun importUrl(url: String) {
+        if (importBusy) return
+        importBusy = true
+        toast("正在下载…")
+        scope.launch {
+            val result = fetchUserScriptText(url, allowFilterList = true)
+            result.onSuccess { text ->
+                if (AdParser.looksLikeFilterList(text)) {
+                    AdBlock.subscribe(url)
+                        .onSuccess { toast("这是去广告规则，已加入「设置 → 高级 → 去广告」") }
+                        .onFailure { toast(it.message ?: "订阅失败") }
+                } else {
+                    val script = store.installText(url, text)
+                    toast("已导入 ${script.name}")
                 }
+            }.onFailure { toast(it.message ?: "下载失败，检查链接") }
+            importBusy = false
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+            }
+            val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.').orEmpty()
+            when {
+                text == null -> toast("读取文件失败")
+                text.contains("==UserScript==") -> {
+                    val parsedName = parseUserScript(text).first
+                    store.add(if (parsedName.isBlank()) fileName else "", text)
+                    toast("已导入脚本")
+                }
+                AdParser.looksLikeFilterList(text) -> {
+                    AdBlock.importLocal(fileName, text)
+                        .onSuccess { toast("这是去广告规则，已导入「设置 → 高级 → 去广告」") }
+                        .onFailure { toast(it.message ?: "导入失败") }
+                }
+                else -> toast("这不是有效的油猴脚本")
             }
         }
     }
+
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -174,7 +200,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .background(MiuixTheme.colorScheme.surface),
             ) {
-                val normalScripts = store.items.toList()
+                val scripts = store.items.toList()
                 val missingBuiltins = BUILTIN_SCRIPTS.filter { builtin ->
                     store.items.none { item ->
                         builtin.userScriptUrl.isNotBlank() && item.sourceUrl == builtin.userScriptUrl
@@ -182,161 +208,97 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
                 }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 88.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 32.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
-                    if (missingBuiltins.isNotEmpty()) {
-                        item {
-                            SmallTitle(text = "建议安装的脚本")
-                        }
-                        items(missingBuiltins.size) { index ->
-                            val builtin = missingBuiltins[index]
-                            BuiltinScriptCard(builtin) {
-                                if (!busy) {
-                                    busy = true
-                                    scope.launch {
-                                        if (builtin.userScriptUrl.isNotBlank()) {
-                                            val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                fetchScript(builtin.userScriptUrl)
-                                            }
-                                            if (code != null) {
-                                                store.add("", code, sourceUrl = builtin.userScriptUrl)
-                                                android.widget.Toast.makeText(context, "已添加 " + builtin.name, android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                android.widget.Toast.makeText(context, "下载失败，检查网络", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            store.add(builtin.name, builtin.code)
-                                        }
-                                        busy = false
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (normalScripts.isEmpty()) {
-                        item {
-                            Text(
-                                text = "还没有脚本。脚本就是一段在页面加载完成后注入的 JavaScript。",
-                                fontSize = 13.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                modifier = Modifier.padding(24.dp),
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            insideMargin = PaddingValues(0.dp),
+                        ) {
+                            GlassDropdownPreference(
+                                backdrop = if (glass) backdrop else null,
+                                title = "自动更新脚本",
+                                items = listOf("手动", "每天", "每 3 天", "每周"),
+                                selectedIndex = store.autoUpdate.coerceIn(0, 3),
+                                onSelectedIndexChange = { store.updateAutoUpdate(it) },
                             )
                         }
-                    } else if (normalScripts.isNotEmpty()) {
+                    }
+
+                    item { SmallTitle(text = "已安装脚本") }
+                    if (scripts.isEmpty()) {
                         item {
-                            SmallTitle(text = "已安装脚本")
+                            Text(
+                                text = "还没有脚本。点右上角「导入脚本」输入链接或选择本地文件，也可以直接选下面的推荐脚本。",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                            )
                         }
-                        items(normalScripts.size) { index ->
-                            val script = normalScripts[index]
-                            // 版本号 / 描述 / 图标回退站点都从脚本头自动识别；code 不变就不重复解析
-                            val info = remember(script.code) {
-                                UserscriptEngine.parse(script.code).let {
-                                    ScriptListInfo(
-                                        version = it.version.trim(),
-                                        description = it.description,
-                                        iconHost = UserscriptEngine.fallbackIconHost(it),
-                                    )
-                                }
+                    }
+                    items(scripts.size) { index ->
+                        val script = scripts[index]
+                        // 版本号 / 描述 / 图标回退站点都从脚本头自动识别；code 不变就不重复解析
+                        val info = remember(script.code) {
+                            UserscriptEngine.parse(script.code).let {
+                                ScriptListInfo(
+                                    version = it.version.trim(),
+                                    description = it.description,
+                                    iconHost = UserscriptEngine.fallbackIconHost(it),
+                                )
                             }
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 8.dp),
-                                insideMargin = PaddingValues(14.dp),
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ScriptIcon(script.icon, script.sourceUrl, info.iconHost)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable { editing = script },
-                                    ) {
-                                        // 标题 + 紧跟的加粗版本号：名字过长时只截断名字，版本号始终完整显示
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = script.name,
-                                                fontSize = 15.sp,
-                                                color = MiuixTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false),
-                                            )
-                                            if (info.version.isNotEmpty()) {
-                                                Spacer(Modifier.width(6.dp))
-                                                Text(
-                                                    text = if (info.version.startsWith("v", ignoreCase = true)) info.version else "v${info.version}",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MiuixTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    softWrap = false,
-                                                )
-                                            }
-                                        }
-                                        Spacer(Modifier.height(2.dp))
-                                        // 副标题优先用元数据 @description，没有再回退代码预览
-                                        val subtitle = info.description
-                                            .ifBlank { script.code.take(60).replace("\n", " ") }
-                                        Text(
-                                            text = subtitle,
-                                            fontSize = 11.sp,
-                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                            maxLines = 1,
-                                        )
+                        }
+                        ScriptCard(
+                            script = script,
+                            info = info,
+                            refreshing = script.id in busyIds,
+                            onEdit = { editing = script },
+                            onToggle = { store.setEnabled(script.id, it) },
+                            onRefresh = {
+                                if (script.id !in busyIds) {
+                                    busyIds = busyIds + script.id
+                                    scope.launch {
+                                        store.refresh(script.id)
+                                            .onSuccess { changed -> toast(if (changed) "已更新 ${script.name}" else "${script.name} 已是最新") }
+                                            .onFailure { toast(it.message ?: "更新失败") }
+                                        busyIds = busyIds - script.id
                                     }
-                                    Switch(
-                                        checked = script.enabled,
-                                        onCheckedChange = { store.setEnabled(script.id, it) },
-                                    )
-                                    if (script.sourceUrl.isNotBlank()) {
-                                        IconButton(onClick = {
-                                            if (!busy) {
-                                                busy = true
-                                                scope.launch {
-                                                    val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                        fetchScript(script.sourceUrl)
-                                                    }
-                                                    if (fresh != null) {
-                                                        store.update(script.id, script.name, fresh, script.enabled, script.match)
-                                                        android.widget.Toast.makeText(context, "已更新 ${script.name}", android.widget.Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        android.widget.Toast.makeText(context, "更新失败", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                    busy = false
-                                                }
-                                            }
-                                        }) {
-                                            Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新")
-                                        }
-                                    }
-                                    IconButton(onClick = { deleting = script }) {
-                                        Icon(imageVector = MiuixIcons.Glass.Delete, contentDescription = "删除")
+                                }
+                            },
+                            onDelete = { deleting = script },
+                        )
+                    }
+
+                    if (missingBuiltins.isNotEmpty()) {
+                        item { SmallTitle(text = "推荐脚本") }
+                        items(missingBuiltins.size) { index ->
+                            val builtin = missingBuiltins[index]
+                            BuiltinScriptCard(builtin, installing = builtin.userScriptUrl in installingUrls) {
+                                if (builtin.userScriptUrl.isBlank()) {
+                                    store.add(builtin.name, builtin.code)
+                                } else if (builtin.userScriptUrl !in installingUrls) {
+                                    installingUrls = installingUrls + builtin.userScriptUrl
+                                    scope.launch {
+                                        store.install(builtin.userScriptUrl)
+                                            .onSuccess { toast("已添加 " + builtin.name) }
+                                            .onFailure { toast(it.message ?: "下载失败，检查网络") }
+                                        installingUrls = installingUrls - builtin.userScriptUrl
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // 右下圆形添加按钮
-            LiquidGlassFab(
-                onClick = { creating = true },
-                backdrop = liquid,
-                primary = true,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(20.dp),
-            ) {
-                Icon(
-                    imageVector = MiuixIcons.Glass.Add,
-                    contentDescription = "新建脚本",
-                    tint = Color.White,
-                    modifier = Modifier.size(26.dp),
-                )
+                    item {
+                        Text(
+                            text = "脚本在页面加载完成后注入运行，可在每个页面的「脚本」菜单里临时开关。" +
+                                "首次打开 app 会自动安装推荐脚本；有来源地址的脚本会按上面设置的间隔在后台自动更新。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
+                        )
+                    }
+                }
             }
         } // end outer Box
 
@@ -376,27 +338,11 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             onDismiss = { importing = false },
             onImport = { url ->
                 importing = false
-                busy = true
-                scope.launch {
-                    val code = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchScript(url) }
-                    if (code != null) {
-                        if (AdParser.looksLikeFilterList(code)) {
-                            // 这是去广告规则而不是脚本：交给「设置 → 高级 → 去广告」
-                            val result = AdBlock.subscribe(url)
-                            val msg = result.fold(
-                                onSuccess = { "这是去广告规则，已加入「设置 → 高级 → 去广告」" },
-                                onFailure = { it.message ?: "订阅失败" },
-                            )
-                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                        } else {
-                            store.add("", code, sourceUrl = url)
-                            android.widget.Toast.makeText(context, "已导入脚本", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        android.widget.Toast.makeText(context, "下载失败，检查链接", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                    busy = false
-                }
+                importUrl(url)
+            },
+            onPickFile = {
+                importing = false
+                filePicker.launch(arrayOf("text/*", "application/javascript", "application/octet-stream", "*/*"))
             },
         )
 
@@ -420,9 +366,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             },
         )
     }
-    // “更多”菜单：与 Scaffold 同级、放在最后 → 位于最上层（盖住顶栏）；
-    // GlassPopup 自带全屏遮罩层，点菜单以外任何区域（含顶栏）都会触发 onDismissRequest 收起。
-    // 锚点：面板顶边直接对齐按钮底部，右边与按钮右边对齐。
+    // 右上角菜单：与 Scaffold 同级、放在最后 → 位于最上层（盖住顶栏）
     GlassPopup(
         show = showMore,
         onDismissRequest = { showMore = false },
@@ -430,7 +374,7 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
         backdrop = if (glass) backdrop else null,
     ) {
         GlassPopupItem(
-            text = "导入",
+            text = "导入脚本",
             onClick = {
                 showMore = false
                 importing = true
@@ -438,15 +382,113 @@ fun ExtensionsScreen(store: ExtensionStore, onBack: () -> Unit, blurEnabled: Boo
             icon = MiuixIcons.Glass.Download,
         )
         GlassPopupItem(
+            text = "新建脚本",
+            onClick = {
+                showMore = false
+                creating = true
+            },
+            icon = MiuixIcons.Glass.Add,
+        )
+        GlassPopupItem(
             text = if (updatingAll) "更新中…" else "全部更新",
             enabled = !updatingAll,
             onClick = {
                 showMore = false
-                updateAll()
+                if (store.items.none { it.sourceUrl.isNotBlank() }) {
+                    toast("没有可更新的脚本")
+                } else {
+                    updatingAll = true
+                    scope.launch {
+                        val (ok, total) = store.refreshAll()
+                        updatingAll = false
+                        toast("已更新 $ok/$total 个脚本")
+                    }
+                }
             },
             icon = MiuixIcons.Glass.Refresh,
         )
     }
+    }
+}
+
+private fun formatTime(ms: Long): String =
+    java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ms))
+
+@Composable
+private fun ScriptCard(
+    script: UserScript,
+    info: ScriptListInfo,
+    refreshing: Boolean,
+    onEdit: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 8.dp),
+        insideMargin = PaddingValues(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ScriptIcon(script.icon, script.sourceUrl, info.iconHost)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f).clickable { onEdit() }) {
+                // 标题 + 紧跟的加粗版本号：名字过长时只截断名字，版本号始终完整显示
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = script.name,
+                        fontSize = 15.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (info.version.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (info.version.startsWith("v", ignoreCase = true)) info.version else "v${info.version}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                val failed = script.error.isNotBlank() && !refreshing
+                Text(
+                    text = when {
+                        refreshing -> "正在更新…"
+                        failed -> "更新失败：" + script.error
+                        script.sourceUrl.isBlank() -> "本地脚本"
+                        script.updatedAt == 0L -> "尚未更新，点右侧刷新"
+                        else -> "更新于 " + formatTime(script.updatedAt)
+                    },
+                    fontSize = 12.sp,
+                    color = if (failed) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                )
+                // 副标题优先用元数据 @description，没有再回退来源地址 / 代码预览
+                val subtitle = info.description
+                    .ifBlank { script.sourceUrl }
+                    .ifBlank { script.code.take(60).replace("\n", " ") }
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                )
+            }
+            Switch(checked = script.enabled, onCheckedChange = onToggle)
+            if (script.sourceUrl.isNotBlank()) {
+                IconButton(onClick = onRefresh) {
+                    Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新")
+                }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(imageVector = MiuixIcons.Glass.Delete, contentDescription = "删除")
+            }
+        }
     }
 }
 
@@ -528,11 +570,13 @@ private fun ImportDialog(
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     onDismiss: () -> Unit,
     onImport: (String) -> Unit,
+    onPickFile: () -> Unit,
 ) {
-    var url by remember { mutableStateOf("") }
+    var url by remember(show) { mutableStateOf("") }
     GlassDialog(
         show = show,
-        title = "从 URL 导入脚本",
+        title = "导入脚本",
+        summary = "支持 .user.js 链接或本地文件；去广告规则会自动转交「去广告」",
         backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
@@ -541,10 +585,16 @@ private fun ImportDialog(
                 value = url,
                 onValueChange = { url = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = "脚本地址（.user.js）",
+                label = "脚本地址（http / https，.user.js）",
                 singleLine = true,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
+            TextButton(
+                text = "从本地文件导入",
+                onClick = onPickFile,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
@@ -561,22 +611,8 @@ private fun ImportDialog(
     }
 }
 
-private fun fetchScript(url: String): String? = runCatching {
-    val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 8000
-        readTimeout = 8000
-        setRequestProperty("User-Agent", "Mozilla/5.0 mafari")
-    }
-    try {
-        if (connection.responseCode !in 200..299) return@runCatching null
-        connection.inputStream.bufferedReader().readText()
-    } finally {
-        connection.disconnect()
-    }
-}.getOrNull()
-
 @Composable
-private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> Unit) {
+private fun BuiltinScriptCard(script: BuiltinScript, installing: Boolean, onAdd: (BuiltinScript) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -612,7 +648,8 @@ private fun BuiltinScriptCard(script: BuiltinScript, onAdd: (BuiltinScript) -> U
             }
             Spacer(Modifier.width(8.dp))
             TextButton(
-                text = "添加",
+                text = if (installing) "安装中…" else "安装",
+                enabled = !installing,
                 onClick = { onAdd(script) },
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 minHeight = 30.dp,
