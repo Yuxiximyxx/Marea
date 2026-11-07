@@ -2,6 +2,18 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.2-dev]
+
+- 重构：指纹保护改为「origin-scoped document-start 注入 + 原生内联配置」——每个 origin 单独生成脚本并按 origin 注册，配置只存在于脚本闭包，页面无法再询问或枚举其他站点的配置；移除页面可调用的 `MafariAdblock.fp(host, topHost)`（去广告的 `css()` 桥不变）
+- 调整：指纹保护只作用于主框架与同源 iframe，跨源 iframe 默认不保护；导航前先注册（loadUrl / 刷新 / 前进后退 / shouldOverrideUrlLoading），重定向与无回调的导航为尽力而为
+- 新增：「保护豁免站点」——指纹保护有了独立的豁免列表，不再复用去广告「站点白名单」（升级时一次性复制现有白名单，之后互相独立）
+- 调整：WebView 不支持 DOCUMENT_START_SCRIPT 时降级为无参 `MafariFp.fp()`，由原生维护顶层 origin；安全边界弱于主路径，见 docs/FINGERPRINT.md
+- 依赖：androidx.webkit 1.14.0 → 1.18.0
+- 新增：轻应用接入指纹保护（同一套按 origin 注册；loadUrl / 刷新 / 后退 / 主框架导航前先注册）
+- 新增：低频可信通道 MafariTrusted（WebMessageListener）——来源由 WebView 校验，只收主框架、固定 op：指纹读取统计上报、页面请求豁免（必须用户确认，只豁免它自己）；与指纹配置下发完全解耦，不返回任何数据
+- 新增：设置 → 指纹保护里显示本次启动以来被处理的读取次数
+
+
 ## [1.8.1-dev]
 
 - 修复：长按广告图片 / 链接只有保存图片、链接菜单，无法标记广告——图片菜单与链接菜单新增「标记为广告」：按长按位置取页面元素，向上找到广告位容器（浮层 / 广告类名 / iframe / ins / 紧贴的包装层），生成唯一选择器后进入「标记为广告并移除 / 仅移除」

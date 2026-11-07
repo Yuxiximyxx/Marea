@@ -620,12 +620,38 @@ private fun CustomRulesDialog(
 
 @Composable
 private fun AllowListDialog(show: Boolean, backdrop: Backdrop?, onDismiss: () -> Unit) {
+    HostListDialog(
+        show = show,
+        backdrop = backdrop,
+        title = "站点白名单",
+        summary = "白名单站点（含子域名）不拦截请求、不隐藏元素",
+        emptyText = "还没有白名单站点",
+        hosts = AdBlock.allowHosts,
+        onAdd = { AdBlock.allowSite(it) },
+        onRemove = { AdBlock.disallowSite(it) },
+        onDismiss = onDismiss,
+    )
+}
+
+/** 域名列表编辑弹窗：去广告白名单与指纹保护豁免列表共用。 */
+@Composable
+internal fun HostListDialog(
+    show: Boolean,
+    backdrop: Backdrop?,
+    title: String,
+    summary: String,
+    emptyText: String,
+    hosts: List<String>,
+    onAdd: (String) -> Boolean,
+    onRemove: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     var host by remember(show) { mutableStateOf("") }
     GlassDialog(
         show = show,
-        title = "站点白名单",
-        summary = "白名单站点（含子域名）不拦截请求、不隐藏元素",
+        title = title,
+        summary = summary,
         backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
@@ -644,7 +670,7 @@ private fun AllowListDialog(show: Boolean, backdrop: Backdrop?, onDismiss: () ->
                     onClick = {
                         val input = host.trim().lowercase().removePrefix("https://").removePrefix("http://")
                             .substringBefore('/')
-                        if (AdBlock.allowSite(input)) {
+                        if (onAdd(input)) {
                             host = ""
                         } else {
                             Toast.makeText(context, "域名格式不正确", Toast.LENGTH_SHORT).show()
@@ -658,18 +684,18 @@ private fun AllowListDialog(show: Boolean, backdrop: Backdrop?, onDismiss: () ->
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
             ) {
-                if (AdBlock.allowHosts.isEmpty()) {
+                if (hosts.isEmpty()) {
                     Text(
-                        text = "还没有白名单站点",
+                        text = emptyText,
                         fontSize = 13.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
                 }
-                AdBlock.allowHosts.toList().forEach { h ->
+                hosts.toList().forEach { h ->
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(h, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { AdBlock.disallowSite(h) }) {
+                        IconButton(onClick = { onRemove(h) }) {
                             Icon(imageVector = MiuixIcons.Glass.Delete, contentDescription = "移除")
                         }
                     }

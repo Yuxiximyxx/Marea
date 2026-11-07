@@ -1,65 +1,110 @@
 /*
- * Mafari Fingerprint Protection Engine 2.1
+ * Mafari Fingerprint Protection Engine 3.0
  *
- * 注入顺序：AdBlock 完成后、页面脚本执行前；每个 frame 均应独立执行 document-start 注入。
+ * 架构：origin-scoped document-start 注入 + 原生内联配置（详见 docs/FINGERPRINT.md）。
  *
- * 兼容配置：MafariAdblock.fp(host, topHost) -> "掩码:种子"
- *   1 = Canvas
- *   2 = WebGL
- *   4 = Audio
- *   8 = Fonts
- *   0 = 当前 frame 不保护
+ * 原生侧（FingerprintInjector）为每个允许注入的 origin 单独生成一份脚本：把本文件末尾的
+ * 配置占位符替换成该 origin 自己的 {mask, seed, origin}，再用
+ * WebViewCompat.addDocumentStartJavaScript(view, script, setOf(origin)) 注册。
+ * 来源匹配由 WebView 框架在注入前完成；配置只存在于该脚本的闭包参数里，
+ * 页面既不能询问「我是谁、该用什么配置」，也无法通过伪造 host / topHost 枚举其他站点的配置。
  *
- * 安全边界：
- * - 本脚本不能保护一个可被网页直接调用、且无来源校验的 @JavascriptInterface 密钥接口。
- * - Kotlin 侧应使用受限的 origin-aware 消息通道提供配置；不要让网页可任意查询其他 host 的 seed。
- * - 本脚本不声称覆盖 Worker、WebGL2 PBO、所有 CSS 字体探测或 OfflineAudioContext 的 getChannelData 路径。
+ * 配置对象：
+ *   mask  1 = Canvas   2 = WebGL   4 = Audio   8 = Fonts
+ *   seed  32 位无符号整数，由原生侧按「会话密钥 + 可注册域名」派生
+ *   origin  注册时的 origin；运行时必须等于 self.origin，否则整段脚本不执行
+ *
+ * 降级路径（WebView 不支持 DOCUMENT_START_SCRIPT）：占位符保持为 null，脚本改为调用
+ * 无参的 MafariFp.fp()（仅降级时才安装该桥）。原生侧只返回「它自己维护的顶层 origin」的配置，
+ * 脚本再核对返回的 origin 与 self.origin 一致后才使用。该路径只保护主框架 / 同源 iframe，
+ * 且无法在页面第一个脚本之前就位，也无法对页面隐藏 seed，见文档中的安全边界。
+ *
+ * 跨源 iframe：本脚本不信任、不为其工作。即使某个跨源 frame 的 origin 恰好已被注册，
+ * 只要它的任一祖先 origin 与自身不同就直接退出（location.ancestorOrigins 由浏览器提供，页面无法改写）。
+ *
+ * 本脚本不声称覆盖 Worker、WebGL2 PBO、所有 CSS 字体探测或 OfflineAudioContext 的 getChannelData 路径。
  */
-(function () {
+(function (CFG) {
   'use strict';
 
   try {
-    if (window.__mafariFp2) return;
-    if (typeof MafariAdblock === 'undefined' ||
-        typeof MafariAdblock.fp !== 'function') return;
+    var OWN = '';
+    try { OWN = String(self.origin); } catch (_) {}
+    if (!OWN || OWN === 'null') return;
 
-    var host = location.hostname;
-    var topHost = host;
-
+    // 只处理主框架 / 祖先链全部同源的 iframe。
     try {
-      var ao = location.ancestorOrigins;
-      if (ao && ao.length) {
-        topHost = new URL(ao[ao.length - 1]).hostname || host;
+      var ancestors = location.ancestorOrigins;
+      if (ancestors) {
+        for (var ai = 0; ai < ancestors.length; ai++) {
+          if (ancestors[ai] !== OWN) return;
+        }
+      } else if (window.top !== window) {
+        return;
+      }
+    } catch (_) { return; }
+
+    var MASK = 0;
+    var SEED = 0;
+
+    if (CFG) {
+      // 主路径：原生按 origin 内联的配置。
+      if (CFG.origin !== OWN) return;
+      MASK = Number(CFG.mask) | 0;
+      SEED = Number(CFG.seed) >>> 0;
+    } else {
+      // 降级路径：无参桥 + 原生维护的顶层 origin。
+      var bridge = window.MafariFp;
+      if (!bridge || typeof bridge.fp !== 'function') return;
+      var raw = '';
+      try { raw = String(bridge.fp()); } catch (_) { return; }
+      try { delete window.MafariFp; } catch (_) {}
+      var parts = raw.split('|');
+      if (parts.length < 3 || parts.slice(2).join('|') !== OWN) return;
+      MASK = Number.parseInt(parts[0], 10) | 0;
+      SEED = Number.parseInt(parts[1], 10) >>> 0;
+
+      // 降级注入可能被执行多次（onPageStarted 等），需要幂等；主路径由原生按 origin 去重，不留标记。
+      if (window.__mafariFp3) return;
+      try {
+        Object.defineProperty(window, '__mafariFp3', {
+          value: 1, configurable: false, enumerable: false, writable: false
+        });
+      } catch (_) { return; }
+    }
+
+    MASK = MASK & 15;
+    if (!MASK) return;
+
+    // 低频统计：只累计「被处理的读取次数」，在页面隐藏 / 卸载时经 WebMessageListener 上报一次。
+    // 只有主框架上报；通道对象在 document-start 就被捕获，之后页面改写 window.MafariTrusted 不影响。
+    // 上报内容只有一个计数，页面伪造也只能影响它自己的计数；没有该通道（降级 / 未安装）时是 no-op。
+    var reads = 0;
+    var post = null;
+    try {
+      var channel = window.MafariTrusted;
+      if (channel && typeof channel.postMessage === 'function' && window.top === window) {
+        post = channel.postMessage.bind(channel);
       }
     } catch (_) {}
 
-    var cfg = '';
-    try {
-      cfg = String(MafariAdblock.fp(host, topHost));
-    } catch (_) {
-      return;
+    function noteRead() { reads++; }
+
+    function flushStats() {
+      if (!post || !reads) return;
+      var n = reads;
+      reads = 0;
+      try { post(JSON.stringify({ op: 'fp.stats', n: n })); } catch (_) {}
     }
 
-    var parts = cfg.split(':');
-    var MASK = Number.parseInt(parts[0], 10);
-    var seedValue = Number.parseInt(parts[1], 10);
-
-    if (!Number.isFinite(MASK)) MASK = 0;
-    if (!Number.isFinite(seedValue)) seedValue = 0;
-
-    MASK = MASK & 15;
-    var SEED = seedValue >>> 0;
-
-    // 标记关闭状态，避免后续同源 iframe adopt 使用父 frame 配置覆盖本站策略。
-    try {
-      Object.defineProperty(window, '__mafariFp2', {
-        value: 1, configurable: false, enumerable: false, writable: false
-      });
-    } catch (_) {
-      window.__mafariFp2 = 1;
+    if (post) {
+      try {
+        window.addEventListener('pagehide', flushStats);
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'hidden') flushStats();
+        });
+      } catch (_) {}
     }
-
-    if (!MASK) return;
 
     var CANVAS = 1;
     var WEBGL = 2;
@@ -283,6 +328,7 @@
                 Math.trunc(x), Math.trunc(y),
                 canvasId(this.canvas), 'canvas-pixels'
               );
+              noteRead();
             } catch (_) {}
             return image;
           };
@@ -313,7 +359,7 @@
                   function () { return new ImageData(1, 1); },
                   id, 'canvas-pixels'
                 );
-                if (noisy) return Reflect.apply(orig, noisy, arguments);
+                if (noisy) { noteRead(); return Reflect.apply(orig, noisy, arguments); }
               }
             } catch (_) {
               // 保留原生异常行为，例如 tainted canvas 的 SecurityError。
@@ -359,6 +405,7 @@
                 Math.trunc(x), Math.trunc(y),
                 canvasId(this.canvas), 'offscreen-pixels'
               );
+              noteRead();
             } catch (_) {}
             return image;
           };
@@ -394,7 +441,7 @@
                 function () { return new ImageData(1, 1); },
                 id, 'offscreen-pixels'
               );
-              if (noisy) return Reflect.apply(orig, noisy, arguments);
+              if (noisy) { noteRead(); return Reflect.apply(orig, noisy, arguments); }
             }
           } catch (_) {}
           return Reflect.apply(orig, this, arguments);
@@ -451,6 +498,7 @@
                 rowView, width, 1, x, y + row, id, 'webgl-read'
               );
             }
+            noteRead();
           } catch (_) {}
           return result;
         };
@@ -482,6 +530,7 @@
                 var n = unitNoise('audio-copy', channel, start + i, 0) - 0.5;
                 destination[i] = v + n * 2e-7;
               }
+              noteRead();
             }
           } catch (_) {}
           return result;
@@ -503,6 +552,7 @@
             array[i] = value + n * scale;
           }
         }
+        noteRead();
       }
 
       [
@@ -537,6 +587,7 @@
       ].forEach(function (name) { COMMON_FONTS[name] = true; });
 
       function wrapTextMetrics(ctx, text, metrics) {
+        noteRead();
         var key = hashString(String(ctx.font) + '|' + String(text));
         var factor = 1 + (((key % 2001) - 1000) / 1000) * 3e-4;
         return new Proxy(metrics, {
@@ -616,6 +667,7 @@
         var NavigatorPrototype = window.Navigator && Navigator.prototype;
         hook(NavigatorPrototype, 'queryLocalFonts', function (orig) {
           return function queryLocalFonts() {
+            noteRead();
             return Promise.reject(
               new DOMException('Local font access is restricted.',
                                'NotAllowedError')
@@ -627,10 +679,9 @@
 
     patchToString(window);
 
-    // 不再从父 frame 向 iframe 复制 MASK / SEED。
-    // 每个 frame 必须由 document-start 注入器独立调用原生配置接口，
-    // 由 Kotlin 根据 frame URL 与顶层站点计算自己的配置。
+    // 不从父 frame 向 iframe 复制 MASK / SEED：
+    // 每个 frame 的配置只来自 WebView 按 origin 匹配后交付给它自己的那份脚本。
   } catch (_) {
     // 指纹保护不得阻断网页加载。
   }
-})();
+})(/*@MAFARI_FP_CFG@*/null);

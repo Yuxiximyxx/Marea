@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -120,6 +121,12 @@ object AdBlock {
     val subs = mutableStateListOf<AdSub>()
     val allowHosts = mutableStateListOf<String>()
 
+    /**
+     * 指纹保护豁免列表：命中的站点（含子域名）不注入指纹保护。
+     * 与 [allowHosts]（去广告豁免）是两个独立的概念，互不影响；只按「frame 自己的 host」判断，从不看顶层站点。
+     */
+    val fpExemptHosts = mutableStateListOf<String>()
+
     var enabled by mutableStateOf(true)
         private set
     var cosmetic by mutableStateOf(true)
@@ -155,9 +162,14 @@ object AdBlock {
     @Volatile private var fastCosmetic = true
     @Volatile private var fastAllow: Set<String> = emptySet()
     @Volatile private var fpMask = 0
+    @Volatile private var fastFpExempt: Set<String> = emptySet()
 
-    /** 本次启动的随机种子：同一站点本次启动内的「稳定伪装值」（如 WebGL 显卡型号）一致，重启后变化 */
-    private val sessionSeed: Int = java.security.SecureRandom().nextInt()
+    /** 指纹保护设置 / 豁免列表的版本号：变化后各 [FingerprintInjector] 会撤销旧注册（旧脚本里内联着旧配置）。 */
+    private val fpGen = AtomicInteger(0)
+    val fingerprintGeneration: Int get() = fpGen.get()
+
+    /** 本次启动的会话密钥：站点 seed 由它派生，同一站点本次启动内稳定，重启后变化；密钥本身不离开原生层。 */
+    private val sessionSecret: ByteArray = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
 
     private val blockedSession = AtomicLong(0)
     private var baseTotal = 0L
@@ -189,6 +201,7 @@ object AdBlock {
         subsShadow = subs.toList()
         allowHosts.addAll(loadAllow())
         fastAllow = allowHosts.toSet()
+        loadFpExempt()
 
         migrateUserAdRules()
         customLines = countCustomLines()
@@ -229,6 +242,7 @@ object AdBlock {
         if (fpAudio) m = m or FP_AUDIO
         if (fpFonts) m = m or FP_FONTS
         fpMask = m
+        fpGen.incrementAndGet()
     }
 
     fun updateAutoUpdate(mode: Int) {
@@ -430,8 +444,10 @@ object AdBlock {
 
     fun isSiteAllowed(host: String): Boolean = hostAllowed(host)
 
-    private fun hostAllowed(host: String): Boolean {
-        val set = fastAllow
+    private fun hostAllowed(host: String): Boolean = hostIn(fastAllow, host)
+
+    /** host 或其任一父域名在 [set] 中。 */
+    private fun hostIn(set: Set<String>, host: String): Boolean {
         if (set.isEmpty() || host.isEmpty()) return false
         var h = host.lowercase()
         while (true) {
@@ -481,24 +497,109 @@ object AdBlock {
         return engine?.cssFor(host).orEmpty()
     }
 
+    /* ------------------------------------------------------------------ */
+    /* 指纹保护：豁免列表 + 按 origin 生成配置                                 */
+    /* ------------------------------------------------------------------ */
+
+    /** 规范化域名输入；格式不合法返回 null。 */
+    private fun normalizeSite(host: String): String? {
+        val h = host.trim().lowercase().removePrefix("www.")
+        if (h.isEmpty() || h.any { !(it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-') }) return null
+        return h
+    }
+
+    fun exemptFingerprintSite(host: String): Boolean {
+        val h = normalizeSite(host) ?: return false
+        if (h in fpExemptHosts) return true
+        fpExemptHosts.add(h)
+        persistFpExempt()
+        return true
+    }
+
+    fun unexemptFingerprintSite(host: String) {
+        fpExemptHosts.remove(host)
+        persistFpExempt()
+    }
+
+    /** frame 自己的 host（或其父域名）在豁免列表里。 */
+    fun isFingerprintExempt(host: String): Boolean = hostIn(fastFpExempt, host.lowercase())
+
+    private fun persistFpExempt() {
+        fastFpExempt = fpExemptHosts.toSet()
+        prefs.edit().putString("fp_exempt", JSONArray(fpExemptHosts.toList()).toString()).apply()
+        fpGen.incrementAndGet()
+    }
+
     /**
-     * 指纹保护配置（JS 桥调用，任意线程）。返回 "掩码:种子"；掩码 0 表示本页不处理
-     * （四项全关 / 站点在白名单里）。指纹保护在「隐私与安全」里，独立于去广告总开关。
+     * 读取指纹豁免列表。旧版本里指纹保护复用去广告的站点白名单：首次升级时把现有白名单一次性复制过来，
+     * 保持用户已有的豁免效果；之后两个列表各自独立。
      */
-    fun fingerprintConfig(hostRaw: String?, topHostRaw: String?): String {
+    private fun loadFpExempt() {
+        val raw = prefs.getString("fp_exempt", null)
+        val list = if (raw == null) {
+            allowHosts.toList()
+        } else {
+            runCatching {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+            }.getOrDefault(emptyList())
+        }
+        fpExemptHosts.addAll(list)
+        fastFpExempt = fpExemptHosts.toSet()
+        if (raw == null) prefs.edit().putString("fp_exempt", JSONArray(list).toString()).apply()
+    }
+
+    /** 四项开关里至少开了一项（豁免列表与 origin 另算）。 */
+    val fingerprintActive: Boolean get() = fpMask != 0
+
+    /** 本次启动以来被指纹保护处理过的读取次数（页面经 [TrustedChannel] 低频上报，仅作展示）。 */
+    var fpReadsSession by mutableLongStateOf(0L)
+        private set
+
+    fun recordFingerprintReads(n: Long) {
+        if (n > 0) fpReadsSession += n
+    }
+
+    /** 某个 origin 的指纹保护配置，内联进该 origin 专属的注入脚本。 */
+    class FpConfig(val mask: Int, val seed: Long)
+
+    /**
+     * 给定 frame origin，返回它应得的配置；四项全关 / 命中豁免列表返回 null（= 不注入）。
+     * 指纹保护在「隐私与安全」里，独立于去广告总开关。只看 frame 自己的 origin，不涉及顶层站点。
+     */
+    fun fingerprintConfigFor(origin: WebOrigin): FpConfig? {
         val mask = fpMask
-        if (mask == 0) return "0:0"
-        val host = hostRaw?.trim()?.lowercase().orEmpty()
-        val top = topHostRaw?.trim()?.lowercase().orEmpty()
-        if ((host.isNotEmpty() && hostAllowed(host)) || (top.isNotEmpty() && hostAllowed(top))) return "0:0"
-        val site = AdMatch.registrable(top.ifEmpty { host })
-        val seed = (sessionSeed * 31 + site.hashCode()).toLong() and 0xFFFFFFFFL
-        return "$mask:$seed"
+        if (mask == 0) return null
+        if (isFingerprintExempt(origin.host)) return null
+        return FpConfig(mask, deriveSeed(AdMatch.registrable(origin.host)))
+    }
+
+    /** seed = HMAC-SHA256(会话密钥, 可注册域名) 的前 32 位。 */
+    private fun deriveSeed(site: String): Long {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(sessionSecret, "HmacSHA256"))
+        val d = mac.doFinal(site.toByteArray(Charsets.UTF_8))
+        return ((d[0].toLong() and 0xFF) shl 24) or ((d[1].toLong() and 0xFF) shl 16) or
+            ((d[2].toLong() and 0xFF) shl 8) or (d[3].toLong() and 0xFF)
+    }
+
+    private const val FP_CFG_TOKEN = "/*@MAFARI_FP_CFG@*/null"
+
+    /** 把配置内联进脚本模板，得到该 origin 专属的 document-start 脚本。 */
+    fun fingerprintScriptFor(origin: WebOrigin, config: FpConfig): String {
+        val template = fingerprintJs()
+        if (template.isEmpty() || !template.contains(FP_CFG_TOKEN)) return ""
+        val json = JSONObject()
+            .put("mask", config.mask)
+            .put("seed", config.seed)
+            .put("origin", origin.origin)
+            .toString()
+        return template.replace(FP_CFG_TOKEN, json)
     }
 
     @Volatile private var fpJs: String? = null
 
-    /** 指纹保护的 document-start 脚本（assets/mafari_fingerprint.js），读一次后缓存。 */
+    /** 指纹保护脚本模板（assets/mafari_fingerprint.js，配置占位符为 null），读一次后缓存。 */
     fun fingerprintJs(): String {
         fpJs?.let { return it }
         val text = runCatching {
@@ -833,14 +934,10 @@ object AdBlock {
 """
 }
 
-/** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS / 指纹保护开关，不泄露任何用户数据。 */
+/** 暴露给页面脚本的桥：只返回某个站点的元素隐藏 CSS，不泄露任何用户数据。指纹保护不经过这个桥。 */
 class AdBlockBridge(private val cosmeticAllowed: () -> Boolean = { true }) {
     /** [cosmeticAllowed] 为 false（如无痕 / 轻应用里关闭了去广告）时不返回任何隐藏 CSS。 */
     @JavascriptInterface
     fun css(host: String?, topHost: String?): String =
         if (cosmeticAllowed()) AdBlock.cosmeticCss(host, topHost) else ""
-
-    /** 指纹保护配置，见 [AdBlock.fingerprintConfig]。 */
-    @JavascriptInterface
-    fun fp(host: String?, topHost: String?): String = AdBlock.fingerprintConfig(host, topHost)
 }

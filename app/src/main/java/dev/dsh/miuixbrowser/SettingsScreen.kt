@@ -93,6 +93,7 @@ fun SettingsScreen(
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
     var showFpSheet by remember { mutableStateOf(false) }
+    var showFpExempt by remember { mutableStateOf(false) }
     var fpPending by remember { mutableStateOf<Int?>(null) } // 等待用户确认开启的指纹保护项
     var showProxyDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -612,16 +613,46 @@ fun SettingsScreen(
                         checked = AdBlock.fpFonts,
                         onCheckedChange = { if (it) fpPending = AdBlock.FP_FONTS else AdBlock.updateFingerprint(AdBlock.FP_FONTS, false) },
                     )
+                    ArrowPreference(
+                        title = "保护豁免站点",
+                        summary = if (AdBlock.fpExemptHosts.isEmpty()) {
+                            "这些站点（含子域名）不注入指纹保护"
+                        } else {
+                            "${AdBlock.fpExemptHosts.size} 个站点不注入指纹保护"
+                        },
+                        onClick = { showFpExempt = true },
+                    )
+                    if (AdBlock.fpReadsSession > 0) {
+                        Text(
+                            text = "本次启动以来，网页的 ${AdBlock.fpReadsSession} 次指纹读取已被处理（页面在隐藏或关闭时上报，仅作参考）",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        )
+                    }
                     Text(
                         text = "默认全部关闭。开启会改动网页读到的数据，可能引起兼容问题（开启时会有具体提示）；" +
-                            "对新打开或刷新后的页面生效；去广告里「站点白名单」的网站不处理。" +
-                            "若某个网站异常，可关掉对应项或把该站点加入白名单。",
+                            "对新打开或刷新后的页面生效。保护只作用于页面本身及其同源 iframe，跨源 iframe 默认不保护；" +
+                            "豁免列表与去广告的「站点白名单」相互独立。" +
+                            "若某个网站异常，可关掉对应项或把该站点加入豁免。",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                     )
                 }
             }
+
+            HostListDialog(
+                show = showFpExempt,
+                backdrop = if (glass) backdrop else null,
+                title = "保护豁免站点",
+                summary = "豁免站点（含子域名）不注入指纹保护；对新打开或刷新后的页面生效",
+                emptyText = "还没有豁免站点",
+                hosts = AdBlock.fpExemptHosts,
+                onAdd = { AdBlock.exemptFingerprintSite(it) },
+                onRemove = { AdBlock.unexemptFingerprintSite(it) },
+                onDismiss = { showFpExempt = false },
+            )
 
             val fpAsk = fpPending
             GlassDialog(

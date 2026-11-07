@@ -287,6 +287,9 @@ class BrowserTab(private val appContext: Context) {
 
     val webView: WebView = WebView(appContext)
 
+    /** 指纹保护：按 origin 注册 document-start 脚本（见 FingerprintInjector / docs/FINGERPRINT.md）。 */
+    private val fpInjector = FingerprintInjector(webView)
+
     private val elementBridge = object {
         @android.webkit.JavascriptInterface
         fun onElement(selector: String, tag: String, imageUrl: String) {
@@ -596,6 +599,14 @@ class BrowserTab(private val appContext: Context) {
     init {
         runCatching { webView.addJavascriptInterface(AdBlockBridge { !incognito || adblockInIncognito }, "MafariAdblock") }
         runCatching { webView.addJavascriptInterface(blobBridge, "MafariBlob") }
+        // 仅降级路径：WebView 不支持 DOCUMENT_START_SCRIPT 时才安装无参的指纹桥；主路径不向页面暴露任何指纹接口
+        if (!fpInjector.docStartSupported) {
+            runCatching { webView.addJavascriptInterface(FpFallbackBridge(fpInjector), "MafariFp") }
+        }
+        // 低频可信通道（豁免请求、统计上报）：来源由 WebView 校验，与指纹配置无关；不支持时静默跳过
+        TrustedChannel.install(webView, object : TrustedChannel.Host {
+            override fun onFingerprintExemptRequested(origin: WebOrigin) = handleFpExemptRequest(origin)
+        })
         cleanStaleBlobFiles(appContext)
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -606,13 +617,7 @@ class BrowserTab(private val appContext: Context) {
                     androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, cacheJs, setOf("*"))
                 }.onFailure { Diag.log("blob cache install failed: ${it.message}") }
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
-                // 指纹保护（Canvas / WebGL / Audio / Fonts）：开关与白名单在页面里经桥实时查询，改设置后刷新即生效
-                runCatching {
-                    val fpJs = AdBlock.fingerprintJs()
-                    if (fpJs.isNotEmpty()) {
-                        androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, fpJs, setOf("*"))
-                    }
-                }.onFailure { Diag.log("adblock: fingerprint install failed ${it.message}") }
+                // 指纹保护不在这里注册：它按 origin 注册（fpInjector.prepare），配置内联在各 origin 自己的脚本里
                 adblockDocStart = true
             }
         }.onFailure { Diag.log("adblock: document-start install failed ${it.message}") }
@@ -689,10 +694,9 @@ class BrowserTab(private val appContext: Context) {
                 errorText = null
                 syncNav()
                 syncUserScripts()
-                if (!adblockDocStart) {
-                    view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
-                    view.evaluateJavascript(AdBlock.fingerprintJs(), null)
-                }
+                if (!adblockDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+                // 主路径：补注册（只对之后的加载生效）；降级路径：补跑脚本
+                fpInjector.onPageStarted(pageUrl)
             }
 
             /** HTTP 代理认证：挑战主机等于代理主机时自动提交设置里的账号密码 */
@@ -751,6 +755,8 @@ class BrowserTab(private val appContext: Context) {
                     val proceed = { openRedirectInNewTab(target) }
                     if (interceptRedirect(request, external = false, onAllowed = proceed)) return true
                 }
+                // 主框架导航放行前，先为目标 origin 注册指纹保护脚本（注入只作用于注册之后才开始加载的文档）
+                if (request.isForMainFrame && (scheme == "http" || scheme == "https")) fpInjector.prepare(target)
                 // DNT / Sec-GPC：点击链接产生的主框架 GET 导航也带上请求头
                 if (dntEnabled && (scheme == "http" || scheme == "https") && request.isForMainFrame &&
                     request.method == "GET" && !request.isRedirect &&
@@ -1193,6 +1199,7 @@ class BrowserTab(private val appContext: Context) {
         }
         parked = false
         url = target
+        fpInjector.prepare(target)
         val headers = extraRequestHeaders()
         if (headers.isEmpty()) {
             webView.loadUrl(target)
@@ -1205,6 +1212,7 @@ class BrowserTab(private val appContext: Context) {
     fun loadUrl(raw: String) {
         parked = false
         url = raw
+        fpInjector.prepare(raw)
         val headers = extraRequestHeaders()
         if (headers.isEmpty()) {
             webView.loadUrl(raw)
@@ -1218,6 +1226,8 @@ class BrowserTab(private val appContext: Context) {
             webView.stopLoading()
             loading = false
         } else {
+            // 设置 / 豁免列表变更后旧注册已作废，刷新前重新注册当前页的 origin
+            fpInjector.prepare(webView.url)
             webView.reload()
         }
     }
@@ -1409,6 +1419,35 @@ class BrowserTab(private val appContext: Context) {
             if (allow) onAllowed() else notifyRedirectBlocked(external, targetHost)
         }
         return true
+    }
+
+    /** 每个 origin 本次运行最多弹几次豁免请求，以及两次之间的最短间隔，防止页面骚扰用户 */
+    private val fpExemptAsked = HashMap<String, LongArray>() // origin -> [次数, 上次 elapsedRealtime]
+
+    /**
+     * 页面经 [TrustedChannel] 请求「关闭对我的指纹保护」。origin 是 WebView 校验过的主框架来源，
+     * 只能豁免它自己的 host；必须用户确认，页面无法静默修改设置，也得不到任何回传。
+     */
+    private fun handleFpExemptRequest(origin: WebOrigin) {
+        if (!AdBlock.fingerprintActive) return
+        if (AdBlock.isFingerprintExempt(origin.host)) return
+        // 只接受「当前正在显示的页面」发来的请求
+        val current = WebOrigin.parse(webView.url) ?: return
+        if (current != origin) return
+        if (redirectPromptPending) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        val record = fpExemptAsked.getOrPut(origin.origin) { longArrayOf(0L, 0L) }
+        if (record[0] >= 3 || (record[0] > 0 && now - record[1] < 30_000L)) return
+        if (fpExemptAsked.size > 64) fpExemptAsked.clear()
+        record[0]++
+        record[1] = now
+        askRedirect(origin.origin, "关闭对它的指纹保护") { allow ->
+            if (allow && AdBlock.exemptFingerprintSite(origin.host)) {
+                android.widget.Toast.makeText(
+                    appContext, "已豁免 ${origin.host}，刷新后生效", android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
     }
 
     private class DeferredPrompt(
@@ -1706,6 +1745,7 @@ class BrowserTab(private val appContext: Context) {
         applyUserAgent()
         val target = webView.url ?: url
         if (target.isNotBlank() && !target.startsWith("about:")) {
+            fpInjector.prepare(target)
             webView.loadUrl(target)
         } else {
             webView.reload()
@@ -1800,6 +1840,7 @@ class BrowserTab(private val appContext: Context) {
             return
         }
         if (webView.canGoBack()) {
+            fpInjector.prepareHistory(-1)
             webView.goBack()
         } else if (openedFromLink) {
             // 链接打开的标签已经在第一页：关掉它，回到来源标签（而不是先落到本标签的主页）
@@ -1809,7 +1850,10 @@ class BrowserTab(private val appContext: Context) {
 
     fun goForward() {
         if (url.isEmpty()) return
-        if (webView.canGoForward()) webView.goForward()
+        if (webView.canGoForward()) {
+            fpInjector.prepareHistory(1)
+            webView.goForward()
+        }
     }
 
     fun destroyNow() {
@@ -1818,6 +1862,7 @@ class BrowserTab(private val appContext: Context) {
         cancelFileChooser()
         exitCustomView()
         discardAllBlobSessions()
+        runCatching { fpInjector.clear() }
         runCatching {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()

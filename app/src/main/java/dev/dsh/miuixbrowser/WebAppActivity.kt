@@ -59,6 +59,9 @@ class WebAppActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var webView: WebView
+
+    /** 指纹保护：按 origin 注册 document-start 脚本（见 FingerprintInjector / docs/FINGERPRINT.md） */
+    private lateinit var fpInjector: FingerprintInjector
     private lateinit var progress: ProgressBar
     private lateinit var settings: AppSettings
     private lateinit var insetsController: WindowInsetsControllerCompat
@@ -156,6 +159,7 @@ class WebAppActivity : ComponentActivity() {
 
         root = FrameLayout(this).apply { setBackgroundColor(defaultBg) }
         webView = WebView(this).apply { setBackgroundColor(defaultBg) }
+        fpInjector = FingerprintInjector(webView)
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             visibility = View.GONE
@@ -204,12 +208,17 @@ class WebAppActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     customView != null -> hideCustomView()
-                    webView.canGoBack() -> webView.goBack()
+                    webView.canGoBack() -> {
+                        fpInjector.prepareHistory(-1)
+                        webView.goBack()
+                    }
                     else -> finish()
                 }
             }
         })
 
+        // 先为起始 origin 注册再加载；恢复的历史页若 origin 不同，onPageStarted 会补注册（只对之后的加载生效）
+        fpInjector.prepare(startUrl)
         if (savedInstanceState != null) webView.restoreState(savedInstanceState)
         if (webView.url == null) webView.loadUrl(startUrl)
     }
@@ -233,6 +242,7 @@ class WebAppActivity : ComponentActivity() {
         destroyed = true
         scriptHandlers.forEach { runCatching { it.remove() } }
         scriptHandlers.clear()
+        if (::fpInjector.isInitialized) runCatching { fpInjector.clear() }
         if (::webView.isInitialized) {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.stopLoading()
@@ -275,6 +285,7 @@ class WebAppActivity : ComponentActivity() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 progress.visibility = View.VISIBLE
                 if (!cosmeticDocStart) view.evaluateJavascript(AdBlock.COSMETIC_JS, null)
+                fpInjector.onPageStarted(url)
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
@@ -303,6 +314,8 @@ class WebAppActivity : ComponentActivity() {
                             openInBrowser(uri)
                             true
                         } else {
+                            // 主框架导航放行前，先为目标 origin 注册指纹保护脚本
+                            if (request.isForMainFrame) fpInjector.prepare(uri.toString())
                             false
                         }
                     }
@@ -437,6 +450,10 @@ class WebAppActivity : ComponentActivity() {
     private fun setupCosmeticFilter() {
         runCatching { webView.addJavascriptInterface(AdBlockBridge { settings.adblockInWebApp }, "MafariAdblock") }
             .onFailure { Diag.log("webapp adblock: bridge install failed ${it.message}") }
+        // 仅降级路径：不支持 DOCUMENT_START_SCRIPT 时才安装无参指纹桥；轻应用没有确认弹窗，不安装可信通道
+        if (!fpInjector.docStartSupported) {
+            runCatching { webView.addJavascriptInterface(FpFallbackBridge(fpInjector), "MafariFp") }
+        }
         runCatching {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, AdBlock.COSMETIC_JS, setOf("*"))
@@ -635,6 +652,7 @@ class WebAppActivity : ComponentActivity() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (pulled > thresholdPx && webView.scrollY <= 0) {
                         webView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        fpInjector.prepare(webView.url)
                         webView.reload()
                     }
                     reset()
@@ -720,6 +738,7 @@ class WebAppActivity : ComponentActivity() {
                 Intent.parseUri(raw, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url")
             }.getOrNull()
             if (!fallback.isNullOrBlank()) {
+                fpInjector.prepare(fallback)
                 webView.loadUrl(fallback)
             } else {
                 Toast.makeText(this, "未安装对应应用", Toast.LENGTH_SHORT).show()
