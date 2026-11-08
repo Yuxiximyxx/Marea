@@ -14,6 +14,11 @@ val DOWNLOAD_MIN_MB_OPTIONS = listOf(10, 50, 100, 200, 500, 1024)
 /** 阈值档位的显示文字 */
 fun downloadThresholdLabel(mb: Int): String = if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
 
+/** 模糊效果模式 */
+const val BLUR_MIUIX = 0
+const val BLUR_LIQUID = 1
+const val BLUR_OFF = 2
+
 /** 首页内容块 */
 const val HOME_FAVORITES = 0
 const val HOME_PRIVACY = 1
@@ -32,8 +37,23 @@ class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_settings", Context.MODE_PRIVATE)
 
-    var blurEnabled by mutableStateOf(prefs.getBoolean(KEY_BLUR, true))
+    /** 模糊效果模式：0 = miuix-glass，1 = liquid glass（Kyant0/AndroidLiquidGlass），2 = 关闭模糊。旧版布尔开关会迁移过来。 */
+    var blurMode by mutableStateOf(
+        if (prefs.contains(KEY_BLUR_MODE)) {
+            prefs.getInt(KEY_BLUR_MODE, BLUR_MIUIX).coerceIn(BLUR_MIUIX, BLUR_OFF)
+        } else if (prefs.getBoolean(KEY_BLUR, true)) {
+            BLUR_MIUIX
+        } else {
+            BLUR_OFF
+        },
+    )
         private set
+
+    /** 是否有任何模糊（miuix-glass 或 liquid glass） */
+    val blurEnabled: Boolean get() = blurMode != BLUR_OFF
+
+    /** 是否使用 liquid glass 效果 */
+    val liquidGlass: Boolean get() = blurMode == BLUR_LIQUID
 
     /** 首页内容显示：收藏 / 隐私报告默认显示，最近浏览 / 下载项默认隐藏。 */
     var homeShowFavorites by mutableStateOf(prefs.getBoolean(KEY_HOME_FAV, true))
@@ -219,9 +239,9 @@ class AppSettings(context: Context) {
         prefs.edit().putString(KEY_WALL, uri).apply()
     }
 
-    fun updateBlur(enabled: Boolean) {
-        blurEnabled = enabled
-        prefs.edit().putBoolean(KEY_BLUR, enabled).apply()
+    fun updateBlurMode(mode: Int) {
+        blurMode = mode.coerceIn(BLUR_MIUIX, BLUR_OFF)
+        prefs.edit().putInt(KEY_BLUR_MODE, blurMode).apply()
     }
 
     /** 网页 window.open / target=_blank 打开的同站链接是否新开标签页（默认关：在当前标签打开） */
@@ -446,6 +466,7 @@ class AppSettings(context: Context) {
 
     private companion object {
         const val KEY_BLUR = "blur"
+        const val KEY_BLUR_MODE = "blur_mode"
         const val KEY_HOME_FAV = "home_show_favorites"
         const val KEY_HOME_PRIVACY = "home_show_privacy"
         const val KEY_HOME_RECENT = "home_show_recent"

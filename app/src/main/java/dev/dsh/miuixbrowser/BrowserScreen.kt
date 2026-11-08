@@ -130,6 +130,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur as backdropBlur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.gestures.scrollBy
@@ -242,11 +246,14 @@ fun BrowserScreen(
     }
     // 首页的玻璃取样源：有壁纸时统一取壁纸（不再采样含卡片的整页内容，避免重复模糊）；无壁纸时回退整页采集层
     val homeBackdrop = if (wallpaperBitmap != null) wallpaperBackdrop else browserBackdrop
+    // liquid glass 的取样源（Kyant）：同样只取未模糊的壁纸；无壁纸时底栏回退整页采集层，卡片不使用液态玻璃
+    val wallpaperLiquidBackdrop = rememberKyantBackdrop()
     // Kyant 液态玻璃的采集层（只给标签页 sheet 头部的左右按钮用）
     val liquidBackdrop = rememberKyantBackdrop {
         drawRect(browserSurfaceColor)
         drawContent()
     }
+    val barLiquidBackdrop = if (wallpaperBitmap != null) wallpaperLiquidBackdrop else liquidBackdrop
     // 采集层缓存成离屏纹理：否则每个取样方（底栏 / 每个收藏卡片 / 顶部渐进模糊 / 弹层）
     // 每一帧都会把整页内容（含壁纸 28dp 模糊）重新回放一遍再叠自己的模糊，弹层动画期间必然掉帧。
     // 缓存后内容只在真正变化（滚动、加载）时重绘，取样方只读纹理。
@@ -931,7 +938,7 @@ fun BrowserScreen(
             if (wallpaperImage != null) {
                 // 取样层永远是「未模糊」的原图（+压暗）：首页所有玻璃（卡片 / 底栏 / 弹层）都从它取色并各自模糊，
                 // 不受「壁纸模糊」开关影响，也不会对已经模糊过的壁纸再采样一次。
-                Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop)) {
+                Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop).kyantLayerBackdrop(wallpaperLiquidBackdrop)) {
                     Image(
                         bitmap = wallpaperImage,
                         contentDescription = null,
@@ -1044,6 +1051,7 @@ fun BrowserScreen(
                         showPrivacy = settings.homeShowPrivacy,
                         showRecent = settings.homeShowRecent && !tab.incognito,
                         showDownloads = settings.homeShowDownloads,
+                        liquidBackdrop = if (settings.liquidGlass && wallpaperBitmap != null) wallpaperLiquidBackdrop else null,
                         order = settings.homeOrder,
                         onReorder = { settings.updateHomeOrder(it) },
                         recent = history.items,
@@ -1196,6 +1204,7 @@ fun BrowserScreen(
                                     corner = 24.dp,
                                     blurEnabled = settings.blurEnabled,
                                     textureBlurEnabled = homeBlurAvailable,
+                                    liquid = if (settings.liquidGlass) barLiquidBackdrop else null,
                                 ),
                         )
                         Icon(
@@ -1258,6 +1267,7 @@ fun BrowserScreen(
                 ) {
             BottomBar(
                 blurEnabled = settings.blurEnabled,
+                liquid = if (settings.liquidGlass) barLiquidBackdrop else null,
                 textureBlurEnabled = homeBlurAvailable,
                 backdrop = homeBackdrop,
                 address = displayAddress,
@@ -2224,8 +2234,22 @@ private fun Modifier.glassBar(
     corner: Dp,
     blurEnabled: Boolean = true,
     textureBlurEnabled: Boolean = true,
+    liquid: com.kyant.backdrop.Backdrop? = null,
 ): Modifier {
     val dark = isAppDarkTheme()
+    if (liquid != null && blurEnabled && textureBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val liquidShape = RoundedCornerShape(corner)
+        return this.drawBackdrop(
+            backdrop = liquid,
+            shape = { liquidShape },
+            effects = {
+                vibrancy()
+                backdropBlur(4f.dp.toPx())
+                lens(14f.dp.toPx(), 28f.dp.toPx())
+            },
+            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.32f)) },
+        )
+    }
     val glassShape = GlassShape(corner)
     val rounded = RoundedCornerShape(corner)
     val canUseGlass = blurEnabled && textureBlurEnabled && backdrop != null &&
@@ -2262,6 +2286,7 @@ private fun Modifier.glassBar(
 
 @Composable
 private fun BottomBar(
+    liquid: com.kyant.backdrop.Backdrop? = null,
     blurEnabled: Boolean = true,
     textureBlurEnabled: Boolean = true,
     backdrop: LayerBackdrop,
@@ -2299,6 +2324,7 @@ private fun BottomBar(
                     corner = 29.dp,
                     blurEnabled = blurEnabled,
                     textureBlurEnabled = textureBlurEnabled,
+                    liquid = liquid,
                 ),
         )
         Row(
@@ -2924,6 +2950,7 @@ private fun StartPage(
     showPrivacy: Boolean,
     showRecent: Boolean,
     showDownloads: Boolean,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     order: List<Int>,
     onReorder: (List<Int>) -> Unit,
     recent: List<HistoryEntry>,
@@ -3031,6 +3058,7 @@ private fun StartPage(
                                 favorites = favorites,
                                 wallpaper = wallpaper,
                                 wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
                                 blurEnabled = blurEnabled,
                                 editing = editing,
                                 guard = guard,
@@ -3043,6 +3071,7 @@ private fun StartPage(
                             HOME_PRIVACY -> PrivacyReportCard(
                                 modifier = itemMod.then(handle),
                                 wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
                                 showRemove = st.homeEditing,
@@ -3053,6 +3082,7 @@ private fun StartPage(
                                 modifier = itemMod.then(handle),
                                 title = "最近浏览",
                                 wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
                                 showRemove = st.homeEditing,
@@ -3076,6 +3106,7 @@ private fun StartPage(
                                 modifier = itemMod.then(handle),
                                 title = "下载项",
                                 wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
                                 blurEnabled = blurEnabled,
                                 hasWallpaper = hasWallpaper,
                                 showRemove = st.homeEditing,
@@ -3116,6 +3147,7 @@ private fun FavoritesBlock(
     favorites: List<Favorite>,
     wallpaper: ImageBitmap?,
     wallpaperBackdrop: LayerBackdrop?,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     editing: Boolean,
     guard: (() -> Unit) -> (() -> Unit),
@@ -3167,6 +3199,7 @@ private fun FavoritesBlock(
                             favorite = favorite,
                             wallpaper = wallpaper,
                             wallpaperBackdrop = wallpaperBackdrop,
+                            liquidBackdrop = liquidBackdrop,
                             blurEnabled = blurEnabled,
                             editing = editing,
                             modifier = Modifier.weight(1f),
@@ -3216,10 +3249,24 @@ private fun Modifier.homeGlass(
     wallpaperBackdrop: LayerBackdrop?,
     blurEnabled: Boolean,
     hasWallpaper: Boolean = true,
+    liquid: com.kyant.backdrop.Backdrop? = null,
     radius: Int = 16,
 ): Modifier {
     val shape = RoundedCornerShape(radius.dp)
     val dark = isAppDarkTheme()
+    // liquid glass 模式：用 Kyant 液态玻璃从未模糊的壁纸取样
+    if (liquid != null && blurEnabled) {
+        return this.drawBackdrop(
+            backdrop = liquid,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                backdropBlur(6f.dp.toPx())
+                lens(10f.dp.toPx(), 20f.dp.toPx())
+            },
+            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.28f)) },
+        )
+    }
     val useGlass = blurEnabled && wallpaperBackdrop != null
     return this.glassPanel(
         backdrop = if (useGlass) wallpaperBackdrop else null,
@@ -3266,6 +3313,7 @@ private fun BoxScope.HomeOutlineOverlay(hasWallpaper: Boolean, radius: Dp) {
 private fun HomeCard(
     title: String,
     wallpaperBackdrop: LayerBackdrop?,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     hasWallpaper: Boolean,
     showRemove: Boolean,
@@ -3277,7 +3325,7 @@ private fun HomeCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .homeGlass(wallpaperBackdrop, blurEnabled, hasWallpaper)
+            .homeGlass(wallpaperBackdrop, blurEnabled, hasWallpaper, liquidBackdrop)
             .clickable(
                 enabled = onClick != null,
                 interactionSource = remember { MutableInteractionSource() },
@@ -3371,6 +3419,7 @@ private fun HomeRow(primary: String, secondary: String, onClick: () -> Unit) {
 private fun PrivacyReportCard(
     modifier: Modifier,
     wallpaperBackdrop: LayerBackdrop?,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     hasWallpaper: Boolean,
     showRemove: Boolean,
@@ -3390,6 +3439,7 @@ private fun PrivacyReportCard(
         modifier = modifier,
         title = "隐私报告",
         wallpaperBackdrop = wallpaperBackdrop,
+        liquidBackdrop = liquidBackdrop,
         blurEnabled = blurEnabled,
         hasWallpaper = hasWallpaper,
         showRemove = showRemove,
@@ -3457,6 +3507,7 @@ private fun FavoriteTile(
     favorite: Favorite,
     wallpaper: ImageBitmap?,
     wallpaperBackdrop: LayerBackdrop?,
+    liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     editing: Boolean,
     modifier: Modifier = Modifier,
@@ -3464,30 +3515,11 @@ private fun FavoriteTile(
     onLongPress: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    val glassShape = GlassShape(16.dp)
-    val dark = isAppDarkTheme()
-    val useGlass = blurEnabled && wallpaperBackdrop != null
     val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(58.dp)
-            .glassPanel(
-                backdrop = if (useGlass) wallpaperBackdrop else null,
-                shape = glassShape,
-                style = GlassDefaults.style(dark),
-                material = if (useGlass) GlassMaterials.puredThinGlass(dark) else null,
-                stroke = if (blurEnabled) GlassStrokes.forTheme(dark) else null,
-                shading = false,
-                fallback = Modifier
-                    .clip(shape)
-                    .background(MiuixTheme.colorScheme.surfaceContainerHigh, shape)
-                    .border(
-                        width = 1.dp,
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                        shape = shape,
-                    ),
-            )
+            .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

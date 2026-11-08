@@ -184,11 +184,13 @@ fun SettingsScreen(
                             }
                         },
                     )
-                    SwitchPreference(
+                    GlassDropdownPreference(
+                        backdrop = if (glass) backdrop else null,
                         title = "模糊效果",
-                        summary = "关闭后底栏、收藏卡片和页面顶栏不再模糊",
-                        checked = settings.blurEnabled,
-                        onCheckedChange = { settings.updateBlur(it) },
+                        summary = "miuix-glass 为默认玻璃；liquid glass 为液态玻璃折射；关闭后底栏、收藏卡片和页面顶栏不再模糊",
+                        items = listOf("miuix-glass", "liquid glass", "关闭模糊"),
+                        selectedIndex = settings.blurMode.coerceIn(0, 2),
+                        onSelectedIndexChange = { settings.updateBlurMode(it) },
                     )
                 }
 
