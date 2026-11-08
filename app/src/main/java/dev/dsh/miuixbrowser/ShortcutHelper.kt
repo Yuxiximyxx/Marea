@@ -116,14 +116,14 @@ object ShortcutHelper {
             if (openPermissionSettings(context)) {
                 toast(context, "请先开启「桌面快捷方式」权限，然后回来再点一次「添加到桌面」")
             } else {
-                toast(context, "请在系统设置里为 Mafari 开启「桌面快捷方式」权限后再试")
+                toast(context, "请在系统设置里为 Marea 开启「桌面快捷方式」权限后再试")
             }
             return
         }
         prefs.edit().putBoolean(KEY_ASKED, true).apply()
 
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
-            toast(context, "当前桌面不支持添加快捷方式，可在系统设置开启 Mafari 的「桌面快捷方式」权限，或更换桌面")
+            toast(context, "当前桌面不支持添加快捷方式，可在系统设置开启 Marea 的「桌面快捷方式」权限，或更换桌面")
             return
         }
 

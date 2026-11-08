@@ -44,7 +44,8 @@ object AppIconManager {
         return if (idx >= 0) idx else 0
     }
 
-    // alias 在清单里以 ".Xxx" 声明，相对 namespace（与 applicationId 相同）
+    // alias 在清单里以 ".Xxx" 声明，类名相对 namespace（dev.dsh.miuixbrowser）；
+    // applicationId 已改为 io.github.yuxiximyxx.marea 也不影响：包名一侧用 context.packageName 动态取
     private fun component(context: Context, alias: String) =
         ComponentName(context.packageName, "dev.dsh.miuixbrowser.$alias")
 

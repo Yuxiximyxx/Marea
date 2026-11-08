@@ -178,7 +178,7 @@ fun AboutScreen(
                     Spacer(Modifier.height(18.dp))
 
                     Text(
-                        text = "Mafari",
+                        text = "Marea",
                         fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,
                         color = MiuixTheme.colorScheme.onSurface,
@@ -235,7 +235,7 @@ fun AboutScreen(
                 ) {
                     AppDropdownPreference(
                         backdrop = if (glass) pageBackdrop else null,
-                        title = "Mafari",
+                        title = "Marea",
                         summary = BuildConfig.VERSION_NAME,
                         items = listOf("stable", "dev"),
                         selectedIndex = updateChannel.coerceIn(0, 1),
@@ -292,7 +292,7 @@ fun AboutScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = "Mafari · 基于 miuix 与系统 WebView",
+                        text = "Marea · 基于 miuix 与系统 WebView",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         textAlign = TextAlign.Center,

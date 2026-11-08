@@ -45,7 +45,7 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "dev.dsh.miuixbrowser"
+        applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
         versionCode = 244

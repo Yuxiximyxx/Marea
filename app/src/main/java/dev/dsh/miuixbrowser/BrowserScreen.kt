@@ -222,7 +222,7 @@ private data class DownloadRequest(
     val referer: String? = null,
     /** blob / data URL 已抽成 data URI，确认后直接落盘，不再走 HTTP 下载器 */
     val dataUri: String? = null,
-    /** 大 blob 分片写入的缓存临时文件路径，确认后拷到 Download/mafari */
+    /** 大 blob 分片写入的缓存临时文件路径，确认后拷到 Download/Marea */
     val tempPath: String? = null,
 )
 
@@ -641,7 +641,7 @@ fun BrowserScreen(
                     put(MediaStore.Video.Media.DISPLAY_NAME, "rec_${System.currentTimeMillis()}.mp4")
                     put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Mafari")
+                        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Marea")
                         put(MediaStore.Video.Media.IS_PENDING, 1)
                     }
                 }
@@ -651,7 +651,7 @@ fun BrowserScreen(
                     put(MediaStore.Images.Media.DISPLAY_NAME, "photo_${System.currentTimeMillis()}.jpg")
                     put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Mafari")
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Marea")
                         put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
                 }
@@ -1731,7 +1731,7 @@ fun BrowserScreen(
                             val ok = Downloader.saveDataUri(context, imageUrl, name)
                             android.widget.Toast.makeText(
                                 context,
-                                if (ok) "已保存到 Download/mafari" else "保存失败",
+                                if (ok) "已保存到 Download/Marea" else "保存失败",
                                 android.widget.Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -1829,7 +1829,7 @@ fun BrowserScreen(
                     when {
                         it.tempPath != null -> "页面内文件（blob）"
                         it.dataUri != null -> "页面内文件（data）"
-                        else -> "保存到 /sdcard/Download/mafari"
+                        else -> "保存到 /sdcard/Download/Marea"
                     }
             },
             backdrop = if (homeBlurAvailable) homeBackdrop else null,
@@ -1891,7 +1891,7 @@ fun BrowserScreen(
                                         withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                if (saved) "已保存到 Download/mafari" else "保存失败",
+                                                if (saved) "已保存到 Download/Marea" else "保存失败",
                                                 android.widget.Toast.LENGTH_SHORT,
                                             ).show()
                                         }
@@ -3080,7 +3080,7 @@ private fun StartPage(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GlassLogoText("Mafari", fontSize = 58, wallpaper = wallpaper)
+                GlassLogoText("Marea", fontSize = 58, wallpaper = wallpaper)
             }
             Spacer(Modifier.height(30.dp))
 

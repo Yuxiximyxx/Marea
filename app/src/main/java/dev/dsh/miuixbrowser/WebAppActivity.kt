@@ -445,10 +445,10 @@ class WebAppActivity : ComponentActivity() {
                     val name = Downloader.withExtension(Downloader.fileNameFrom(link, disposition), mime)
                     val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(link) }.getOrNull()
                     Downloader.start(this, link, userAgent, name, mime, cookie = cookie, referer = startUrl)
-                    Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "已开始下载，可在 Marea「下载」中查看", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                Toast.makeText(this, "这类下载请在 Mafari 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "这类下载请在 Marea 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -513,7 +513,7 @@ class WebAppActivity : ComponentActivity() {
                         if (link.startsWith("http", ignoreCase = true)) {
                             val fileName = name.ifBlank { Downloader.fileNameFrom(link, null) }
                             Downloader.start(this, link, null, fileName, null)
-                            Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this, "已开始下载，可在 Marea「下载」中查看", Toast.LENGTH_SHORT).show()
                         }
                     },
                 ),

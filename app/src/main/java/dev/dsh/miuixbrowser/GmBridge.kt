@@ -192,8 +192,8 @@ class GmBridge(
     }
 
     // ------------------------------------------------------------------ 流式写文件（GM.openFileStream）
-    // WebView 的 showSaveFilePicker 在部分环境不弹选择器；脚本可改用原生流式写入 Download/mafari，
-    // 逐段写盘、不占内存，适合 M3U8 等大文件。只允许写入 Download/mafari，文件名会被净化。
+    // WebView 的 showSaveFilePicker 在部分环境不弹选择器；脚本可改用原生流式写入 Download/Marea，
+    // 逐段写盘、不占内存，适合 M3U8 等大文件。只允许写入 Download/Marea，文件名会被净化。
 
     private class FileStream(val uri: android.net.Uri, val out: java.io.OutputStream)
 
@@ -206,7 +206,7 @@ class GmBridge(
         val values = android.content.ContentValues().apply {
             put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safe)
             put(android.provider.MediaStore.Downloads.MIME_TYPE, mime.ifBlank { "application/octet-stream" })
-            put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+            put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
             put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
         }
         val resolver = context.contentResolver

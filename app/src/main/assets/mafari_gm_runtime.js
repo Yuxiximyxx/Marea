@@ -614,7 +614,7 @@
       });
     };
   }
-  // 原生流式写文件：写入 Download/mafari，逐段落盘，不占内存。返回 Promise<{name, write, close, abort}>
+  // 原生流式写文件：写入 Download/Marea，逐段落盘，不占内存。返回 Promise<{name, write, close, abort}>
   function openFileStream(name, mime) {
     return new Promise(function (resolve, reject) {
       if (!bridge || typeof bridge.streamOpen !== 'function') { reject(new Error('unsupported')); return; }

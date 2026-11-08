@@ -43,7 +43,7 @@ data class DownloadTask(
     val lastModified: String? = null,
 )
 
-/** 内置下载器：断点续传、暂停/继续、失败重试，默认写入 Download/mafari */
+/** 内置下载器：断点续传、暂停/继续、失败重试，默认写入 Download/Marea */
 object Downloader {
 
     val tasks = mutableStateListOf<DownloadTask>()
@@ -355,7 +355,7 @@ object Downloader {
                     update(id) { it.copy(bytes = written) }
                 }
             }
-            // 下载完成后一次性入库到 /sdcard/Download/mafari
+            // 下载完成后一次性入库到 /sdcard/Download/Marea
             val uri = createEntry(context, task) ?: throw IllegalStateException("无法创建文件")
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 file.inputStream().use { input ->
@@ -561,7 +561,7 @@ object Downloader {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, task.name)
             put(MediaStore.Downloads.MIME_TYPE, task.mime ?: "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -593,14 +593,14 @@ object Downloader {
         true
     }.getOrDefault(false)
 
-    /** 把缓存文件流式复制到 Download/mafari（大 blob 用，不把整个文件读进内存） */
+    /** 把缓存文件流式复制到 Download/Marea（大 blob 用，不把整个文件读进内存） */
     fun saveFile(context: Context, file: java.io.File, fileName: String, mime: String?): Boolean {
         var uri: Uri? = null
         return runCatching {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val target = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -637,12 +637,12 @@ object Downloader {
         }
     }
 
-    /** 直接把字节写入 Download/mafari（blob / data URL 共用） */
+    /** 直接把字节写入 Download/Marea（blob / data URL 共用） */
     fun saveBytes(context: Context, bytes: ByteArray, fileName: String, mime: String?): Boolean = runCatching {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
             put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/mafari")
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

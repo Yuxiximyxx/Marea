@@ -308,7 +308,7 @@ fun LibraryScreen(
                     )
                     GlassPopupItem(
                         text = "导出",
-                        summary = "保存到 Download/mafari",
+                        summary = "保存到 Download/Marea",
                         onClick = {
                             showMenu = false
                             exportBookmarks(context, favorites.exportNetscapeHtml())
@@ -684,7 +684,7 @@ private fun formatHistoryTime(time: Long): String {
     }
 }
 
-/** 写入系统 Download/mafari 并提示路径。 */
+/** 写入系统 Download/Marea 并提示路径。 */
 private fun exportBookmarks(context: android.content.Context, html: String) {
     runCatching {
         val name = "mafari-bookmarks-" +
@@ -702,7 +702,7 @@ private fun exportBookmarks(context: android.content.Context, html: String) {
         values.clear()
         values.put(MediaStore.Downloads.IS_PENDING, 0)
         resolver.update(uri, values, null, null)
-        Toast.makeText(context, "已导出到 Download/mafari/$name", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "已导出到 Download/Marea/$name", Toast.LENGTH_LONG).show()
     }.onFailure {
         Toast.makeText(context, "导出失败：${it.message}", Toast.LENGTH_SHORT).show()
     }

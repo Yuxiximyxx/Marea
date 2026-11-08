@@ -392,7 +392,7 @@ fun SettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SettingsRow(
-                        title = "关于 Mafari",
+                        title = "关于 Marea",
                         summary = "版本 " + BuildConfig.VERSION_NAME,
                         onClick = onOpenAbout,
                     )
