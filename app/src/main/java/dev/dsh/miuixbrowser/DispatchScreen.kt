@@ -1,5 +1,7 @@
 package dev.dsh.miuixbrowser
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,6 +72,20 @@ fun DispatchScreen(
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
     var editing by remember { mutableStateOf<DispatchRule?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
+    var importReport by remember { mutableStateOf<LinkDispatch.ImportReport?>(null) }
+    val context = LocalContext.current
+    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+            }.getOrNull()
+            importReport = if (text.isNullOrBlank()) {
+                LinkDispatch.ImportReport("", 0, 0, emptyList(), 0, "读取文件失败或文件为空")
+            } else {
+                LinkDispatch.importFromJson(text)
+            }
+        }
+    }
 
     CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
         Scaffold(
@@ -205,6 +221,33 @@ fun DispatchScreen(
                                 }
                             }
                         }
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp)
+                                    .padding(bottom = 8.dp),
+                                insideMargin = PaddingValues(14.dp),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { importPicker.launch(arrayOf("application/json", "*/*")) },
+                                ) {
+                                    Text(
+                                        text = "从文件导入",
+                                        fontSize = 15.sp,
+                                        color = MiuixTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        text = "支持 LinkGo 导出 JSON 与 Marea 自有格式；导入条目追加到列表末尾，LinkGo 专有能力（短链预解析、模板变换）会降级并在报告中注明",
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -224,6 +267,82 @@ fun DispatchScreen(
                 },
                 onMove = { target, dir -> LinkDispatch.move(target, dir) },
             )
+
+            ImportReportDialog(
+                show = importReport != null,
+                report = importReport,
+                backdrop = if (glass) backdrop else null,
+                onDismiss = { importReport = null },
+            )
+        }
+    }
+}
+
+/** 导入报告：成功/降级计数 + 降级逐条原因（LinkGo 语义与 Marea 有差异的部分都在这里摊开） */
+@Composable
+private fun ImportReportDialog(
+    show: Boolean,
+    report: LinkDispatch.ImportReport?,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    onDismiss: () -> Unit,
+) {
+    AppGlassDialog(
+        show = show,
+        title = "导入报告",
+        summary = if (report?.error != null) "导入没有完成" else "导入的规则已追加到列表末尾",
+        backdrop = backdrop,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 460.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            if (report == null) {
+                // 占位，show=false 时不会展示
+            } else if (report.error != null) {
+                Text(
+                    text = report.error,
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.error,
+                )
+            } else {
+                Text(
+                    text = "来源格式：${report.format} 导出文件，共 ${report.total} 条",
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "成功导入 ${report.added} 条，其中 ${report.degraded.size} 条有降级",
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                if (report.proprietaryDropped > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "另有 ${report.proprietaryDropped} 条携带的 LinkGo 专有设置（预热、启动模式、最近任务排除等）已忽略",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+                if (report.degraded.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    report.degraded.forEach { d ->
+                        Text(
+                            text = "· ${d.name}：${d.reason}",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            AppDialogButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "知道了", style = MiuixTheme.textStyles.button)
+            }
         }
     }
 }

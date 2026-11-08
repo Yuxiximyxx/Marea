@@ -88,28 +88,7 @@ object LinkDispatch {
                 val loaded = ArrayList<DispatchRule>()
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    val scopesArr = o.optJSONArray("scopes") ?: JSONArray()
-                    val scopes = HashSet<DispatchScope>()
-                    for (j in 0 until scopesArr.length()) {
-                        runCatching { scopes.add(DispatchScope.valueOf(scopesArr.optString(j))) }
-                    }
-                    loaded.add(
-                        DispatchRule(
-                            id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
-                            name = o.optString("name"),
-                            enabled = o.optBoolean("enabled", true),
-                            priority = o.optInt("priority", i),
-                            scopes = scopes.ifEmpty { setOf(DispatchScope.DOWNLOAD) },
-                            matchType = o.optInt("matchType", 0),
-                            pattern = o.optString("pattern"),
-                            rewrite = o.optString("rewrite"),
-                            targetPackage = o.optString("pkg"),
-                            targetActivity = o.optString("act"),
-                            action = o.optInt("action", 0),
-                            confirm = o.optBoolean("confirm", false),
-                            builtin = o.optBoolean("builtin", false),
-                        ),
-                    )
+                    loaded.add(ruleFromJson(o, i))
                 }
                 rules.clear()
                 rules.addAll(loaded.sortedBy { it.priority })
@@ -128,6 +107,190 @@ object LinkDispatch {
         if (migrated) saveLocked()
         inited = true
     }
+
+    /** 落盘 JSON → 规则（启动加载与 Marea 自有格式导入共用同一条解析路径） */
+    private fun ruleFromJson(o: JSONObject, fallbackPriority: Int): DispatchRule {
+        val scopesArr = o.optJSONArray("scopes") ?: JSONArray()
+        val scopes = HashSet<DispatchScope>()
+        for (j in 0 until scopesArr.length()) {
+            runCatching { scopes.add(DispatchScope.valueOf(scopesArr.optString(j))) }
+        }
+        return DispatchRule(
+            id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
+            name = o.optString("name"),
+            enabled = o.optBoolean("enabled", true),
+            priority = o.optInt("priority", fallbackPriority),
+            scopes = scopes.ifEmpty { setOf(DispatchScope.DOWNLOAD) },
+            matchType = o.optInt("matchType", 0),
+            pattern = o.optString("pattern"),
+            rewrite = o.optString("rewrite"),
+            targetPackage = o.optString("pkg"),
+            targetActivity = o.optString("act"),
+            action = o.optInt("action", 0),
+            confirm = o.optBoolean("confirm", false),
+            builtin = o.optBoolean("builtin", false),
+        )
+    }
+
+    // ---------- 规则导入（LinkGo 导出格式 / Marea 自有格式） ----------
+
+    data class ImportDegradation(val name: String, val reason: String)
+
+    data class ImportReport(
+        /** 识别到的来源格式："LinkGo" / "Marea"；解析失败时为空串且 error 非空 */
+        val format: String,
+        /** 文件中的规则总数 */
+        val total: Int,
+        /** 实际并入的条数（追加在现有列表末尾） */
+        val added: Int,
+        /** 有语义降级的条目及逐条原因 */
+        val degraded: List<ImportDegradation>,
+        /** 携带 LinkGo 专有字段（预热/启动模式/最近任务排除等非默认值）的条数：整批丢弃、只汇总计数 */
+        val proprietaryDropped: Int,
+        val error: String? = null,
+    )
+
+    /**
+     * 从 JSON 文本导入规则：自动识别 LinkGo 导出格式（顶层 linkgo_rules 数组）与
+     * Marea 自有格式（落盘同构的 rules 数组，或裸规则数组）。导入条目按文件顺序
+     * 追加到现有列表末尾，既有规则与预置规则不动；LinkGo 规则统一给 CLICK 作用域
+     * （LinkGo 的拦截语义就是「发现链接时送出」，没有下载触发这个面）。
+     */
+    @Synchronized
+    fun importFromJson(text: String): ImportReport {
+        val trimmed = text.trim()
+        var format = ""
+        var items: JSONArray? = null
+        try {
+            if (trimmed.startsWith("[")) {
+                items = JSONArray(trimmed)
+                format = "Marea"
+            } else {
+                val root = JSONObject(trimmed)
+                when {
+                    root.has("linkgo_rules") -> {
+                        items = root.optJSONArray("linkgo_rules")
+                        format = "LinkGo"
+                    }
+                    root.has("rules") -> {
+                        items = root.optJSONArray("rules")
+                        format = "Marea"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            return ImportReport("", 0, 0, emptyList(), 0, "JSON 解析失败：${e.message}")
+        }
+        val arr = items ?: return ImportReport("", 0, 0, emptyList(), 0, "无法识别的文件格式（既不是 LinkGo 导出，也不是 Marea 规则文件）")
+        val converted = ArrayList<DispatchRule>()
+        val degraded = ArrayList<ImportDegradation>()
+        var proprietary = 0
+        val basePriority = rules.size
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (format == "LinkGo") {
+                val (rule, reasons, hasProprietary) = convertLinkGoRule(o, basePriority + converted.size)
+                converted.add(rule)
+                if (reasons.isNotEmpty()) degraded.add(ImportDegradation(rule.name, reasons.joinToString("；")))
+                if (hasProprietary) proprietary++
+            } else {
+                converted.add(ruleFromJson(o, basePriority + converted.size))
+            }
+        }
+        if (converted.isEmpty()) {
+            return ImportReport(format, arr.length(), 0, emptyList(), 0, "文件里没有可导入的规则")
+        }
+        rules.addAll(converted)
+        saveLocked()
+        return ImportReport(format, arr.length(), converted.size, degraded, proprietary)
+    }
+
+    /**
+     * LinkGo 规则 → Marea 规则。返回 (规则, 降级原因列表, 是否携带被丢弃的专有字段)。
+     * 关键语义对齐：
+     * - LinkGo 正则是部分匹配（find），Marea 引擎是整行 matches()：pattern 与 extractPattern
+     *   都包成 .*(?:…).* 的整行等价式（非捕获组包裹，原捕获组编号不变，模板 $n 不受影响；
+     *   整行式下 $0 恰好等于完整链接，与 LinkGo 的 {url} 同义）。
+     * - 带 extractPattern 时模板的捕获组来自它，因此以 extractPattern 作为匹配正则承载，
+     *   原 pattern 只作入口门槛这一点与 LinkGo 有差异，记入降级原因。
+     * - 模板占位符：{url}→$0、{n}→$n；带变换后缀的（{1_url_dec}、{url_b64_enc} 等）
+     *   Marea 引擎暂不支持，退化为对应分组并记入降级原因。
+     */
+    private fun convertLinkGoRule(o: JSONObject, priority: Int): Triple<DispatchRule, List<String>, Boolean> {
+        val reasons = ArrayList<String>()
+        val name = o.optString("name").ifBlank { "未命名规则" }
+        val enabled = o.optBoolean("isEnabled", true)
+        val patternRaw = o.optString("pattern")
+        val extract = o.optString("extractPattern")
+        val templateRaw = if (o.has("template")) o.optString("template") else ""
+        // targetPackage 是 "包名/类名" 合写：按第一个 / 拆开；只有包名则类名留空；空串 = 系统选择
+        val targetRaw = o.optString("targetPackage").trim()
+        val slash = targetRaw.indexOf('/')
+        val pkg = if (slash >= 0) targetRaw.substring(0, slash).trim() else targetRaw
+        val act = if (slash >= 0) targetRaw.substring(slash + 1).trim() else ""
+
+        // 模板占位符转换（变换类先处理并记录，再处理普通 {url}/{n}）
+        var badTransform: String? = null
+        var rewrite = templateRaw
+        if (rewrite.isNotBlank()) {
+            rewrite = TRANSFORM_PLACEHOLDER.replace(rewrite) { m ->
+                badTransform = m.value
+                if (m.groupValues[1] == "url") "\$0" else "\$" + m.groupValues[1]
+            }
+            rewrite = PLAIN_PLACEHOLDER.replace(rewrite) { m ->
+                if (m.groupValues[1] == "url") "\$0" else "\$" + m.groupValues[1]
+            }
+        }
+        if (badTransform != null) {
+            reasons.add("模板含暂不支持的变换 $badTransform，已降级为对应分组原文")
+        }
+
+        val matchType: Int
+        val pattern: String
+        if (extract.isNotBlank()) {
+            matchType = 0
+            pattern = wholeLine(extract)
+            reasons.add("以 extractPattern 作为匹配正则（LinkGo 中 pattern 仅作入口门槛，命中条件有差异）")
+        } else if (o.optString("matchType") == "CONTAINS") {
+            matchType = 2
+            pattern = patternRaw
+        } else {
+            matchType = 0
+            pattern = wholeLine(patternRaw)
+        }
+
+        // 短链预解析（resolveShortLink / resolveStrategy）是后续期功能，本期只导入规则主体
+        val strategy = o.optString("resolveStrategy")
+        if (o.optBoolean("resolveShortLink", false) || (strategy.isNotBlank() && strategy != "NONE")) {
+            reasons.add("短链预解析暂未支持，仅导入规则主体")
+        }
+        // LinkGo 专有字段：预热、启动模式、最近任务排除等，Marea 无对应概念，整批丢弃只计数
+        val hasProprietary = o.optBoolean("isPreheatEnabled", false) ||
+            o.optBoolean("excludeFromRecents", false) ||
+            (o.has("ruleLaunchMode") && o.optInt("ruleLaunchMode", -1) != -1)
+
+        val rule = DispatchRule(
+            name = name,
+            enabled = enabled,
+            priority = priority,
+            scopes = setOf(DispatchScope.CLICK),
+            matchType = matchType,
+            pattern = pattern,
+            rewrite = rewrite,
+            targetPackage = pkg,
+            targetActivity = act,
+            action = 0,
+            confirm = false,
+            builtin = false,
+        )
+        return Triple(rule, reasons, hasProprietary)
+    }
+
+    /** 部分匹配正则 → 整行等价式：非捕获组包裹，原捕获组编号与 $0 语义都不变 */
+    private fun wholeLine(partial: String): String = ".*(?:$partial).*"
+
+    private val TRANSFORM_PLACEHOLDER = Regex("""\{(url|\d+)((?:_[a-zA-Z0-9]+)+)\}""")
+    private val PLAIN_PLACEHOLDER = Regex("""\{(url|\d+)\}""")
 
     private fun presetPanRule(): DispatchRule = DispatchRule(
         name = "网盘 → 云析",
