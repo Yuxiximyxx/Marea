@@ -392,7 +392,7 @@ fun AppSwitchPreference(
 /**
  * 液态玻璃开关：直接移植自 Kyant0/AndroidLiquidGlass catalog 的 LiquidToggle。
  * 静止时是实心白色滑块；按下 / 拖动时滑块放大并变成透明的液态玻璃，折射下面的轨道（和页面背景）。
- * [backdrop] 为页面采样层，缺省取 [LocalLiquidBackdrop]；为 null 时只折射轨道。
+ * [backdrop] 只能传开关所在内容层之外的采样层；缺省为 null，只折射轨道。
  */
 @Composable
 fun LiquidSwitch(
@@ -400,7 +400,8 @@ fun LiquidSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    backdrop: LiquidBackdrop? = LocalLiquidBackdrop.current,
+    // 开关本身位于页面采样层里面，不能默认去采页面层（滑块会画到包含自己的图层里，导致崩溃）；只折射轨道。
+    backdrop: LiquidBackdrop? = null,
 ) {
     val dark = isAppDarkTheme()
     val accentColor = if (dark) Color(0xFF30D158) else Color(0xFF34C759)
