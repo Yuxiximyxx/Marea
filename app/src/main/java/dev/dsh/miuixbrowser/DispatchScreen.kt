@@ -116,7 +116,7 @@ fun DispatchScreen(
                                     title = "链接分发",
                                     summary = "点击链接或触发下载时，按规则把链接送到指定应用；送出失败自动回退站内打开/内置下载",
                                     checked = LinkDispatch.enabled,
-                                    onCheckedChange = { LinkDispatch.setEnabled(it) },
+                                    onCheckedChange = { LinkDispatch.updateEnabled(it) },
                                 )
                             }
                         }

@@ -163,7 +163,7 @@ object LinkDispatch {
     @Synchronized
     fun save() = saveLocked()
 
-    fun setEnabled(value: Boolean) {
+    fun updateEnabled(value: Boolean) {
         enabled = value
         save()
     }
