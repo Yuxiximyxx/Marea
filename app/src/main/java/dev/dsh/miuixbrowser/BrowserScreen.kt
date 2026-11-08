@@ -241,7 +241,12 @@ fun BrowserScreen(
     onOpenDownloadsConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val state = remember { BrowserState(context) }
+    val state = remember {
+        BrowserState(context).also {
+            // 启动时把设置里保存的 UA 应用到所有标签（之前只有在设置里点确定才会应用，重启后一律回到系统默认 UA）
+            it.applyUserAgent(settings.userAgent)
+        }
+    }
     val favorites = remember { FavoritesStore(context) }
     remember { Diag.log("BrowserScreen composed, favorites=" + favorites.items.size) }
     val menuOrder = remember { MenuOrderStore(context) }

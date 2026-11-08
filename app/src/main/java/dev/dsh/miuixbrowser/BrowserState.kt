@@ -1244,7 +1244,9 @@ class BrowserTab(private val appContext: Context) {
     fun applyUserAgent() {
         val ua = when {
             desktopMode -> desktopUserAgent()
-            customUserAgent.isBlank() || customUserAgent == DESKTOP_UA -> defaultUserAgent
+            customUserAgent.isBlank() -> defaultUserAgent
+            // 「桌面 Chrome」预设：按本机 WebView 的 Chrome 大版本生成桌面 UA（之前被当成默认 UA，等于没生效）
+            customUserAgent == DESKTOP_UA -> desktopUserAgent()
             else -> customUserAgent
         }
         runCatching { webView.settings.userAgentString = ua }

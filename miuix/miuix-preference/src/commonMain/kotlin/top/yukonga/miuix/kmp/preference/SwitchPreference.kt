@@ -59,6 +59,7 @@ fun SwitchPreference(
     enabled: Boolean = true,
 ) {
     val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     BasicComponent(
         modifier = modifier,
         insideMargin = insideMargin,
@@ -85,6 +86,13 @@ fun SwitchPreference(
         },
         bottomAction = bottomAction,
         onClick = {
+            // 点整行切换时与点开关本体一样震动（开关本体点击自带震动，不会走到这里）
+            if (enabled && currentOnCheckedChange != null) {
+                hapticFeedback.performHapticFeedback(
+                    if (!checked) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn
+                    else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff,
+                )
+            }
             currentOnCheckedChange.takeIf { enabled }?.invoke(!checked)
         },
         role = Role.Switch,

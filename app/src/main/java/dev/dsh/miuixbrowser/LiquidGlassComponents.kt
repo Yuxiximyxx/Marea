@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop as LiquidBackdrop
@@ -315,6 +316,7 @@ object LiquidGlassMaterial : AppMaterial {
         checked: Boolean, onCheckedChange: (Boolean) -> Unit, title: String, modifier: Modifier,
         summary: String?, enabled: Boolean,
     ) {
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
         BasicComponent(
             modifier = modifier,
             title = title,
@@ -322,7 +324,14 @@ object LiquidGlassMaterial : AppMaterial {
             endActions = {
                 LiquidSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
             },
-            onClick = { if (enabled) onCheckedChange(!checked) },
+            onClick = {
+                if (enabled) {
+                    haptic.performHapticFeedback(
+                        if (!checked) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+                    )
+                    onCheckedChange(!checked)
+                }
+            },
             enabled = enabled,
         )
     }
@@ -549,6 +558,7 @@ fun LiquidSwitch(
     // 回调里要读到最新的 checked / onCheckedChange
     val latestChecked by rememberUpdatedState(checked)
     val latestOnChange by rememberUpdatedState(onCheckedChange)
+    val latestHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val dampedDragAnimation = remember(animationScope) {
         DampedDragAnimation(
             animationScope = animationScope,
@@ -559,6 +569,7 @@ fun LiquidSwitch(
             pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
+                val before = latestChecked
                 if (didDrag) {
                     fraction = if (targetValue >= 0.5f) 1f else 0f
                     latestOnChange(fraction == 1f)
@@ -566,6 +577,12 @@ fun LiquidSwitch(
                 } else {
                     fraction = if (latestChecked) 0f else 1f
                     latestOnChange(fraction == 1f)
+                }
+                // 状态真的变了才震动（拖回原位不震）
+                if ((fraction == 1f) != before) {
+                    latestHaptic.performHapticFeedback(
+                        if (fraction == 1f) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+                    )
                 }
             },
             onDrag = { _, dragAmount ->
