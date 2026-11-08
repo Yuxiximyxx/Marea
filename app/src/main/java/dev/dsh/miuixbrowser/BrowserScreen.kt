@@ -240,6 +240,8 @@ fun BrowserScreen(
         drawRect(browserSurfaceColor)
         drawContent()
     }
+    // 首页的玻璃取样源：有壁纸时统一取壁纸（不再采样含卡片的整页内容，避免重复模糊）；无壁纸时回退整页采集层
+    val homeBackdrop = if (wallpaperBitmap != null) wallpaperBackdrop else browserBackdrop
     // Kyant 液态玻璃的采集层（只给标签页 sheet 头部的左右按钮用）
     val liquidBackdrop = rememberKyantBackdrop {
         drawRect(browserSurfaceColor)
@@ -927,22 +929,28 @@ fun BrowserScreen(
         if (tab.url.isEmpty() && wallpaperBitmap != null) {
             val wallpaperImage = wallpaperBitmap
             if (wallpaperImage != null) {
+                // 取样层永远是「未模糊」的原图（+压暗）：首页所有玻璃（卡片 / 底栏 / 弹层）都从它取色并各自模糊，
+                // 不受「壁纸模糊」开关影响，也不会对已经模糊过的壁纸再采样一次。
                 Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop)) {
                     Image(
                         bitmap = wallpaperImage,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(
-                                if (settings.wallpaperBlur) {
-                                    Modifier.blur(28.dp)
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                        modifier = Modifier.fillMaxSize(),
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+                }
+                // 「壁纸模糊」只是显示层：不透明地盖在取样层上，不参与采样
+                if (settings.wallpaperBlur) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Image(
+                            bitmap = wallpaperImage,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().blur(28.dp),
+                        )
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+                    }
                 }
             }
         }
@@ -1088,7 +1096,7 @@ fun BrowserScreen(
             val startFadePx = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
             Box(modifier = Modifier.fillMaxSize()) {
                 TopProgressiveBlurBand(
-                    backdrop = browserBackdrop,
+                    backdrop = homeBackdrop,
                     alpha = { startScroll.value / startFadePx },
                     modifier = Modifier.matchParentSize(),
                     barHeight = 8.dp,
@@ -1184,7 +1192,7 @@ fun BrowserScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .glassBar(
-                                    backdrop = browserBackdrop,
+                                    backdrop = homeBackdrop,
                                     corner = 24.dp,
                                     blurEnabled = settings.blurEnabled,
                                     textureBlurEnabled = homeBlurAvailable,
@@ -1251,7 +1259,7 @@ fun BrowserScreen(
             BottomBar(
                 blurEnabled = settings.blurEnabled,
                 textureBlurEnabled = homeBlurAvailable,
-                backdrop = browserBackdrop,
+                backdrop = homeBackdrop,
                 address = displayAddress,
                 loading = tab.loading,
                 canGoBack = tab.canGoBack,
@@ -1457,7 +1465,7 @@ fun BrowserScreen(
             endAction = null,
             // 所有弹层统一采样页面模糊。卡顿的根因不在弹层自己的模糊，而在页面每帧被重复回放，
             // 已由上方的离屏缓存 / 整页冻结解决，所以更多菜单、标签列表可以恢复模糊。
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
             enableWindowDim = lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs,
             onDismissRequest = { sheet = Sheet.None },
             onDismissFinished = { if (sheet == Sheet.None) sheetHostActive = false },
@@ -1498,7 +1506,7 @@ fun BrowserScreen(
                                     TabCard(
                                         item = indexed.value,
                                         highlight = indexed.index == state.activeIndex,
-                                        blurBackdrop = if (settings.blurEnabled && homeBlurAvailable) browserBackdrop else null,
+                                        blurBackdrop = if (settings.blurEnabled && homeBlurAvailable) homeBackdrop else null,
                                         modifier = Modifier.weight(1f),
                                         onSelect = {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1757,7 +1765,7 @@ fun BrowserScreen(
         UpdateSheet(
             show = updateRelease != null,
             release = updateRelease ?: lastUpdateRelease,
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
             onDismiss = { updateRelease = null },
             onIgnore = {
                 settings.updateIgnoredUpdate(it.version)
@@ -1781,7 +1789,7 @@ fun BrowserScreen(
                         else -> "保存到 /sdcard/Download/mafari"
                     }
             },
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismissRequest = {
                 pendingDownload?.tempPath?.let { p -> runCatching { java.io.File(p).delete() } }
                 pendingDownload = null
@@ -1867,7 +1875,7 @@ fun BrowserScreen(
                 },
             title = "选择来源",
             summary = "网页需要图片或视频",
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismissRequest = {
                 captureChoice?.callback?.onReceiveValue(null)
                 fileChooserChoice = null
@@ -1974,7 +1982,7 @@ fun BrowserScreen(
 
         ScriptMenuSheet(
             show = scriptSheetShow,
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             scripts = runningScripts,
             commands = scriptMenuItems,
             scriptsEnabled = settings.scriptsEnabled,
@@ -1999,7 +2007,7 @@ fun BrowserScreen(
             show = permPrompt != null,
             title = "允许网站" + (permPrompt?.what ?: "") + "？",
             summary = permPrompt?.origin,
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismissRequest = {
                 webPermPrompt = null
                 permPrompt?.decide?.invoke(false)
@@ -2033,7 +2041,7 @@ fun BrowserScreen(
             show = scriptImportUrl != null,
             title = "导入脚本？",
             summary = scriptImportUrl,
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismissRequest = { pendingScript = null },
         ) {
             if (scriptImportUrl != null) {
@@ -2080,7 +2088,7 @@ fun BrowserScreen(
             } else {
                 "将关闭所有标签页，无痕浏览页不受影响，并新建一个空白标签。"
             },
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
             onDismissRequest = { showClearTabsConfirm = false },
         ) {
             Row(
@@ -2109,7 +2117,7 @@ fun BrowserScreen(
 
         FindDialog(
             show = showFind,
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismiss = {
                 tab.clearFind()
                 showFind = false
@@ -2122,7 +2130,7 @@ fun BrowserScreen(
         FavoriteEditor(
             show = showFavEditor,
             initial = favorites.items.getOrNull(editingFavIndex),
-            backdrop = if (homeBlurAvailable) browserBackdrop else null,
+            backdrop = if (homeBlurAvailable) homeBackdrop else null,
             onDismiss = { showFavEditor = false },
             onConfirm = { name, url ->
                 if (editingFavIndex >= 0) {
@@ -3534,7 +3542,7 @@ private fun FavoriteTile(
                 Text(text = "×", fontSize = 11.sp, color = Color.White)
             }
         }
-        HomeOutlineOverlay(wallpaper == null, 16.dp)
+        HomeOutlineOverlay(hasWallpaper = wallpaper != null, radius = 16.dp)
     }
 }
 
