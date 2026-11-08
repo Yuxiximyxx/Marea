@@ -333,13 +333,13 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = { fpPending = null },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
                         }
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = {
                                 fpAsk?.let {
                                     if (it == AdBlock.FP_ALL) AdBlock.setFingerprintMaster(true) else AdBlock.updateFingerprint(it, true)

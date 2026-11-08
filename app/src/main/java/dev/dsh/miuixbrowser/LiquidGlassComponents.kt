@@ -109,14 +109,17 @@ private fun activeLiquidBackdrop(miuixBackdrop: Backdrop?): LiquidBackdrop? =
 private fun demoContainerColor(dark: Boolean): Color =
     if (dark) Color(0xFF121212).copy(alpha = 0.4f) else Color(0xFFFAFAFA).copy(alpha = 0.6f)
 
+/** 弹窗 / 菜单 / sheet 的边缘高光：比默认的 Plain 略宽，配合更强的折射让边缘玻璃感更明显。 */
+private fun edgeHighlight(): Highlight = Highlight.Plain.copy(width = Highlight.Plain.width * 1.4f)
+
 /** 液态玻璃面板（下拉菜单 / 弹出菜单）：与 catalog 的玻璃卡片一致——vibrancy + 模糊 + 折射 + 纯白高光。 */
 @Composable
 private fun Modifier.liquidPanel(
     backdrop: LiquidBackdrop,
     shape: Shape,
-    blur: Dp = 4.dp,
-    refractionHeight: Dp = 16.dp,
-    refractionAmount: Dp = 32.dp,
+    blur: Dp = 2.dp,
+    refractionHeight: Dp = 22.dp,
+    refractionAmount: Dp = 52.dp,
 ): Modifier {
     val container = demoContainerColor(isAppDarkTheme())
     return this.drawBackdrop(
@@ -127,7 +130,7 @@ private fun Modifier.liquidPanel(
             backdropBlur(blur.toPx())
             lens(refractionHeight.toPx(), refractionAmount.toPx(), depthEffect = true, chromaticAberration = true)
         },
-        highlight = { Highlight.Plain },
+        highlight = { edgeHighlight() },
         onDrawSurface = { drawRect(container) },
     )
 }
@@ -187,10 +190,10 @@ fun AppGlassDialog(
                         brightness = if (dark) 0f else 0.2f,
                         saturation = 1.5f,
                     )
-                    backdropBlur(if (dark) 8f.dp.toPx() else 16f.dp.toPx())
-                    lens(24f.dp.toPx(), 48f.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                    backdropBlur(if (dark) 4f.dp.toPx() else 9f.dp.toPx())
+                    lens(32f.dp.toPx(), 68f.dp.toPx(), depthEffect = true, chromaticAberration = true)
                 },
-                highlight = { Highlight.Plain },
+                highlight = { edgeHighlight() },
                 onDrawSurface = {
                     drawRect(scrim.value)
                     drawRect(panelColor)
@@ -263,10 +266,10 @@ fun AppBottomSheet(
                 // 对齐 catalog 的玻璃面板（sheet）：vibrancy + 模糊 + 折射 + 纯白高光
                 effects = {
                     vibrancy()
-                    backdropBlur(8f.dp.toPx())
-                    if (!isOverscroll) lens(16f.dp.toPx(), 32f.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                    backdropBlur(4f.dp.toPx())
+                    if (!isOverscroll) lens(24f.dp.toPx(), 52f.dp.toPx(), depthEffect = true, chromaticAberration = true)
                 },
-                highlight = { Highlight.Plain },
+                highlight = { edgeHighlight() },
                 onDrawSurface = {
                     drawRect(scrim.value)
                     drawRect(panelColor)
@@ -387,6 +390,26 @@ fun AppSwitchPreference(
         onClick = { if (enabled) onCheckedChange(!checked) },
         enabled = enabled,
     )
+}
+
+/** 与 miuix Switch 同参的独立开关；液态玻璃模式下换成 [LiquidSwitch]（绿色轨道 + 液态滑块）。 */
+@Composable
+fun AppSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    if (LocalBlurMode.current != BLUR_LIQUID) {
+        top.yukonga.miuix.kmp.basic.Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = modifier,
+            enabled = enabled,
+        )
+        return
+    }
+    LiquidSwitch(checked = checked, onCheckedChange = onCheckedChange, modifier = modifier, enabled = enabled)
 }
 
 /**

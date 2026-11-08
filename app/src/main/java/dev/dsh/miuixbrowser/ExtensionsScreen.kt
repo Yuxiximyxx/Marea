@@ -355,13 +355,13 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { deleting = null },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         deleteTarget?.let { store.remove(it.id) }
                         deleting = null
@@ -514,7 +514,7 @@ private fun ScriptCard(
                     maxLines = 1,
                 )
             }
-            Switch(checked = script.enabled, onCheckedChange = onToggle)
+            AppSwitch(checked = script.enabled, onCheckedChange = onToggle)
             if (script.sourceUrl.isNotBlank()) {
                 IconButton(onClick = onRefresh) {
                     Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新")
@@ -576,7 +576,7 @@ private fun ScriptDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("启用", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface)
                     Spacer(Modifier.weight(1f))
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    AppSwitch(checked = enabled, onCheckedChange = { enabled = it })
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -584,10 +584,10 @@ private fun ScriptDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { if (code.isNotBlank()) onConfirmMatch(name, code, enabled, match) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
@@ -624,17 +624,17 @@ private fun ImportDialog(
                 singleLine = true,
             )
             Spacer(Modifier.height(10.dp))
-            TextButton(
+            AppTextButton(
                 text = "从本地文件导入",
                 onClick = onPickFile,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { if (url.isNotBlank()) onImport(url.trim()) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
@@ -682,11 +682,12 @@ private fun BuiltinScriptCard(script: BuiltinScript, installing: Boolean, onAdd:
                 )
             }
             Spacer(Modifier.width(8.dp))
-            TextButton(
+            AppTextButton(
                 text = if (installing) "安装中…" else "安装",
                 enabled = !installing,
                 onClick = { onAdd(script) },
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                primary = true,
+                inPage = true,
                 minHeight = 30.dp,
             )
         }

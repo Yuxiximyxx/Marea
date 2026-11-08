@@ -125,7 +125,7 @@ fun ScriptMenuSheet(
                         )
                     }
                 }
-                Switch(checked = scriptsEnabled, onCheckedChange = onScriptsEnabledChange)
+                AppSwitch(checked = scriptsEnabled, onCheckedChange = onScriptsEnabledChange)
             }
 
             Spacer(Modifier.size(8.dp))

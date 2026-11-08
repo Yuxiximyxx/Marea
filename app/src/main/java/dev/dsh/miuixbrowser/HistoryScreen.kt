@@ -720,7 +720,7 @@ private fun FavoriteEditorDialog(
 ) {
     var name by remember(initial, show) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial, show) { mutableStateOf(initial?.url ?: "") }
-    top.yukonga.miuix.kmp.glass.GlassDialog(
+    AppGlassDialog(
         show = show,
         title = if (initial == null) "新建书签" else "编辑书签",
         backdrop = backdrop,

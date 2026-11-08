@@ -139,10 +139,10 @@ fun UpdateSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(onClick = { onIgnore(release) }, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = { onIgnore(release) }, modifier = Modifier.weight(1f)) {
                     Text(text = "忽略此版本", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { onDownload(release) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,

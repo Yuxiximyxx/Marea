@@ -393,8 +393,8 @@ fun SettingsScreen(
             UaDialog(
                 show = showUa,
                 initial = settings.userAgent,
-                // 不采样 browserBackdrop（主页可能含壁纸），用不透明回退色
-                backdrop = null,
+                // 采样设置页自己的采样层（不采 browserBackdrop，主页可能含壁纸）；关闭模糊时回退不透明色
+                backdrop = if (glass) backdrop else null,
                 onDismiss = { showUa = false },
                 onConfirm = {
                     settings.updateUserAgent(it)
@@ -446,13 +446,13 @@ fun SettingsScreen(
                         summary = "主页壁纸做高斯模糊，减少干扰",
                         onClick = { settings.updateWallpaperBlur(!settings.wallpaperBlur) },
                     ) {
-                        Switch(
+                        AppSwitch(
                             checked = settings.wallpaperBlur,
                             onCheckedChange = { settings.updateWallpaperBlur(it) },
                         )
                     }
                     Spacer(Modifier.height(10.dp))
-                    GlassDialogButton(
+                    AppDialogButton(
                         onClick = { showWallpaper = false },
                         modifier = Modifier.fillMaxWidth(),
                         cornerRadius = 14.dp,
@@ -556,13 +556,13 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = { showProxyDialog = false },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
                         }
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = {
                                 val port = proxyPort.toIntOrNull() ?: 0
                                 settings.updateProxy(
@@ -862,11 +862,11 @@ private fun SearchSheet(
                 singleLine = true,
             )
             Spacer(Modifier.height(14.dp))
-            TextButton(
-                text = "保存自定义",
+            AppTextButton(
+                text = "使用自定义",
                 onClick = { onCustom(text) },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                primary = true,
             )
         }
     }

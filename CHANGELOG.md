@@ -4,6 +4,10 @@
 
 ## [1.8.15-dev]
 - 测试液态玻璃组件
+- 修复：liquid glass 模式下，所有独立开关（模糊壁纸、已安装脚本 / 订阅源 / 新建脚本弹窗、脚本菜单）改用绿色轨道的 `LiquidSwitch`（新增 `AppSwitch`）
+- 修复：所有弹窗 / sheet 底部按钮（`AppDialogButton`）与文字按钮（`AppTextButton`：订阅、添加、安装、保存自定义、完成等）应用液态玻璃底；彩色（主色 / 危险色）按钮叠色不透明度 0.75 → 0.92，降低通透度
+- 修改：搜索引擎 sheet「保存自定义」→「使用自定义」；UA sheet 底部「保存」→「使用」，并补上液态玻璃背景；关于页更新弹窗、书签编辑弹窗改走 `AppGlassDialog`
+- 调整：弹窗 / 下拉菜单 / sheet 边缘折射与色散加强（lens 高度与强度提高，边缘高光加宽），背景模糊度降低
 
 ## [1.8.14-dev]
 - 调整：顶栏按钮（返回 / 更多 / 添加）、FAB、对话框底部胶囊按钮在 miuix-glass 与关闭模糊下还原为 miuix-glass 原生组件，只有选「liquid glass」才使用 Kyant 液态玻璃（`LocalBlurMode`）

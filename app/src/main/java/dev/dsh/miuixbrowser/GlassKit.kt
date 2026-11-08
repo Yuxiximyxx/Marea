@@ -190,7 +190,7 @@ fun DialogTextButton(
     primary: Boolean = false,
     destructive: Boolean = false,
 ) {
-    GlassDialogButton(
+    AppDialogButton(
         onClick = onClick,
         modifier = modifier,
         role = when {

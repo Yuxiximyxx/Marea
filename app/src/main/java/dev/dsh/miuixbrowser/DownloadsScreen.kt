@@ -369,13 +369,13 @@ fun DownloadsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { pendingDelete = null },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         deleteTask?.let { Downloader.delete(context, it.id) }
                         pendingDelete = null

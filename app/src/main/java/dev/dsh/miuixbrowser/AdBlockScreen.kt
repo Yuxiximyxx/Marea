@@ -442,10 +442,10 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
             onDismissRequest = { deleting = null },
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassDialogButton(onClick = { deleting = null }, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = { deleting = null }, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         target?.let { AdBlock.removeSub(it.id) }
                         deleting = null
@@ -557,7 +557,7 @@ private fun AdSubCard(
                     maxLines = 1,
                 )
             }
-            Switch(checked = sub.enabled, onCheckedChange = onToggle)
+            AppSwitch(checked = sub.enabled, onCheckedChange = onToggle)
             IconButton(onClick = onRefresh) {
                 Icon(imageVector = MiuixIcons.Glass.Refresh, contentDescription = "更新订阅")
             }
@@ -588,10 +588,11 @@ private fun PresetCard(preset: AdPreset, onAdd: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            TextButton(
+            AppTextButton(
                 text = "订阅",
                 onClick = onAdd,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                primary = true,
+                inPage = true,
                 minHeight = 30.dp,
             )
         }
@@ -623,17 +624,17 @@ private fun AddSubDialog(
                 singleLine = true,
             )
             Spacer(Modifier.height(10.dp))
-            TextButton(
+            AppTextButton(
                 text = "从本地文件导入",
                 onClick = onPickFile,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { if (url.isNotBlank()) onSubscribe(url.trim()) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
@@ -670,10 +671,10 @@ private fun CustomRulesDialog(
             )
             Spacer(Modifier.height(14.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { onSave(text) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
@@ -732,7 +733,7 @@ internal fun HostListDialog(
                     singleLine = true,
                 )
                 Spacer(Modifier.width(8.dp))
-                TextButton(
+                AppTextButton(
                     text = "添加",
                     onClick = {
                         val input = host.trim().lowercase().removePrefix("https://").removePrefix("http://")
@@ -743,7 +744,7 @@ internal fun HostListDialog(
                             Toast.makeText(context, "域名格式不正确", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                     minHeight = 36.dp,
                 )
             }
@@ -769,7 +770,7 @@ internal fun HostListDialog(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            GlassDialogButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+            AppDialogButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                 Text(text = "完成", style = MiuixTheme.textStyles.button)
             }
         }

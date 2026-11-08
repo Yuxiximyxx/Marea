@@ -189,9 +189,9 @@ fun AboutScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    GlassDialogButton(
+                    AppDialogButton(
                         onClick = {
-                            if (checkingUpdate) return@GlassDialogButton
+                            if (checkingUpdate) return@AppDialogButton
                             checkingUpdate = true
                             scope.launch {
                                 val result = withContext(Dispatchers.IO) { fetchLatestRelease(updateChannel) }
@@ -306,7 +306,7 @@ fun AboutScreen(
 
             // 应用内下载更新（不再跳浏览器）
             val update = pendingUpdate
-            top.yukonga.miuix.kmp.glass.GlassDialog(
+            AppGlassDialog(
                 show = update != null,
                 title = "发现新版本",
                 summary = update?.let { "${it.version} · 下载后可在下载页安装" },
@@ -317,15 +317,15 @@ fun AboutScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                    AppDialogButton(
                         onClick = { pendingUpdate = null },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(text = "取消", style = MiuixTheme.textStyles.button)
                     }
-                    top.yukonga.miuix.kmp.glass.GlassDialogButton(
+                    AppDialogButton(
                         onClick = {
-                            val rel = update ?: return@GlassDialogButton
+                            val rel = update ?: return@AppDialogButton
                             val apk = rel.apkUrl
                             if (apk != null) {
                                 Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()

@@ -1815,7 +1815,7 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = {
                                 downloadRequest.tempPath?.let { p -> runCatching { java.io.File(p).delete() } }
                                 pendingDownload = null
@@ -1824,7 +1824,7 @@ fun BrowserScreen(
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
                         }
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = {
                                 val req = downloadRequest
                                 pendingDownload = null
@@ -1896,7 +1896,7 @@ fun BrowserScreen(
             },
         ) {
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         if (captureChoice != null) launchCamera(captureChoice, video = false)
                     },
@@ -1905,7 +1905,7 @@ fun BrowserScreen(
                 ) {
                     Text(text = "拍照", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         if (captureChoice != null) launchCamera(captureChoice, video = true)
                     },
@@ -1913,7 +1913,7 @@ fun BrowserScreen(
                 ) {
                     Text(text = "录像", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         if (captureChoice != null) launchFilePicker(captureChoice)
                     },
@@ -2028,7 +2028,7 @@ fun BrowserScreen(
             },
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         webPermPrompt = null
                         permPrompt?.decide?.invoke(false)
@@ -2037,7 +2037,7 @@ fun BrowserScreen(
                 ) {
                     Text(text = "拒绝", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         webPermPrompt = null
                         permPrompt?.decide?.invoke(true)
@@ -2064,13 +2064,13 @@ fun BrowserScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = { pendingScript = null },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(text = "取消", style = MiuixTheme.textStyles.button)
                         }
-                        GlassDialogButton(
+                        AppDialogButton(
                             onClick = {
                                 val target = scriptImportUrl
                                 pendingScript = null
@@ -2109,13 +2109,13 @@ fun BrowserScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { showClearTabsConfirm = false },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = {
                         state.closeAllOf(incognito = tabsPage == 1)
                         showClearTabsConfirm = false
@@ -3178,10 +3178,11 @@ private fun FavoritesBlock(
                 color = MiuixTheme.colorScheme.onSurface,
             )
             if (editing) {
-                TextButton(
+                AppTextButton(
                     text = "完成",
                     onClick = onToggleEdit,
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
+                    inPage = true,
                     minHeight = 28.dp,
                     minWidth = 52.dp,
                     cornerRadius = 14.dp,
@@ -3623,10 +3624,10 @@ private fun FavoriteEditor(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { if (url.isNotBlank()) onConfirm(name, url) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
@@ -3722,15 +3723,15 @@ internal fun UaDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(text = "取消", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = { onConfirm(custom) },
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,
                 ) {
-                    Text(text = "保存", style = MiuixTheme.textStyles.button)
+                    Text(text = "使用", style = MiuixTheme.textStyles.button)
                 }
             }
         }
@@ -3771,13 +3772,13 @@ private fun FindDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                GlassDialogButton(onClick = onPrev, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onPrev, modifier = Modifier.weight(1f)) {
                     Text(text = "上一个", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(onClick = onNext, modifier = Modifier.weight(1f)) {
+                AppDialogButton(onClick = onNext, modifier = Modifier.weight(1f)) {
                     Text(text = "下一个", style = MiuixTheme.textStyles.button)
                 }
-                GlassDialogButton(
+                AppDialogButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                     role = GlassDialogButtonRole.Primary,

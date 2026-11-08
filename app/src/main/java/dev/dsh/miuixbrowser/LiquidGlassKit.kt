@@ -6,10 +6,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.unit.Dp
@@ -39,7 +47,11 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tanh
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.glass.GlassDialogButtonDefaults
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
@@ -48,6 +60,9 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/** 彩色（主色 / 危险色）液态玻璃按钮的叠色不透明度：越大越不透。 */
+private const val COLORED_TINT_ALPHA = 0.92f
 
 /** 玻璃按钮的语义色：对应 miuix 的 Normal / Primary / Destructive */
 enum class LiquidRole { Normal, Primary, Destructive }
@@ -132,7 +147,8 @@ fun LiquidGlassSurface(
                             onDrawSurface = {
                                 if (coloredTint) {
                                     drawRect(tint, blendMode = BlendMode.Hue)
-                                    drawRect(tint.copy(alpha = 0.75f))
+                                    // 彩色按钮（主色 / 危险色）：叠色不透明度由 0.75 提到 0.92，降低通透度，字更清楚
+                                    drawRect(tint.copy(alpha = COLORED_TINT_ALPHA))
                                 } else {
                                     drawRect(tint.copy(alpha = tintAlpha))
                                 }
@@ -324,3 +340,131 @@ fun LiquidGlassPillButton(
         Text(text = text, color = textColor, style = MiuixTheme.textStyles.button)
     }
 }
+
+/**
+ * 对话框 / sheet 里的按钮，取代 [GlassDialogButton]（参数兼容）。
+ * 液态玻璃模式：Kyant 液态玻璃胶囊，采样 [LocalLiquidBackdrop]（对话框 / sheet 位于采样层之外）；
+ * 主色 / 危险色用彩色叠底（不透明度高，不透字）。其它模式：原样走 miuix 的 GlassDialogButton。
+ */
+@Composable
+fun AppDialogButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    role: GlassDialogButtonRole = GlassDialogButtonRole.Normal,
+    cornerRadius: Dp = GlassDialogButtonDefaults.CornerRadius,
+    minHeight: Dp = GlassDialogButtonDefaults.MinHeight,
+    content: @Composable RowScope.() -> Unit,
+) {
+    // 采样层为 null（模糊关闭 / 网页态）时与对话框面板一致，退回 miuix 的玻璃按钮
+    if (LocalBlurMode.current != BLUR_LIQUID || LocalLiquidBackdrop.current == null) {
+        GlassDialogButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            role = role,
+            cornerRadius = cornerRadius,
+            minHeight = minHeight,
+            content = content,
+        )
+        return
+    }
+    val colors = MiuixTheme.colorScheme
+    val tint = when (role) {
+        GlassDialogButtonRole.Primary -> colors.primary
+        GlassDialogButtonRole.Destructive -> colors.error
+        GlassDialogButtonRole.Normal -> colors.surfaceContainer
+    }
+    val textColor = when (role) {
+        GlassDialogButtonRole.Normal -> colors.onSurface
+        else -> Color.White
+    }
+    LiquidGlassSurface(
+        onClick = onClick,
+        backdrop = LocalLiquidBackdrop.current,
+        modifier = modifier.height(minHeight.coerceAtLeast(44.dp)),
+        tint = tint,
+        tintAlpha = 0.35f,
+        coloredTint = role != GlassDialogButtonRole.Normal,
+        enabled = enabled,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides textColor) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
+    }
+}
+
+/**
+ * 文字按钮，取代 miuix [TextButton]（参数兼容）。
+ * - [primary] 为 true 时是主色按钮（对应 textButtonColorsPrimary）。
+ * - [inPage] 为 true 表示按钮在页面内容里（位于液态玻璃采样层内部，不能再去采样页面层，否则会递归崩溃），
+ *   此时用实色底，保留液态形变与按压高光；弹窗 / sheet 里的按钮保持默认 false，用真正的液态玻璃底。
+ */
+@Composable
+fun AppTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    inPage: Boolean = false,
+    cornerRadius: Dp = ButtonDefaults.CornerRadius,
+    minWidth: Dp = ButtonDefaults.MinWidth,
+    minHeight: Dp = ButtonDefaults.MinHeight,
+    insideMargin: PaddingValues = ButtonDefaults.InsideMargin,
+    textStyle: TextStyle? = null,
+) {
+    if (LocalBlurMode.current != BLUR_LIQUID || LocalLiquidBackdrop.current == null) {
+        TextButton(
+            text = text,
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            cornerRadius = cornerRadius,
+            minWidth = minWidth,
+            minHeight = minHeight,
+            colors = if (primary) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
+            insideMargin = insideMargin,
+            textStyle = textStyle,
+        )
+        return
+    }
+    val colors = MiuixTheme.colorScheme
+    val tint = if (primary) colors.primary else colors.surfaceContainer
+    val textColor = if (primary) Color.White else colors.onSurface
+    val labelStyle = textStyle ?: MiuixTheme.textStyles.button
+    val hPad = insideMargin.horizontalOnly()
+    // 外层 Box 由「不可见的同款文字」撑出宽度（LiquidGlassSurface 的各层都是 matchParentSize，自己没有内在尺寸）
+    Box(
+        modifier = modifier
+            .heightIn(min = minHeight.coerceAtLeast(28.dp))
+            .widthIn(min = minWidth),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = labelStyle,
+            modifier = Modifier.padding(hPad).alpha(0f),
+        )
+        LiquidGlassSurface(
+            onClick = onClick,
+            backdrop = if (inPage) null else LocalLiquidBackdrop.current,
+            modifier = Modifier.matchParentSize(),
+            tint = if (inPage && !primary) colors.surfaceVariant else tint,
+            tintAlpha = 0.35f,
+            coloredTint = primary,
+            enabled = enabled,
+        ) {
+            Text(text = text, color = textColor, style = labelStyle)
+        }
+    }
+}
+
+private fun PaddingValues.horizontalOnly(): PaddingValues = PaddingValues(
+    start = calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+    end = calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+)
