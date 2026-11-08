@@ -4286,18 +4286,24 @@ private fun GlassLogoText(text: String, fontSize: Int, wallpaper: ImageBitmap?) 
             drawText(layout, color = Color.Black, topLeft = textTopLeft + offset)
         }
 
-        // 1. 字下柔和投影
+        val gTop = textTopLeft.y
+        val gBottom = textTopLeft.y + layout.size.height
+
+        // 1. 字外投影：先画模糊投影，再把字形本身挖掉，只留字外的柔和阴影（玻璃本体是透的，不能让阴影透进字里）
         drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
             val fw = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            fw.maskFilter = android.graphics.BlurMaskFilter(10f * d, android.graphics.BlurMaskFilter.Blur.NORMAL)
-            fw.color = android.graphics.Color.argb(if (dark) 120 else 70, 0, 0, 0)
+            fw.maskFilter = android.graphics.BlurMaskFilter(9f * d, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            fw.color = android.graphics.Color.argb(if (dark) 110 else 62, 0, 0, 0)
             fw.textSize = fontSize.sp.toPx()
             fw.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 900, false)
             val baseline = textTopLeft.y - fw.fontMetrics.ascent
-            canvas.nativeCanvas.drawText(text, textTopLeft.x, baseline + 5f * d, fw)
+            canvas.nativeCanvas.drawText(text, textTopLeft.x, baseline + 4f * d, fw)
+            drawText(layout, color = Color.Black, topLeft = textTopLeft, blendMode = BlendMode.DstOut)
+            canvas.restore()
         }
 
-        // 2. 玻璃本体
+        // 2. 玻璃本体：字形内显示背后的壁纸——放大折射、提亮、加饱和，再叠一层上亮下淡的磨砂白
         drawIntoCanvas { canvas ->
             canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
             mask()
@@ -4307,17 +4313,21 @@ private fun GlassLogoText(text: String, fontSize: Int, wallpaper: ImageBitmap?) 
                 val scale = max(windowSize.width / bw, windowSize.height / bh)
                 val x0 = (windowSize.width - bw * scale) / 2f
                 val y0 = (windowSize.height - bh * scale) / 2f
-                // 当前字块在壁纸（Crop 铺满）里对应的区域；缩小取样区 = 放大，模拟透镜折射
-                val lens = 0.9f
+                val lens = 0.78f
                 val w = size.width / scale * lens
                 val h = size.height / scale * lens
                 val cx = (origin.x + size.width / 2f - x0) / scale
                 val cy = (origin.y + size.height / 2f - y0) / scale
-                val srcX = (cx - w / 2f).toInt().coerceIn(0, (wallpaper.width - 1))
-                val srcY = (cy - h / 2f).toInt().coerceIn(0, (wallpaper.height - 1))
+                val srcX = (cx - w / 2f).toInt().coerceIn(0, wallpaper.width - 1)
+                val srcY = (cy - h / 2f).toInt().coerceIn(0, wallpaper.height - 1)
                 val srcW = w.toInt().coerceIn(1, wallpaper.width - srcX)
                 val srcH = h.toInt().coerceIn(1, wallpaper.height - srcY)
-                val boost = ColorMatrix().apply { setToSaturation(1.5f) }
+                val boost = ColorMatrix().apply {
+                    setToSaturation(1.7f)
+                    this[0, 4] = 46f
+                    this[1, 4] = 46f
+                    this[2, 4] = 46f
+                }
                 drawImage(
                     image = wallpaper,
                     srcOffset = IntOffset(srcX, srcY),
@@ -4328,59 +4338,78 @@ private fun GlassLogoText(text: String, fontSize: Int, wallpaper: ImageBitmap?) 
                     filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
                     blendMode = BlendMode.SrcIn,
                 )
-                // 提亮 + 自上而下的玻璃感渐变（SrcAtop 保持字形遮罩）
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.26f)),
-                        startY = textTopLeft.y,
-                        endY = textTopLeft.y + layout.size.height,
-                    ),
-                    blendMode = BlendMode.SrcAtop,
-                )
             } else {
+                // 无壁纸：用主题色做底
                 drawRect(
-                    brush = Brush.verticalGradient(
-                        if (dark) listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.18f), Color.White.copy(alpha = 0.34f))
-                        else listOf(Color.White.copy(alpha = 0.95f), Color(0xFFB4C2D6).copy(alpha = 0.6f), Color(0xFF8196B0).copy(alpha = 0.55f)),
-                        startY = textTopLeft.y,
-                        endY = textTopLeft.y + layout.size.height,
-                    ),
+                    color = if (dark) Color(0xFF5A6578) else Color(0xFFA9B8CE),
                     blendMode = BlendMode.SrcIn,
                 )
             }
+            // 磨砂白：整体提亮，顶部更亮，像光从上面打进玻璃
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = if (dark) 0.40f else 0.52f),
+                        Color.White.copy(alpha = if (dark) 0.18f else 0.26f),
+                        Color.White.copy(alpha = if (dark) 0.28f else 0.36f),
+                    ),
+                    startY = gTop,
+                    endY = gBottom,
+                ),
+                blendMode = BlendMode.SrcAtop,
+            )
             canvas.restore()
         }
 
-        // 3. 内侧暗边（右下）：字形减去向左上平移的字形，剩下右下月牙
+        // 3. 内侧下缘暗影（玻璃厚度）：字形减去上移的字形，剩下底部窄带，渐变到透明
         drawIntoCanvas { canvas ->
             canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
             mask()
-            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(-2.5f * d, -3.5f * d), blendMode = BlendMode.DstOut)
-            drawRect(Color.Black.copy(alpha = if (dark) 0.5f else 0.34f), blendMode = BlendMode.SrcIn)
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(-1.5f * d, -4f * d), blendMode = BlendMode.DstOut)
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = if (dark) 0.40f else 0.26f)),
+                    startY = gTop,
+                    endY = gBottom,
+                ),
+                blendMode = BlendMode.SrcIn,
+            )
             canvas.restore()
         }
-        // 4. 内侧高光（左上）：字形减去向右下平移的字形，剩下左上月牙
+        // 4. 内侧上缘高光：字形减去下移的字形，剩下顶部亮带，向下淡出
         drawIntoCanvas { canvas ->
             canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
             mask()
-            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(2f * d, 3f * d), blendMode = BlendMode.DstOut)
-            drawRect(Color.White.copy(alpha = 0.95f), blendMode = BlendMode.SrcIn)
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(1.5f * d, 3.5f * d), blendMode = BlendMode.DstOut)
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.15f)),
+                    startY = gTop,
+                    endY = gBottom,
+                ),
+                blendMode = BlendMode.SrcIn,
+            )
             canvas.restore()
         }
-        // 5. 镜面描边：对角渐变，左上亮、中间淡、右下再亮一点
-        drawText(
-            layout,
-            topLeft = textTopLeft,
-            brush = Brush.linearGradient(
-                0f to Color.White.copy(alpha = 0.95f),
-                0.45f to Color.White.copy(alpha = 0.08f),
-                0.7f to Color.White.copy(alpha = 0.12f),
-                1f to Color.White.copy(alpha = 0.7f),
-                start = Offset(0f, 0f),
-                end = Offset(size.width, size.height),
-            ),
-            drawStyle = Stroke(width = 1.4f * d),
-        )
+        // 5. 极细的边缘光：只在字形内侧一圈，低透明度，不再是一圈明显的描边
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
+            mask()
+            drawText(
+                layout,
+                topLeft = textTopLeft,
+                brush = Brush.linearGradient(
+                    0f to Color.White.copy(alpha = 0.55f),
+                    0.5f to Color.White.copy(alpha = 0.10f),
+                    1f to Color.White.copy(alpha = 0.40f),
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, size.height),
+                ),
+                drawStyle = Stroke(width = 1.6f * d),
+                blendMode = BlendMode.SrcIn,
+            )
+            canvas.restore()
+        }
     }
 }
 
