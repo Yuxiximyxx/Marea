@@ -61,13 +61,13 @@ object LinkDispatch {
 
     const val YUNX_PACKAGE = "com.yunx.app"
 
-    /** 网盘分享链接（云析支持面）：夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 */
+    /** 网盘分享链接（云析支持面）：夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云（(?i) 容忍粘贴来的大写形态） */
     const val PAN_PATTERN =
-        "https?://(pan\\.quark\\.cn/s/.+|drive\\.uc\\.cn/s/.+|pan\\.xunlei\\.com/s/.+" +
+        "(?i)https?://(pan\\.quark\\.cn/s/.+|drive\\.uc\\.cn/s/.+|pan\\.xunlei\\.com/s/.+" +
             "|pan\\.baidu\\.com/(s/|share/).+|(yun|caiyun)\\.139\\.com/.+" +
             "|([a-z0-9-]+\\.)*123pan\\.(com|cn)/(s/|123pan/).+|115\\.com/s/.+" +
-            "|(www\\.)?guangyapan\\.com/s/.+|[a-z0-9-]+\\.lanzou[a-z0-9]*\\.com/.+" +
-            "|lanzn\\.com/.+|lanzoui\\.com/.+|lanzoux\\.com/.+|lanrar\\.com/.+)"
+            "|(www\\.)?guangyapan\\.com/s/.+|([a-z0-9-]+\\.)?lanzou[a-z0-9]*\\.com/.+" +
+            "|(www\\.)?lanzn\\.com/.+|(www\\.)?lanrar\\.com/.+)"
 
     @Synchronized
     fun init(context: Context) {
@@ -115,6 +115,17 @@ object LinkDispatch {
                 rules.addAll(loaded.sortedBy { it.priority })
             }
         }
+        // 内置规则的匹配模式随版本刷新：已装机用户落盘的是旧模式串，覆盖不到的新形态（如蓝奏裸域）
+        // 靠这里把 builtin 规则的 pattern 同步到代码里的最新版；用户对规则的启停/作用域/确认等编辑保留不动
+        var migrated = false
+        for (i in rules.indices) {
+            val r = rules[i]
+            if (r.builtin && r.targetPackage == YUNX_PACKAGE && r.pattern != PAN_PATTERN) {
+                rules[i] = r.copy(pattern = PAN_PATTERN)
+                migrated = true
+            }
+        }
+        if (migrated) saveLocked()
         inited = true
     }
 

@@ -1247,6 +1247,13 @@ class BrowserTab(private val appContext: Context) {
 
     fun load(input: String) {
         val target = toUrl(input, searchTemplate)
+        // 用户主动发起的顶层加载先过分发引擎：命中规则且送出/挂起确认 → 本次不再站内加载
+        if (dispatchTopLevel(target)) return
+        performLoad(target)
+    }
+
+    /** 实际执行站内加载（已过分发判定，或分发确认被拒/送出失败回退时调用） */
+    private fun performLoad(target: String) {
         if (url.isEmpty() && !openedFromLink) {
             // 从主页进入新页面：记下 WebView 历史的当前位置，返回到这一层就回主页
             fromHome = true
@@ -1263,6 +1270,32 @@ class BrowserTab(private val appContext: Context) {
             webView.loadUrl(target, headers)
         }
         syncNav()
+    }
+
+    /**
+     * 顶层加载分发判定（CLICK 作用域）：地址栏输入/粘贴回车、外部 ACTION_VIEW 拉起、
+     * 剪贴板/主页快捷方式/书签历史打开，最终都汇到 [load]，在这里统一判定一次。
+     * 这类加载是 App 自己调 WebView.loadUrl，不经过 shouldOverrideUrlLoading
+     * （即便经过，hasGesture() 也为 false），所以不能只靠那里的手势闸门——
+     * 一期真机 bug「粘贴网盘链接回车不跳云析」的断点正在于此。
+     * 返回 true = 已接管（已送出，或已挂起确认框，结果出来再决定是否回退站内加载）；
+     * 未命中 / 引擎关 / 已有确认框在途 / 送出失败 → 返回 false，照常站内加载。
+     * 页面内部的无手势跳转、重定向链不走这里，仍由 shouldOverrideUrlLoading 的闸门管，避免劫持站内跳转。
+     */
+    private fun dispatchTopLevel(target: String): Boolean {
+        val scheme = Uri.parse(target).scheme
+        if (scheme != "http" && scheme != "https") return false
+        val (rule, finalUrl) = LinkDispatch.match(target, DispatchScope.CLICK) ?: return false
+        if (rule.confirm) {
+            if (redirectPromptPending) return false
+            askRedirect(Uri.parse(target).host ?: target, "用「${rule.name}」在外部应用打开此链接") { allow ->
+                if (!allow || !LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                    webView.post { performLoad(target) }
+                }
+            }
+            return true
+        }
+        return LinkDispatch.dispatch(appContext, rule, finalUrl)
     }
 
     fun loadUrl(raw: String) {

@@ -154,7 +154,7 @@ object Downloader {
         tasks.add(0, task)
         persistNow()
         DownloadService.start(context)
-        DownloadService.instance?.showStart(fileName, task.id)
+        DownloadService.showStart(context, fileName, task.id)
         launch(context, task.id)
     }
 
@@ -165,7 +165,7 @@ object Downloader {
         val task = tasks.firstOrNull { it.id == id }
         if (task != null) {
             val progress = progressOf(task)
-            DownloadService.instance?.updatePaused(task.name, progress, id)
+            appContext?.let { DownloadService.updatePaused(it, task.name, progress, id) }
         }
     }
 
@@ -173,6 +173,9 @@ object Downloader {
         bindContext(context)
         update(id) { it.copy(state = DownloadState.RUNNING, error = null) }
         persistNow()
+        // 服务可能已随其它任务结束而停掉（或进程重启）：继续下载前先把服务与任务通知拉起来
+        DownloadService.start(context)
+        tasks.firstOrNull { it.id == id }?.let { DownloadService.showStart(context, it.name, id) }
         launch(context, id)
     }
 
@@ -180,6 +183,8 @@ object Downloader {
         bindContext(context)
         update(id) { it.copy(state = DownloadState.RUNNING, error = null) }
         persistNow()
+        DownloadService.start(context)
+        tasks.firstOrNull { it.id == id }?.let { DownloadService.showStart(context, it.name, id) }
         launch(context, id)
     }
 
@@ -194,6 +199,7 @@ object Downloader {
         tasks.removeAll { it.id == id }
         bindContext(context)
         persistNow()
+        DownloadService.dismiss(context, id)
     }
 
     /** 临时文件放 filesDir（见 DownloadStore 说明），cacheDir 会被冷启动清理整表搬走 */
@@ -222,7 +228,7 @@ object Downloader {
                     segTables.remove(id)
                     update(id) { it.copy(state = DownloadState.DONE) }
                     persistNow()
-                    DownloadService.instance?.finish(finished?.name ?: "文件")
+                    DownloadService.finish(context, finished?.name ?: "文件", id)
                     toast(context, "下载完成：${finished?.name ?: "文件"}")
                     return@launch
                 } catch (e: CancellationException) {
@@ -235,7 +241,7 @@ object Downloader {
                     if (attempt >= MAX_ATTEMPTS) {
                         update(id) { it.copy(state = DownloadState.FAILED, error = message) }
                         persistNow()
-                        DownloadService.instance?.fail("下载失败：$message")
+                        DownloadService.fail(context, "下载失败：$message", id)
                         return@launch
                     }
                     update(id) { it.copy(error = message) }
@@ -342,7 +348,8 @@ object Downloader {
                             update(id) { it.copy(bytes = written) }
                             val total = tasks.firstOrNull { it.id == id }?.total ?: 0L
                             val progress = if (total > 0) written.toFloat() / total else 0f
-                            DownloadService.instance?.update(
+                            DownloadService.update(
+                                context,
                                 task.name,
                                 progress,
                                 "${(progress * 100).toInt()}% · ${sizeText(written)}",
@@ -458,11 +465,37 @@ object Downloader {
                 lastUpdate = now
                 val written = table.downloaded()
                 update(id) { it.copy(bytes = written, total = total, state = DownloadState.RUNNING) }
-                DownloadService.instance?.update(
+                // 分段表 → ProgressStyle 分段：各段按字节占比换算成点数（合计 100，漂移并到最大段），
+                // 已下完的段边界记为 points；段太多（>50）时不映射，实况通知退回整条进度
+                val segCount = table.segments.size
+                var segPoints: List<Int>? = null
+                var segMarks: List<Int>? = null
+                if (segCount in 2..50) {
+                    val sizes = table.segments
+                        .map { s -> (((s.end - s.start + 1) * 100) / total).toInt().coerceAtLeast(1) }
+                        .toMutableList()
+                    val drift = 100 - sizes.sum()
+                    if (drift != 0) {
+                        val maxIdx = sizes.indices.maxByOrNull { sizes[it] } ?: 0
+                        sizes[maxIdx] = (sizes[maxIdx] + drift).coerceAtLeast(1)
+                    }
+                    var acc = 0
+                    val marks = ArrayList<Int>()
+                    table.segments.forEachIndexed { i, s ->
+                        acc += sizes[i]
+                        if (s.done >= s.end - s.start + 1 && acc in 1..99) marks.add(acc)
+                    }
+                    segPoints = sizes
+                    segMarks = marks
+                }
+                DownloadService.update(
+                    context,
                     task.name,
                     (written.toFloat() / total).coerceIn(0f, 1f),
                     "${(written * 100 / total)}% · ${sizeText(written)}",
                     id,
+                    segPoints,
+                    segMarks,
                 )
             }
             coroutineScope {

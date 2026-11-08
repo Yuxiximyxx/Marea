@@ -1686,7 +1686,8 @@ fun BrowserScreen(
             Sheet.Link -> {
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
-                    tab.loadUrl(linkUrl)
+                    // 走 load() 而非 loadUrl()：与地址栏同一条顶层加载通道，分发引擎 CLICK 判定不被绕过
+                    tab.load(linkUrl)
                 }
                 SheetRow(title = "在新标签页打开") {
                     sheet = Sheet.None
