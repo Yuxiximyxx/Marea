@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Rect
@@ -181,6 +185,26 @@ interface AppMaterial {
         role: LiquidRole,
         enabled: Boolean,
     )
+}
+
+/**
+ * 弹窗 / sheet 的内容是在 popup host 的 composition 里执行的，读不到调用处的 CompositionLocal
+ * （LocalLiquidBackdrop / LocalBlurMode 会变回默认值，内部的下拉菜单、按钮就会退回 miuix 材质）。
+ * 在调用处读出当前值，再在内容里重新提供一遍。
+ */
+@Composable
+private fun rememberOverlayContent(content: @Composable () -> Unit): @Composable () -> Unit {
+    val liquidBackdrop = LocalLiquidBackdrop.current
+    val mode = LocalBlurMode.current
+    val latest by rememberUpdatedState(content)
+    return remember(liquidBackdrop, mode) {
+        val wrapped: @Composable () -> Unit = {
+            CompositionLocalProvider(LocalLiquidBackdrop provides liquidBackdrop, LocalBlurMode provides mode) {
+                latest()
+            }
+        }
+        wrapped
+    }
 }
 
 /** 按当前「模糊效果」设置取材质。 */
@@ -407,7 +431,13 @@ fun AppGlassDialog(
     summary: String? = null,
     onDismissFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit,
-) = currentMaterial().DialogHost(onDismissRequest, show, backdrop, modifier, title, summary, onDismissFinished, content)
+) {
+    val material = currentMaterial()
+    material.DialogHost(
+        onDismissRequest, show, backdrop, modifier, title, summary, onDismissFinished,
+        content = rememberOverlayContent(content),
+    )
+}
 
 /** 底部 sheet */
 @Composable
@@ -422,9 +452,13 @@ fun AppBottomSheet(
     endAction: @Composable (() -> Unit)? = null,
     onDismissFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit,
-) = currentMaterial().SheetHost(
-    onDismissRequest, show, backdrop, modifier, enableWindowDim, title, startAction, endAction, onDismissFinished, content,
-)
+) {
+    val material = currentMaterial()
+    material.SheetHost(
+        onDismissRequest, show, backdrop, modifier, enableWindowDim, title, startAction, endAction, onDismissFinished,
+        content = rememberOverlayContent(content),
+    )
+}
 
 /** 弹出菜单 */
 @Composable
@@ -437,7 +471,15 @@ fun BoxScope.AppGlassPopup(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val m = currentMaterial()
-    with(m) { PopupHost(show, onDismissRequest, anchorBounds, backdrop, modifier, content) }
+    val liquidBackdrop = LocalLiquidBackdrop.current
+    val mode = LocalBlurMode.current
+    with(m) {
+        PopupHost(show, onDismissRequest, anchorBounds, backdrop, modifier) {
+            CompositionLocalProvider(LocalLiquidBackdrop provides liquidBackdrop, LocalBlurMode provides mode) {
+                content()
+            }
+        }
+    }
 }
 
 /** 下拉选择行 */

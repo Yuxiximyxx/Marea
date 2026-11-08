@@ -85,6 +85,7 @@ import top.yukonga.miuix.kmp.glass.GlassDialogDefaults
 import top.yukonga.miuix.kmp.glass.GlassDropdownDefaults
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassPopup
+import top.yukonga.miuix.kmp.glass.rememberGlassDragDeform
 import top.yukonga.miuix.kmp.glass.GlassPopupDefaults
 import top.yukonga.miuix.kmp.glass.GlassShape
 import top.yukonga.miuix.kmp.glass.GlassPopupSizing
@@ -182,7 +183,9 @@ object LiquidGlassMaterial : AppMaterial {
             surface = {
                 val shape = RoundedCornerShape(cornerRadius)
                 val scrim = scrimColor
-                Modifier.drawBackdrop(
+                // 拖拽形变（按压放大 + 跟手拉伸）；面板没有跟指高光
+                val deform = rememberGlassDragDeform()
+                deform.layer.drawBackdrop(
                     backdrop = liquid,
                     shape = { shape },
                     // 对话框：提亮 + 加饱和 + 模糊 + 带深度的折射 + 边缘高光
@@ -243,7 +246,9 @@ object LiquidGlassMaterial : AppMaterial {
                     RoundedCornerShape(topStart = cornerRadius, topEnd = cornerRadius)
                 }
                 val scrim = scrimColor
-                Modifier.drawBackdrop(
+                // overscroll 的延伸部分跟着 sheet 走，只有 sheet 本体形变
+                val deform = rememberGlassDragDeform()
+                (if (isOverscroll) Modifier else deform.layer).drawBackdrop(
                     backdrop = liquid,
                     shape = { shape },
                     effects = {
@@ -352,6 +357,7 @@ object LiquidGlassMaterial : AppMaterial {
             tintAlpha = 0.35f,
             coloredTint = role != GlassDialogButtonRole.Normal,
             enabled = enabled,
+            deformable = false,
         ) {
             CompositionLocalProvider(LocalContentColor provides textColor) {
                 Row(
@@ -404,6 +410,8 @@ object LiquidGlassMaterial : AppMaterial {
                 tintAlpha = 0.35f,
                 coloredTint = primary,
                 enabled = enabled,
+                // 弹窗里的按钮不形变、无跟指高光；页面内的按钮保持液态形变
+                deformable = inPage,
             ) {
                 Text(text = text, color = textColor, style = labelStyle)
             }
@@ -490,6 +498,7 @@ object LiquidGlassMaterial : AppMaterial {
             tintAlpha = 0.35f,
             coloredTint = role != LiquidRole.Normal,
             enabled = enabled,
+            deformable = false,
         ) {
             Text(text = text, color = textColor, style = MiuixTheme.textStyles.button)
         }

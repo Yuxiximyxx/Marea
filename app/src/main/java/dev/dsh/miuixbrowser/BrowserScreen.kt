@@ -942,17 +942,20 @@ fun BrowserScreen(
             if (wallpaperImage != null) {
                 // 取样层永远是「未模糊」的原图（+压暗）：首页所有玻璃（卡片 / 底栏 / 弹层）都从它取色并各自模糊，
                 // 不受「壁纸模糊」开关影响，也不会对已经模糊过的壁纸再采样一次。
+                // 液态玻璃 + 壁纸模糊：取样层本身就画模糊后的壁纸（即卡片真正的「下层背景」），卡片取色与所见一致，
+                // 此时不再另盖显示层。其它材质维持原行为：取样层始终是未模糊原图。
+                val sampleBlurred = settings.wallpaperBlur && settings.liquidGlass
                 Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop).kyantLayerBackdrop(wallpaperLiquidBackdrop)) {
                     Image(
                         bitmap = wallpaperImage,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(if (sampleBlurred) Modifier.blur(28.dp) else Modifier),
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                 }
                 // 「壁纸模糊」只是显示层：不透明地盖在取样层上，不参与采样
-                if (settings.wallpaperBlur) {
+                if (settings.wallpaperBlur && !sampleBlurred) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         Image(
                             bitmap = wallpaperImage,

@@ -40,7 +40,7 @@ import kotlin.math.tanh
  * movement a child has already consumed (scroll, sliders, sheet handle).
  */
 @Stable
-internal class GlassDragDeform(private val scope: CoroutineScope) {
+class GlassDragDeform(private val scope: CoroutineScope) {
 
     private val pressSpec = spring<Float>(0.5f, 300f, 0.001f)
     private val positionSpec = spring(0.5f, 300f, Offset.VisibilityThreshold)
@@ -120,7 +120,7 @@ internal class GlassDragDeform(private val scope: CoroutineScope) {
 }
 
 @Composable
-internal fun rememberGlassDragDeform(): GlassDragDeform {
+fun rememberGlassDragDeform(): GlassDragDeform {
     val scope = rememberCoroutineScope()
     return remember(scope) { GlassDragDeform(scope) }
 }

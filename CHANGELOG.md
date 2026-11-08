@@ -1,6 +1,12 @@
 # Changelog
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
+
+## [1.8.19-dev]
+
+- 调整：liquid glass 下弹窗 / sheet 底部按钮去掉按压放大、拖拽形变与跟指高光（只保留按下变淡）；拖拽形变改用于对话框、sheet、弹出菜单和下拉菜单的大面板（面板无跟指高光）。`GlassDragDeform` 改为公开，下拉菜单在自定义 surface 时开启形变
+- 修复：弹窗 / sheet 内容在 popup host 里组合，读不到 `LocalLiquidBackdrop`，导致「首页内容显示」sheet 里的下拉菜单与弹窗内按钮退回 miuix；门面现在把两个 local 重新注入内容
+- 调整：liquid glass + 壁纸模糊时，首页卡片的取样层改为模糊后的壁纸（真实下层背景），不再取未模糊原图
 ## [1.8.18-dev]
 
 - 重构：新增 `AppMaterial.kt` 材质抽象层。三种材质（`MiuixGlassMaterial` / `LiquidGlassMaterial` / `FlatMaterial`）各自实现开关、按钮、弹窗、sheet、菜单、下拉；`AppGlassDialog` / `AppDialogButton` 等门面按「模糊效果」设置转发，调用处无需判断模式

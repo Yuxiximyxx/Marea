@@ -200,7 +200,8 @@ internal fun BoxScope.GlassDropdownPopupContent(
         surface = surface,
         interactive = show,
         scrollable = true,
-        dragDeform = false,
+        // 默认下拉菜单拖动 = 滚动 / 点按，面板不跟手；换成自定义 surface（液态玻璃）时开启拖拽形变（已消费的滚动手势不会触发）
+        dragDeform = surface != null,
         content = content,
     )
 }

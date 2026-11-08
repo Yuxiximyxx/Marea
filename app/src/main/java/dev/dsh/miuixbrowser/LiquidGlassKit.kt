@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -87,6 +89,11 @@ fun LiquidGlassSurface(
     enabled: Boolean = true,
     /** 玻璃底板是否显示。顶栏按钮传「内容已上滑」：与 miuix GlassTopAppBar 一致，未滚动时只有图标没有圆形背景。 */
     surfaceVisible: Boolean = true,
+    /**
+     * 为 false 时去掉按压放大 / 拖拽形变 / 跟指高光，只保留玻璃底和按下变淡的反馈。
+     * 弹窗、sheet 里的按钮用 false；顶栏按钮、FAB 保持 true。
+     */
+    deformable: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -99,7 +106,15 @@ fun LiquidGlassSurface(
         label = "liquidSurfaceAlpha",
     )
     // 官方写法：按压放大 + 拖拽时按钮跟手形变，全部走 layerBlock
-    val liquidLayer: GraphicsLayerScope.() -> Unit = {
+    val pressSource = remember { MutableInteractionSource() }
+    val pressed by pressSource.collectIsPressedAsState()
+    val pressAlpha by animateFloatAsState(
+        targetValue = if (!deformable && pressed) 0.7f else 1f,
+        animationSpec = tween(durationMillis = 90, easing = LinearEasing),
+        label = "liquidPressAlpha",
+    )
+    val liquidLayer: GraphicsLayerScope.() -> Unit = liquid@{
+        if (!deformable) return@liquid
         val width = size.width
         val height = size.height
         val progress = highlight.pressProgress
@@ -123,7 +138,7 @@ fun LiquidGlassSurface(
     val showSurface = surfaceAlpha > 0.001f
 
     Box(
-        modifier = modifier.alpha(if (enabled) 1f else 0.4f),
+        modifier = modifier.alpha((if (enabled) 1f else 0.4f) * pressAlpha),
         contentAlignment = Alignment.Center,
     ) {
         // 玻璃底板与图标分层：底板可以单独淡入淡出，图标始终可见；两层用同一个 liquidLayer，形变一致。
@@ -175,7 +190,7 @@ fun LiquidGlassSurface(
                 .graphicsLayer(block = liquidLayer)
                 .clip(CircleShape)
                 .clickable(
-                    interactionSource = null,
+                    interactionSource = if (deformable) null else pressSource,
                     indication = null,
                     enabled = enabled,
                     role = Role.Button,
@@ -184,8 +199,8 @@ fun LiquidGlassSurface(
                     onClick()
                 }
                 // 底板不可见时不画按下高光，避免出现一块没有底的亮斑
-                .then(if (enabled && showSurface) highlight.modifier else Modifier)
-                .then(if (enabled) highlight.gestureModifier else Modifier),
+                .then(if (enabled && showSurface && deformable) highlight.modifier else Modifier)
+                .then(if (enabled && deformable) highlight.gestureModifier else Modifier),
             contentAlignment = Alignment.Center,
             content = { content() },
         )
