@@ -1,6 +1,10 @@
 # Changelog
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
+## [1.8.18-dev]
+
+- 重构：新增 `AppMaterial.kt` 材质抽象层。三种材质（`MiuixGlassMaterial` / `LiquidGlassMaterial` / `FlatMaterial`）各自实现开关、按钮、弹窗、sheet、菜单、下拉；`AppGlassDialog` / `AppDialogButton` 等门面按「模糊效果」设置转发，调用处无需判断模式
+- 调整：弹窗 / 下拉菜单 / sheet 边缘折射与色散加强（lens 高度与强度提高，边缘高光加宽），背景模糊度降低
 
 ## [1.8.15-dev]
 - 测试液态玻璃组件
