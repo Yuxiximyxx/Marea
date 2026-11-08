@@ -143,6 +143,16 @@ import androidx.compose.ui.layout.positionInWindow
 import kotlinx.coroutines.CoroutineStart
 
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.max
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
@@ -3049,7 +3059,7 @@ private fun StartPage(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GlassLogoText("Mafari", fontSize = 58)
+                GlassLogoText("Mafari", fontSize = 58, wallpaper = wallpaper)
             }
             Spacer(Modifier.height(30.dp))
 
@@ -4242,46 +4252,135 @@ private val GoogleColors = listOf(
     Color(0xFFEA4335),
 )
 
+/**
+ * 首页 Mafari 标志：液态玻璃字。
+ * - 有壁纸：字形内部显示字后面的那一块壁纸（轻微放大模拟折射、提亮加饱和），颜色随背景变化；
+ * - 无壁纸：退回主题色的半透明玻璃渐变；
+ * - 再叠：内侧左上高光 / 右下暗边、对角渐变镜面描边、字下柔和投影。
+ * 字形遮罩用 saveLayer + BlendMode（SrcIn / DstOut）实现，不依赖 RuntimeShader。
+ */
 @Composable
-private fun GlassLogoText(text: String, fontSize: Int) {
-    val brush = Brush.verticalGradient(
-        listOf(
-            Color(0xFFF7FAFF),
-            Color(0xFFB9C8DB),
-            Color(0xFF6F8299),
-            Color(0xFFD9E3EE),
-        ),
-    )
-    val shadow = Shadow(color = Color(0x66000000), offset = Offset(0f, 3f), blurRadius = 8f)
-    Box(contentAlignment = Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            text.forEach { ch ->
-                Text(
-                    text = ch.toString(),
-                    style = TextStyle(
-                        fontSize = fontSize.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White.copy(alpha = 0.45f),
+private fun GlassLogoText(text: String, fontSize: Int, wallpaper: ImageBitmap?) {
+    val dark = isAppDarkTheme()
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val style = remember(fontSize) {
+        TextStyle(fontSize = fontSize.sp, fontWeight = FontWeight.Black, color = Color.Black)
+    }
+    val layout = remember(text, style) { measurer.measure(text, style) }
+    val pad = with(density) { 14.dp.toPx() }
+    val widthDp = with(density) { (layout.size.width + pad * 2).toDp() }
+    val heightDp = with(density) { (layout.size.height + pad * 2).toDp() }
+    val windowSize = LocalWindowInfo.current.containerSize
+    var origin by remember { mutableStateOf(Offset.Zero) }
+
+    Canvas(
+        modifier = Modifier
+            .size(widthDp, heightDp)
+            .onGloballyPositioned { origin = it.positionInWindow() },
+    ) {
+        val textTopLeft = Offset(pad, pad)
+        val bounds = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
+        val d = this.density
+        fun mask(offset: Offset = Offset.Zero) {
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + offset)
+        }
+
+        // 1. 字下柔和投影
+        drawIntoCanvas { canvas ->
+            val fw = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            fw.maskFilter = android.graphics.BlurMaskFilter(10f * d, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            fw.color = android.graphics.Color.argb(if (dark) 120 else 70, 0, 0, 0)
+            fw.textSize = fontSize.sp.toPx()
+            fw.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 900, false)
+            val baseline = textTopLeft.y - fw.fontMetrics.ascent
+            canvas.nativeCanvas.drawText(text, textTopLeft.x, baseline + 5f * d, fw)
+        }
+
+        // 2. 玻璃本体
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
+            mask()
+            if (wallpaper != null && windowSize.width > 0 && windowSize.height > 0) {
+                val bw = wallpaper.width.toFloat()
+                val bh = wallpaper.height.toFloat()
+                val scale = max(windowSize.width / bw, windowSize.height / bh)
+                val x0 = (windowSize.width - bw * scale) / 2f
+                val y0 = (windowSize.height - bh * scale) / 2f
+                // 当前字块在壁纸（Crop 铺满）里对应的区域；缩小取样区 = 放大，模拟透镜折射
+                val lens = 0.9f
+                val w = size.width / scale * lens
+                val h = size.height / scale * lens
+                val cx = (origin.x + size.width / 2f - x0) / scale
+                val cy = (origin.y + size.height / 2f - y0) / scale
+                val srcX = (cx - w / 2f).toInt().coerceIn(0, (wallpaper.width - 1))
+                val srcY = (cy - h / 2f).toInt().coerceIn(0, (wallpaper.height - 1))
+                val srcW = w.toInt().coerceIn(1, wallpaper.width - srcX)
+                val srcH = h.toInt().coerceIn(1, wallpaper.height - srcY)
+                val boost = ColorMatrix().apply { setToSaturation(1.5f) }
+                drawImage(
+                    image = wallpaper,
+                    srcOffset = IntOffset(srcX, srcY),
+                    srcSize = IntSize(srcW, srcH),
+                    dstOffset = IntOffset.Zero,
+                    dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                    colorFilter = ColorFilter.colorMatrix(boost),
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
+                    blendMode = BlendMode.SrcIn,
+                )
+                // 提亮 + 自上而下的玻璃感渐变（SrcAtop 保持字形遮罩）
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.26f)),
+                        startY = textTopLeft.y,
+                        endY = textTopLeft.y + layout.size.height,
                     ),
-                    modifier = Modifier.graphicsLayer {
-                        renderEffect = BlurEffect(14f, 14f, TileMode.Clamp)
-                    },
+                    blendMode = BlendMode.SrcAtop,
+                )
+            } else {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        if (dark) listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.18f), Color.White.copy(alpha = 0.34f))
+                        else listOf(Color.White.copy(alpha = 0.95f), Color(0xFFB4C2D6).copy(alpha = 0.6f), Color(0xFF8196B0).copy(alpha = 0.55f)),
+                        startY = textTopLeft.y,
+                        endY = textTopLeft.y + layout.size.height,
+                    ),
+                    blendMode = BlendMode.SrcIn,
                 )
             }
+            canvas.restore()
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            text.forEach { ch ->
-                Text(
-                    text = ch.toString(),
-                    style = TextStyle(
-                        brush = brush,
-                        fontSize = fontSize.sp,
-                        fontWeight = FontWeight.Black,
-                        shadow = shadow,
-                    ),
-                )
-            }
+
+        // 3. 内侧暗边（右下）：字形减去向左上平移的字形，剩下右下月牙
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
+            mask()
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(-2.5f * d, -3.5f * d), blendMode = BlendMode.DstOut)
+            drawRect(Color.Black.copy(alpha = if (dark) 0.5f else 0.34f), blendMode = BlendMode.SrcIn)
+            canvas.restore()
         }
+        // 4. 内侧高光（左上）：字形减去向右下平移的字形，剩下左上月牙
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
+            mask()
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(2f * d, 3f * d), blendMode = BlendMode.DstOut)
+            drawRect(Color.White.copy(alpha = 0.95f), blendMode = BlendMode.SrcIn)
+            canvas.restore()
+        }
+        // 5. 镜面描边：对角渐变，左上亮、中间淡、右下再亮一点
+        drawText(
+            layout,
+            topLeft = textTopLeft,
+            brush = Brush.linearGradient(
+                0f to Color.White.copy(alpha = 0.95f),
+                0.45f to Color.White.copy(alpha = 0.08f),
+                0.7f to Color.White.copy(alpha = 0.12f),
+                1f to Color.White.copy(alpha = 0.7f),
+                start = Offset(0f, 0f),
+                end = Offset(size.width, size.height),
+            ),
+            drawStyle = Stroke(width = 1.4f * d),
+        )
     }
 }
 

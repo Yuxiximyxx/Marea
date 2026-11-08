@@ -87,6 +87,9 @@ fun AboutScreen(
 
     val pageBackdrop = rememberLayerBackdrop()
     val liquidBackdrop = rememberKyantBackdrop()
+    // 顶栏 / 返回键采样「背景 + 滚动内容」，才有渐进模糊；玻璃图标仍只采背景层（pageBackdrop），避免采到自己
+    val contentBackdrop = rememberLayerBackdrop()
+    val contentLiquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)
     val liquid = if (glass) liquidBackdrop else null
     val scrollBehavior = MiuixScrollBehavior()
@@ -103,18 +106,18 @@ fun AboutScreen(
         topBar = {
             PageGlassTopBar(
                 title = "关于",
-                backdrop = pageBackdrop,
+                backdrop = contentBackdrop,
                 glass = glass,
                 scrollBehavior = scrollBehavior,
                 onBack = onBack,
                 backButton = {
-                    LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                    LiquidGlassBackButton(backdrop = if (glass) contentLiquidBackdrop else null, surfaceVisible = topScrolled, onClick = onBack)
                 },
             )
         },
     ) { innerPadding ->
         val topInset = innerPadding.calculateTopPadding()
-        Box(modifier = Modifier.fillMaxSize().background(surface)) {
+        Box(modifier = Modifier.fillMaxSize().background(surface).layerBackdrop(contentBackdrop).kyantLayerBackdrop(contentLiquidBackdrop)) {
             // ---- 整页背景：铺满全屏的主题色渐变，供玻璃图标与顶栏采样（顶栏在录制层之外）----
             Box(modifier = Modifier.fillMaxSize().layerBackdrop(pageBackdrop).kyantLayerBackdrop(liquidBackdrop)) {
                 Box(modifier = Modifier.fillMaxSize().background(surface))
