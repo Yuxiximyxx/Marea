@@ -3286,6 +3286,31 @@ private fun Modifier.homeGlass(
     val dark = isAppDarkTheme()
     // liquid glass 模式：用 Kyant 液态玻璃从未模糊的壁纸取样
     if (liquid != null && blurEnabled) {
+        if (dark) {
+            // 深色模式：背景本身暗，折射 / 高光不明显，卡片显得发平。加大模糊与折射、加宽边缘高光，
+            // 再用「上亮下暗」的叠色做出厚度，增加玻璃深度；浅色模式保持原样。
+            return this.drawBackdrop(
+                backdrop = liquid,
+                shape = { shape },
+                effects = {
+                    vibrancy()
+                    backdropBlur(5f.dp.toPx())
+                    lens(26f.dp.toPx(), 60f.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                },
+                highlight = {
+                    com.kyant.backdrop.highlight.Highlight.Plain.copy(
+                        width = com.kyant.backdrop.highlight.Highlight.Plain.width * 1.5f,
+                    )
+                },
+                onDrawSurface = {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.09f), Color.Black.copy(alpha = 0.16f)),
+                        ),
+                    )
+                },
+            )
+        }
         return this.drawBackdrop(
             backdrop = liquid,
             shape = { shape },
@@ -3294,7 +3319,7 @@ private fun Modifier.homeGlass(
                 backdropBlur(2f.dp.toPx())
                 lens(16f.dp.toPx(), 36f.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
-            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.12f)) },
+            onDrawSurface = { drawRect(Color.White.copy(alpha = 0.12f)) },
         )
     }
     val useGlass = blurEnabled && wallpaperBackdrop != null
