@@ -147,7 +147,7 @@ import kotlin.math.max
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
