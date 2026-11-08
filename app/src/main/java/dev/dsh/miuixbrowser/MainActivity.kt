@@ -102,6 +102,9 @@ class MainActivity : ComponentActivity() {
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
         AdBlock.init(this)
         CacheCleaner.runOnColdStart(this)
+        // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化
+        Downloader.restore(this)
+        LinkDispatch.init(this)
 
         // 全屏沉浸：内容画到状态栏和手势小白条下面，小白条保留可见。
         WindowCompat.setDecorFitsSystemWindows(window, false)

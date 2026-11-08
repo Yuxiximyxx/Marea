@@ -88,6 +88,7 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenAdBlock: () -> Unit,
+    onOpenDispatch: () -> Unit = {},
     onOpenFingerprint: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -338,6 +339,15 @@ fun SettingsScreen(
                         title = "脚本管理",
                         summary = "用户脚本 / 油猴脚本",
                         onClick = onOpenScripts,
+                    )
+                    SettingsRow(
+                        title = "链接分发",
+                        summary = if (LinkDispatch.enabled) {
+                            "已开启 · " + LinkDispatch.enabledRuleCount() + " 条规则启用 · 命中链接自动送目标应用"
+                        } else {
+                            "已关闭"
+                        },
+                        onClick = onOpenDispatch,
                     )
                     SettingsRow(
                         title = "代理",

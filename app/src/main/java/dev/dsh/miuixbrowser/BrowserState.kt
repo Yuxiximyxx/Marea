@@ -758,6 +758,26 @@ class BrowserTab(private val appContext: Context) {
                     onUserScriptLink?.invoke(target)
                     return true
                 }
+                // 链接分发（点击作用域）：仅主框架 + 有用户手势的 http(s) 导航，首中即停；
+                // 命中先确认的规则复用重定向确认弹窗，拒绝/送出失败都回退为站内打开原链接
+                val clickScheme = request.url.scheme
+                if ((clickScheme == "http" || clickScheme == "https") && request.isForMainFrame && request.hasGesture()) {
+                    val hitRule = LinkDispatch.match(target, DispatchScope.CLICK)
+                    if (hitRule != null) {
+                        val (rule, finalUrl) = hitRule
+                        if (rule.confirm) {
+                            if (!redirectPromptPending) {
+                                askRedirect(request.url.host ?: target, "用「${rule.name}」在外部应用打开此链接") { allow ->
+                                    if (!allow || !LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                                        view.post { view.loadUrl(target) }
+                                    }
+                                }
+                            }
+                            return true
+                        }
+                        if (LinkDispatch.dispatch(appContext, rule, finalUrl)) return true
+                    }
+                }
                 val scheme = request.url.scheme ?: return false
                 if (scheme == "http" || scheme == "https") {
                     val proceed = { openRedirectInNewTab(target) }
@@ -886,7 +906,35 @@ class BrowserTab(private val appContext: Context) {
                     )
                     onBlobReady?.invoke(link, name, mimeType ?: dataMime, null)
                 }
-                else -> onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+                else -> {
+                    // 链接分发（下载作用域）：命中规则直接送目标应用；未命中/拒绝/送出失败回退内置下载确认框
+                    val hitRule = LinkDispatch.match(link, DispatchScope.DOWNLOAD)
+                    if (hitRule == null) {
+                        onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+                    } else {
+                        val (rule, finalUrl) = hitRule
+                        val fallback = { onDownload?.invoke(link, userAgent, contentDisposition, mimeType) }
+                        if (rule.confirm) {
+                            if (redirectPromptPending) {
+                                fallback()
+                            } else {
+                                askRedirect(Uri.parse(link).host ?: link, "把这个下载发送到「${rule.name}」") { allow ->
+                                    if (allow) {
+                                        if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                                            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
+                                            fallback()
+                                        }
+                                    } else {
+                                        fallback()
+                                    }
+                                }
+                            }
+                        } else if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
+                            fallback()
+                        }
+                    }
+                }
             }
         }
 

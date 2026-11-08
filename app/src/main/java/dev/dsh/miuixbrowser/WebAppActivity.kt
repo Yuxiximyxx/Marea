@@ -129,6 +129,8 @@ class WebAppActivity : ComponentActivity() {
 
         settings = AppSettings(this)
         AdBlock.init(this)
+        Downloader.restore(this)
+        LinkDispatch.init(this)
         WebViewProxy.applyFrom(settings)
 
         val systemDark =
@@ -432,9 +434,19 @@ class WebAppActivity : ComponentActivity() {
 
         webView.setDownloadListener { link, userAgent, disposition, mime, _ ->
             if (link.startsWith("http", ignoreCase = true)) {
-                val name = Downloader.withExtension(Downloader.fileNameFrom(link, disposition), mime)
-                Downloader.start(this, link, userAgent, name, mime)
-                Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
+                // 链接分发（下载作用域）与主浏览器共用同一引擎；轻应用没有确认弹窗，
+                // 带「命中先确认」的规则不在这里生效，未命中/送出失败走内置下载
+                val hitRule = LinkDispatch.match(link, DispatchScope.DOWNLOAD)
+                if (hitRule != null && !hitRule.first.confirm &&
+                    LinkDispatch.dispatch(this, hitRule.first, hitRule.second)
+                ) {
+                    Toast.makeText(this, "已发送到「${hitRule.first.name}」", Toast.LENGTH_SHORT).show()
+                } else {
+                    val name = Downloader.withExtension(Downloader.fileNameFrom(link, disposition), mime)
+                    val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(link) }.getOrNull()
+                    Downloader.start(this, link, userAgent, name, mime, cookie = cookie, referer = startUrl)
+                    Toast.makeText(this, "已开始下载，可在 Mafari「下载」中查看", Toast.LENGTH_SHORT).show()
+                }
             } else {
                 Toast.makeText(this, "这类下载请在 Mafari 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()
             }

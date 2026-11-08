@@ -217,6 +217,9 @@ private data class DownloadRequest(
     val userAgent: String?,
     val fileName: String,
     val mime: String?,
+    /** WebView 里该 URL 的 Cookie 与来源页地址，透传给下载器（登录态/防盗链站点需要） */
+    val cookie: String? = null,
+    val referer: String? = null,
     /** blob / data URL 已抽成 data URI，确认后直接落盘，不再走 HTTP 下载器 */
     val dataUri: String? = null,
     /** 大 blob 分片写入的缓存临时文件路径，确认后拷到 Download/mafari */
@@ -787,6 +790,8 @@ fun BrowserScreen(
                     userAgent = ua,
                     fileName = Downloader.fileNameFrom(url, disposition),
                     mime = mime,
+                    cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(url) }.getOrNull(),
+                    referer = tab.url.ifBlank { null },
                 )
             }
         }
@@ -1875,6 +1880,8 @@ fun BrowserScreen(
                                                     userAgent = req.userAgent,
                                                     fileName = req.fileName,
                                                     mimeType = req.mime,
+                                                    cookie = req.cookie,
+                                                    referer = req.referer,
                                                 )
                                                 true
                                             }
@@ -2191,6 +2198,7 @@ fun BrowserScreen(
             onOpenDownloads = { pushPage(AppRoute.Downloads) },
             onOpenScripts = { pushPage(AppRoute.Extensions) },
             onOpenAdBlock = { pushPage(AppRoute.AdBlockPage) },
+            onOpenDispatch = { pushPage(AppRoute.DispatchPage) },
             onOpenFingerprint = { pushPage(AppRoute.FingerprintPage) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
@@ -2220,6 +2228,12 @@ fun BrowserScreen(
     entry<AppRoute.AdBlockPage> {
         AdBlockScreen(
             settings = settings,
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.DispatchPage> {
+        DispatchScreen(
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
         )

@@ -19,6 +19,9 @@ sealed interface AppRoute : NavKey {
     /** 设置 → 高级 → 去广告 */
     data object AdBlockPage : AppRoute
 
+    /** 设置 → 高级 → 链接分发 */
+    data object DispatchPage : AppRoute
+
     /** 设置 → 隐私与安全 → 指纹保护 */
     data object FingerprintPage : AppRoute
 

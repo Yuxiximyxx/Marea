@@ -48,8 +48,8 @@ android {
         applicationId = "dev.dsh.miuixbrowser"
         minSdk = 33
         targetSdk = 37
-        versionCode = 243
-        versionName = "v1.8.27-dev"
+        versionCode = 244
+        versionName = "v1.8.28-fork.1"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 

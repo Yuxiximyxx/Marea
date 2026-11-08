@@ -19,7 +19,6 @@ import java.net.URL
 import java.net.URLDecoder
 import java.text.DecimalFormat
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 enum class DownloadState { RUNNING, PAUSED, DONE, FAILED }
 
@@ -29,11 +28,19 @@ data class DownloadTask(
     val url: String,
     val userAgent: String? = null,
     val mime: String? = null,
+    /** 下载时透传的 Cookie（来自 WebView CookieManager，登录态 / 防盗链站点必需），只存本机不打日志 */
+    val cookie: String? = null,
+    /** 下载时透传的来源页 Referer */
+    val referer: String? = null,
     val uri: Uri? = null,
     val bytes: Long = 0,
     val total: Long = 0,
     val state: DownloadState = DownloadState.RUNNING,
     val error: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    /** 远端文件指纹：恢复续传前比对，变了就整单重下，避免新旧内容拼错 */
+    val etag: String? = null,
+    val lastModified: String? = null,
 )
 
 /** 内置下载器：断点续传、暂停/继续、失败重试，默认写入 Download/mafari */
@@ -44,6 +51,51 @@ object Downloader {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<Long, Job>()
     private val numberFormat = DecimalFormat("0.0")
+
+    /** 分段进度表（与 DownloadStore 落盘内容同源，恢复续传的依据） */
+    private val segTables = ConcurrentHashMap<Long, SegTable>()
+
+    @Volatile
+    private var appContext: Context? = null
+
+    @Volatile
+    private var restored = false
+
+    @Volatile
+    private var lastPersistAt = 0L
+
+    /**
+     * 启动时恢复落盘的任务（MainActivity / WebAppActivity 各调一次，幂等）。
+     * 进程被杀时处于 RUNNING 的任务在落盘读取时已转成 PAUSED，用户手动继续即可续传。
+     */
+    fun restore(context: Context) {
+        if (restored) return
+        restored = true
+        appContext = context.applicationContext
+        val (saved, tables) = DownloadStore.load(appContext!!)
+        segTables.putAll(tables)
+        if (saved.isNotEmpty() && tasks.isEmpty()) {
+            tasks.addAll(saved.sortedByDescending { it.createdAt })
+        }
+    }
+
+    /** 立即落盘（生命周期事件用：新建 / 暂停 / 失败 / 完成 / 删除） */
+    private fun persistNow() {
+        val ctx = appContext ?: return
+        lastPersistAt = System.currentTimeMillis()
+        DownloadStore.save(ctx, tasks.toList(), segTables)
+    }
+
+    /** 节流落盘（进度更新用，最多每秒一次） */
+    private fun persistThrottled() {
+        val now = System.currentTimeMillis()
+        if (now - lastPersistAt < 1000L) return
+        persistNow()
+    }
+
+    private fun bindContext(context: Context) {
+        if (appContext == null) appContext = context.applicationContext
+    }
 
     fun fileNameFrom(url: String, disposition: String?): String {
         val raw = disposition?.let { d ->
@@ -81,9 +133,26 @@ object Downloader {
         return if (ext.isNullOrBlank()) name else truncateName("$name.$ext", 80)
     }
 
-    fun start(context: Context, url: String, userAgent: String?, fileName: String, mimeType: String?) {
-        val task = DownloadTask(name = fileName, url = url, userAgent = userAgent, mime = mimeType)
+    fun start(
+        context: Context,
+        url: String,
+        userAgent: String?,
+        fileName: String,
+        mimeType: String?,
+        cookie: String? = null,
+        referer: String? = null,
+    ) {
+        bindContext(context)
+        val task = DownloadTask(
+            name = fileName,
+            url = url,
+            userAgent = userAgent,
+            mime = mimeType,
+            cookie = cookie,
+            referer = referer,
+        )
         tasks.add(0, task)
+        persistNow()
         DownloadService.start(context)
         DownloadService.instance?.showStart(fileName, task.id)
         launch(context, task.id)
@@ -92,6 +161,7 @@ object Downloader {
     fun pause(id: Long) {
         jobs.remove(id)?.cancel()
         update(id) { it.copy(state = DownloadState.PAUSED) }
+        persistNow()
         val task = tasks.firstOrNull { it.id == id }
         if (task != null) {
             val progress = progressOf(task)
@@ -100,30 +170,37 @@ object Downloader {
     }
 
     fun resume(context: Context, id: Long) {
+        bindContext(context)
         update(id) { it.copy(state = DownloadState.RUNNING, error = null) }
+        persistNow()
         launch(context, id)
     }
 
     fun retry(context: Context, id: Long) {
+        bindContext(context)
         update(id) { it.copy(state = DownloadState.RUNNING, error = null) }
+        persistNow()
         launch(context, id)
     }
 
+    /** 只有用户主动删除任务才清临时文件与分段进度；暂停 / 失败一律保留以便续传 */
     fun delete(context: Context, id: Long) {
         jobs.remove(id)?.cancel()
         val task = tasks.firstOrNull { it.id == id }
         task?.uri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
         runCatching { tempFile(context, id).delete() }
         runCatching { segFile(context, id).delete() }
+        segTables.remove(id)
         tasks.removeAll { it.id == id }
+        bindContext(context)
+        persistNow()
     }
 
-    private fun tempFile(context: Context, id: Long) =
-        java.io.File(context.cacheDir, "mafari_dl_$id.part")
+    /** 临时文件放 filesDir（见 DownloadStore 说明），cacheDir 会被冷启动清理整表搬走 */
+    private fun tempFile(context: Context, id: Long) = DownloadStore.partFile(context, id)
 
     /** 多线程分段下载专用临时文件：会预先撑满到总长度，不能和断点续传共用 .part，否则重试时会误当成“已下完”而发出越界 Range → HTTP 416 */
-    private fun segFile(context: Context, id: Long) =
-        java.io.File(context.cacheDir, "mafari_dl_$id.seg")
+    private fun segFile(context: Context, id: Long) = DownloadStore.segFile(context, id)
 
     /** 下载在 IO 线程里完成，Toast 必须切回主线程 */
     private fun toast(context: Context, message: String) {
@@ -134,6 +211,7 @@ object Downloader {
     }
 
     private fun launch(context: Context, id: Long) {
+        bindContext(context)
         jobs.remove(id)?.cancel()
         jobs[id] = scope.launch {
             var attempt = 0
@@ -141,25 +219,40 @@ object Downloader {
                 try {
                     downloadOnce(context, id)
                     val finished = tasks.firstOrNull { it.id == id }
+                    segTables.remove(id)
                     update(id) { it.copy(state = DownloadState.DONE) }
+                    persistNow()
                     DownloadService.instance?.finish(finished?.name ?: "文件")
                     toast(context, "下载完成：${finished?.name ?: "文件"}")
                     return@launch
                 } catch (e: CancellationException) {
+                    // 暂停 / 删除导致取消：分段进度已在各段写盘节流保存，这里再补一次确保不丢
+                    persistNow()
                     return@launch
                 } catch (e: Exception) {
                     attempt++
                     val message = e.message ?: e.javaClass.simpleName
                     if (attempt >= MAX_ATTEMPTS) {
                         update(id) { it.copy(state = DownloadState.FAILED, error = message) }
+                        persistNow()
                         DownloadService.instance?.fail("下载失败：$message")
                         return@launch
                     }
                     update(id) { it.copy(error = message) }
+                    persistNow()
                     delay(1200L * attempt)
                 }
             }
         }
+    }
+
+    /** 所有下载请求统一带头：UA / Accept / Cookie / Referer（登录态与防盗链站点必需），Range 按需另加 */
+    private fun HttpURLConnection.applyTaskHeaders(task: DownloadTask) {
+        setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
+        setRequestProperty("Accept", "*/*")
+        setRequestProperty("Accept-Encoding", "identity")
+        if (!task.cookie.isNullOrBlank()) setRequestProperty("Cookie", task.cookie)
+        if (!task.referer.isNullOrBlank()) setRequestProperty("Referer", task.referer)
     }
 
     private suspend fun downloadOnce(context: Context, id: Long) {
@@ -177,9 +270,7 @@ object Downloader {
             connectTimeout = 15000
             readTimeout = 30000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
-            setRequestProperty("Accept", "*/*")
-            setRequestProperty("Accept-Encoding", "identity")
+            applyTaskHeaders(task)
             if (from > 0) setRequestProperty("Range", "bytes=$from-")
         }
 
@@ -201,6 +292,13 @@ object Downloader {
                 existing = 0
                 runCatching { file.delete() }
             }
+            // 记住远端指纹，分段续传恢复时比对（单线程路径靠 Range/416 兜底，这里只记录）
+            val respEtag = connection.getHeaderField("ETag")
+            val respLastModified = connection.getHeaderField("Last-Modified")
+            if (respEtag != task.etag || respLastModified != task.lastModified) {
+                update(id) { it.copy(etag = respEtag ?: it.etag, lastModified = respLastModified ?: it.lastModified) }
+            }
+            val liveTask = tasks.firstOrNull { it.id == id } ?: task
             update(id) {
                 it.copy(
                     bytes = existing,
@@ -212,16 +310,15 @@ object Downloader {
             if (existing == 0L && append.not() && length > segmentMinBytes) {
                 // 先放掉这条整文件连接，再探测 Range，避免对镜像同时开 N+2 条连接被限流
                 connection.disconnect()
-                if (supportsRange(task)) {
+                val probe = probeRange(liveTask)
+                if (probe.supported) {
                     val seg = segFile(context, id)
-                    runCatching { seg.delete() }
-                    try {
-                        downloadSegmented(context, id, task, seg, length)
-                    } catch (t: Throwable) {
-                        runCatching { seg.delete() }
-                        throw t
-                    }
-                    return finishToMediaStore(context, id, task, seg)
+                    val table = prepareSegTable(id, liveTask, seg, length, probe)
+                    downloadSegmented(context, id, liveTask, seg, length, table)
+                    val result = finishToMediaStore(context, id, liveTask, seg)
+                    segTables.remove(id)
+                    persistNow()
+                    return result
                 }
                 // 不支持 Range：重新建立单连接顺序下载
                 connection = open(0)
@@ -283,94 +380,157 @@ object Downloader {
         }
     }
 
-    /** HEAD 一下看是否支持 Range，顺便拿长度 */
-    private fun supportsRange(task: DownloadTask): Boolean = runCatching {
+    private class RangeProbe(val supported: Boolean, val etag: String?, val lastModified: String?)
+
+    /** Range 探测：bytes=0-0 得 206 才算支持，顺便带回远端指纹供续传比对 */
+    private fun probeRange(task: DownloadTask): RangeProbe = runCatching {
         val head = (URL(task.url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10000
             readTimeout = 10000
             instanceFollowRedirects = true
+            applyTaskHeaders(task)
             setRequestProperty("Range", "bytes=0-0")
-            setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
-            setRequestProperty("Accept-Encoding", "identity")
         }
         val code = head.responseCode
+        val etag = head.getHeaderField("ETag")
+        val lastModified = head.getHeaderField("Last-Modified")
         head.disconnect()
-        code == 206
-    }.getOrDefault(false)
+        RangeProbe(code == 206, etag, lastModified)
+    }.getOrDefault(RangeProbe(false, null, null))
 
+    /**
+     * 准备分段进度表：已有落盘表 + .seg 文件长度吻合 + 远端指纹未变 → 沿用旧表续传；
+     * 否则删掉旧 .seg、新建一张按当前线程数均分的表。指纹双方都缺失时视为未变（只能靠总长度兜底）。
+     */
+    private fun prepareSegTable(
+        id: Long,
+        task: DownloadTask,
+        seg: java.io.File,
+        total: Long,
+        probe: RangeProbe,
+    ): SegTable {
+        val fingerprintChanged = run {
+            val oldEtag = task.etag
+            val oldLm = task.lastModified
+            (oldEtag != null && probe.etag != null && oldEtag != probe.etag) ||
+                (oldEtag == null && oldLm != null && probe.lastModified != null && oldLm != probe.lastModified)
+        }
+        if (fingerprintChanged) {
+            update(id) { it.copy(etag = probe.etag ?: it.etag, lastModified = probe.lastModified ?: it.lastModified) }
+        }
+        val existing = segTables[id]
+        if (existing != null && existing.total == total && seg.exists() && seg.length() == total && !fingerprintChanged) {
+            return existing
+        }
+        runCatching { seg.delete() }
+        val threads = segments.coerceAtMost(((total / (256 * 1024)) + 1).toInt()).coerceAtLeast(1)
+        val chunk = total / threads
+        val list = (0 until threads).map { index ->
+            val start = index * chunk
+            val end = if (index == threads - 1) total - 1 else start + chunk - 1
+            SegProgress(start, end, 0L)
+        }.toMutableList()
+        val table = SegTable(total, list)
+        segTables[id] = table
+        persistNow()
+        return table
+    }
+
+    /**
+     * 分段下载（可续传版）：每段只下自己未完成的部分，段内失败只重试该段（3 次）；
+     * 暂停 / 失败 / 进程被杀都不删 .seg 与进度表，恢复时从落盘表接着下。
+     */
     private suspend fun downloadSegmented(
         context: Context,
         id: Long,
         task: DownloadTask,
         file: java.io.File,
         total: Long,
+        table: SegTable,
     ) {
-        val threads = segments.coerceAtMost(((total / (256 * 1024)) + 1).toInt()).coerceAtLeast(1)
-        val chunk = total / threads
         java.io.RandomAccessFile(file, "rw").use { raf ->
-            raf.setLength(total)
-            val done = AtomicLong(0)
+            if (file.length() != total) raf.setLength(total)
             var lastUpdate = 0L
+            fun reportProgress() {
+                val now = System.currentTimeMillis()
+                if (now - lastUpdate < 300) return
+                lastUpdate = now
+                val written = table.downloaded()
+                update(id) { it.copy(bytes = written, total = total, state = DownloadState.RUNNING) }
+                DownloadService.instance?.update(
+                    task.name,
+                    (written.toFloat() / total).coerceIn(0f, 1f),
+                    "${(written * 100 / total)}% · ${sizeText(written)}",
+                    id,
+                )
+            }
             coroutineScope {
-                repeat(threads) { index ->
+                table.segments.forEach { seg ->
                     launch(Dispatchers.IO) {
-                        val start = index * chunk
-                        val end = if (index == threads - 1) total - 1 else start + chunk - 1
-                        val connection = (URL(task.url).openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 15000
-                            readTimeout = 30000
-                            instanceFollowRedirects = true
-                            setRequestProperty("Range", "bytes=$start-$end")
-                            setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
-                            setRequestProperty("Accept-Encoding", "identity")
-                        }
-                        try {
-                            val code = connection.responseCode
-                            // 必须是 206：返回 200 说明服务器忽略了 Range，整文件会被写到错误的偏移上
-                            if (code != 206) throw IllegalStateException("HTTP $code")
-                            connection.inputStream.use { input ->
-                                val buffer = ByteArray(128 * 1024)
-                                var position = start
-                                while (true) {
-                                    val read = input.read(buffer)
-                                    if (read < 0) break
-                                    if (read == 0) continue
-                                    synchronized(raf) {
-                                        raf.seek(position)
-                                        raf.write(buffer, 0, read)
-                                    }
-                                    position += read
-                                    val written = done.addAndGet(read.toLong())
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastUpdate > 300) {
-                                        lastUpdate = now
-                                        update(id) {
-                                            it.copy(
-                                                bytes = written,
-                                                total = total,
-                                                state = DownloadState.RUNNING,
-                                            )
-                                        }
-                                        DownloadService.instance?.update(
-                                            task.name,
-                                            (written.toFloat() / total).coerceIn(0f, 1f),
-                                            "${(written * 100 / total)}% · ${sizeText(written)}",
-                                            id,
-                                        )
-                                    }
-                                }
-                                if (position != end + 1) {
-                                    throw IllegalStateException("分段 ${index + 1} 数据不完整")
-                                }
+                        val segSize = seg.end - seg.start + 1
+                        var attempt = 0
+                        while (seg.done < segSize) {
+                            try {
+                                downloadSegmentRange(task, raf, seg) { reportProgress() }
+                                break
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                attempt++
+                                if (attempt >= MAX_ATTEMPTS) throw e
+                                delay(1200L * attempt)
                             }
-                        } finally {
-                            connection.disconnect()
                         }
                     }
                 }
             }
             update(id) { it.copy(bytes = total, total = total) }
+            persistNow()
+        }
+    }
+
+    /** 下载单段剩余部分；每写一块就更新进度表并节流落盘 */
+    private fun downloadSegmentRange(
+        task: DownloadTask,
+        raf: java.io.RandomAccessFile,
+        seg: SegProgress,
+        onProgress: () -> Unit,
+    ) {
+        val from = seg.start + seg.done
+        val connection = (URL(task.url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 30000
+            instanceFollowRedirects = true
+            applyTaskHeaders(task)
+            setRequestProperty("Range", "bytes=$from-${seg.end}")
+        }
+        try {
+            val code = connection.responseCode
+            // 必须是 206：返回 200 说明服务器忽略了 Range，整文件会被写到错误的偏移上
+            if (code != 206) throw IllegalStateException("HTTP $code")
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(128 * 1024)
+                var position = from
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    synchronized(raf) {
+                        raf.seek(position)
+                        raf.write(buffer, 0, read)
+                    }
+                    position += read
+                    seg.done = position - seg.start
+                    persistThrottled()
+                    onProgress()
+                }
+                if (position != seg.end + 1) {
+                    throw IllegalStateException("分段数据不完整")
+                }
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -416,7 +576,10 @@ object Downloader {
 
     private fun update(id: Long, transform: (DownloadTask) -> DownloadTask) {
         val index = tasks.indexOfFirst { it.id == id }
-        if (index >= 0) tasks[index] = transform(tasks[index])
+        if (index >= 0) {
+            tasks[index] = transform(tasks[index])
+            persistThrottled()
+        }
     }
 
     /** 保存 data:...;base64 的内嵌 / blob 抽取结果到系统下载目录 */
@@ -464,6 +627,8 @@ object Downloader {
                     state = DownloadState.DONE,
                 ),
             )
+            bindContext(context)
+            persistNow()
             true
         }.getOrElse {
             // 写到一半失败：删掉未完成的条目，避免留下残缺文件
@@ -501,6 +666,8 @@ object Downloader {
                 state = DownloadState.DONE,
             ),
         )
+        bindContext(context)
+        persistNow()
         true
     }.getOrDefault(false)
 
