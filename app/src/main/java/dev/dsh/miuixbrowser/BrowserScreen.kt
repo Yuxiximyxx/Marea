@@ -1497,7 +1497,9 @@ fun BrowserScreen(
             // 所有弹层统一采样页面模糊。卡顿的根因不在弹层自己的模糊，而在页面每帧被重复回放，
             // 已由上方的离屏缓存 / 整页冻结解决，所以更多菜单、标签列表可以恢复模糊。
             backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
-            enableWindowDim = lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs,
+            // 更多菜单 / 标签列表在有模糊采样时不压暗；网页态（无法采样 WebView）没有模糊，必须压暗以区分层次
+            enableWindowDim = (lastActiveSheet != Sheet.Menu && lastActiveSheet != Sheet.Tabs) ||
+                !(homeBlurAvailable && settings.blurEnabled),
             onDismissRequest = { sheet = Sheet.None },
             onDismissFinished = { if (sheet == Sheet.None) sheetHostActive = false },
         ) {
@@ -4391,23 +4393,20 @@ private fun GlassLogoText(text: String, fontSize: Int, wallpaper: ImageBitmap?) 
             )
             canvas.restore()
         }
-        // 5. 极细的边缘光：只在字形内侧一圈，低透明度，不再是一圈明显的描边
+        // 5. 左右两侧的内侧边缘光：同样用「字形减去平移字形」得到，只在字形外缘，
+        //    不描轮廓线，所以字体自带的重叠笔画（a / f / r）内部不会出现线条
         drawIntoCanvas { canvas ->
             canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
             mask()
-            drawText(
-                layout,
-                topLeft = textTopLeft,
-                brush = Brush.linearGradient(
-                    0f to Color.White.copy(alpha = 0.55f),
-                    0.5f to Color.White.copy(alpha = 0.10f),
-                    1f to Color.White.copy(alpha = 0.40f),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height),
-                ),
-                drawStyle = Stroke(width = 1.6f * d),
-                blendMode = BlendMode.SrcIn,
-            )
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(1.4f * d, 0f), blendMode = BlendMode.DstOut)
+            drawRect(Color.White.copy(alpha = 0.5f), blendMode = BlendMode.SrcIn)
+            canvas.restore()
+        }
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(bounds, androidx.compose.ui.graphics.Paint())
+            mask()
+            drawText(layout, color = Color.Black, topLeft = textTopLeft + Offset(-1.4f * d, 0f), blendMode = BlendMode.DstOut)
+            drawRect(Color.White.copy(alpha = 0.3f), blendMode = BlendMode.SrcIn)
             canvas.restore()
         }
     }

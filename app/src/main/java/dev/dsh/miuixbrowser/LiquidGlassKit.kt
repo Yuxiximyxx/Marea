@@ -180,7 +180,12 @@ fun LiquidGlassSurface(
                             alpha = surfaceAlpha
                         }
                         .clip(CircleShape)
-                        .background(tint),
+                        .background(tint)
+                        // 实色底在同色的 sheet 上会隐形：非彩色按钮叠一层淡淡的前景色，保证圆形底板可见
+                        .then(
+                            if (coloredTint) Modifier
+                            else Modifier.background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                        ),
                 )
             }
         }
