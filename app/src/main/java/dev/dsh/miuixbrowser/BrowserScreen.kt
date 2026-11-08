@@ -247,14 +247,16 @@ fun BrowserScreen(
     }
     // 首页的玻璃取样源：有壁纸时统一取壁纸（不再采样含卡片的整页内容，避免重复模糊）；无壁纸时回退整页采集层
     val homeBackdrop = if (wallpaperBitmap != null) wallpaperBackdrop else browserBackdrop
-    // liquid glass 的取样源（Kyant）：同样只取未模糊的壁纸；无壁纸时底栏回退整页采集层，卡片不使用液态玻璃
+    // liquid glass 的取样源（Kyant）：首页卡片只取未模糊的壁纸；底栏取整页采集层（见 barLiquidBackdrop）
     val wallpaperLiquidBackdrop = rememberKyantBackdrop()
     // Kyant 液态玻璃的采集层（只给标签页 sheet 头部的左右按钮用）
     val liquidBackdrop = rememberKyantBackdrop {
         drawRect(browserSurfaceColor)
         drawContent()
     }
-    val barLiquidBackdrop = if (wallpaperBitmap != null) wallpaperLiquidBackdrop else liquidBackdrop
+    // 底栏 / 缩小后的圆形搜索钮：取样「下层背景」（壁纸 + 滚动中的首页内容）的整页采集层，
+    // 不再只采壁纸，这样内容从底栏下方滑过时能看到折射与玻璃效果。
+    val barLiquidBackdrop = liquidBackdrop
     // 采集层缓存成离屏纹理：否则每个取样方（底栏 / 每个收藏卡片 / 顶部渐进模糊 / 弹层）
     // 每一帧都会把整页内容（含壁纸 28dp 模糊）重新回放一遍再叠自己的模糊，弹层动画期间必然掉帧。
     // 缓存后内容只在真正变化（滚动、加载）时重绘，取样方只读纹理。
@@ -2247,10 +2249,10 @@ private fun Modifier.glassBar(
             shape = { liquidShape },
             effects = {
                 vibrancy()
-                backdropBlur(4f.dp.toPx())
-                lens(14f.dp.toPx(), 28f.dp.toPx())
+                backdropBlur(1.5f.dp.toPx())
+                lens(18f.dp.toPx(), 40f.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
-            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.32f)) },
+            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.14f)) },
         )
     }
     val glassShape = GlassShape(corner)
@@ -3264,10 +3266,10 @@ private fun Modifier.homeGlass(
             shape = { shape },
             effects = {
                 vibrancy()
-                backdropBlur(6f.dp.toPx())
-                lens(10f.dp.toPx(), 20f.dp.toPx())
+                backdropBlur(2f.dp.toPx())
+                lens(16f.dp.toPx(), 36f.dp.toPx(), depthEffect = true, chromaticAberration = true)
             },
-            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.28f)) },
+            onDrawSurface = { drawRect(if (dark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.12f)) },
         )
     }
     val useGlass = blurEnabled && wallpaperBackdrop != null

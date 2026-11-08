@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,6 +28,19 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -44,7 +58,11 @@ import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur as backdropBlur
+import com.kyant.backdrop.backdrops.rememberBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.effects.vibrancy
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -71,7 +89,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /* ======================================================================
  * 液态玻璃（Kyant0/AndroidLiquidGlass）应用范围
  *
- * 设置 →「模糊效果」选「liquid glass」时，下面这些组件改用 Kyant 的 drawBackdrop：
+ * 设置 →「高级材质」选「liquid glass」时，下面这些组件改用 Kyant 的 drawBackdrop：
  * 弹出菜单（dropdown / popup）、底部 sheet、对话框、开关（Switch）；顶栏按钮 / FAB / 胶囊按钮见 LiquidGlassKit.kt。
  * 其它模式（miuix-glass / 关闭模糊）原样走 miuix 组件。
  *
@@ -87,30 +105,30 @@ val LocalLiquidBackdrop = compositionLocalOf<LiquidBackdrop?> { null }
 private fun activeLiquidBackdrop(miuixBackdrop: Backdrop?): LiquidBackdrop? =
     if (LocalBlurMode.current == BLUR_LIQUID && miuixBackdrop != null) LocalLiquidBackdrop.current else null
 
-/** 液态玻璃面板：折射 + 模糊 + 提亮，再叠一层主题色。 */
+/** 演示项目（catalog）的容器色：浅色 #FAFAFA@60%，深色 #121212@40%。 */
+private fun demoContainerColor(dark: Boolean): Color =
+    if (dark) Color(0xFF121212).copy(alpha = 0.4f) else Color(0xFFFAFAFA).copy(alpha = 0.6f)
+
+/** 液态玻璃面板（下拉菜单 / 弹出菜单）：与 catalog 的玻璃卡片一致——vibrancy + 模糊 + 折射 + 纯白高光。 */
 @Composable
 private fun Modifier.liquidPanel(
     backdrop: LiquidBackdrop,
     shape: Shape,
-    blur: Dp = 12.dp,
-    refractionHeight: Dp = 12.dp,
-    refractionAmount: Dp = 24.dp,
-    tintAlpha: Float = 0.5f,
-    extraTint: Color = Color.Transparent,
+    blur: Dp = 4.dp,
+    refractionHeight: Dp = 16.dp,
+    refractionAmount: Dp = 32.dp,
 ): Modifier {
-    val tint = MiuixTheme.colorScheme.surface.copy(alpha = tintAlpha)
+    val container = demoContainerColor(isAppDarkTheme())
     return this.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
             vibrancy()
             backdropBlur(blur.toPx())
-            lens(refractionHeight.toPx(), refractionAmount.toPx())
+            lens(refractionHeight.toPx(), refractionAmount.toPx(), depthEffect = true, chromaticAberration = true)
         },
-        onDrawSurface = {
-            drawRect(tint)
-            if (extraTint != Color.Transparent) drawRect(extraTint)
-        },
+        highlight = { Highlight.Plain },
+        onDrawSurface = { drawRect(container) },
     )
 }
 
@@ -143,7 +161,8 @@ fun AppGlassDialog(
         return
     }
     val containerColor = GlassDialogDefaults.containerColor()
-    val surfaceColor = MiuixTheme.colorScheme.surface
+    val dark = isAppDarkTheme()
+    val panelColor = demoContainerColor(dark)
     OverlayDialog(
         show = show,
         modifier = modifier,
@@ -162,14 +181,19 @@ fun AppGlassDialog(
             Modifier.drawBackdrop(
                 backdrop = liquid,
                 shape = { shape },
+                // 对齐 catalog 的 DialogContent：提亮 + 加饱和 + 模糊 + 带深度的折射 + 纯白高光
                 effects = {
-                    vibrancy()
-                    backdropBlur(16f.dp.toPx())
-                    lens(14f.dp.toPx(), 28f.dp.toPx())
+                    colorControls(
+                        brightness = if (dark) 0f else 0.2f,
+                        saturation = 1.5f,
+                    )
+                    backdropBlur(if (dark) 8f.dp.toPx() else 16f.dp.toPx())
+                    lens(24f.dp.toPx(), 48f.dp.toPx(), depthEffect = true, chromaticAberration = true)
                 },
+                highlight = { Highlight.Plain },
                 onDrawSurface = {
                     drawRect(scrim.value)
-                    drawRect(surfaceColor.copy(alpha = 0.55f))
+                    drawRect(panelColor)
                 },
             )
         },
@@ -209,7 +233,7 @@ fun AppBottomSheet(
         )
         return
     }
-    val surfaceColor = MiuixTheme.colorScheme.surface
+    val panelColor = demoContainerColor(isAppDarkTheme())
     OverlayBottomSheet(
         show = show,
         modifier = modifier,
@@ -236,14 +260,16 @@ fun AppBottomSheet(
             Modifier.drawBackdrop(
                 backdrop = liquid,
                 shape = { shape },
+                // 对齐 catalog 的玻璃面板（sheet）：vibrancy + 模糊 + 折射 + 纯白高光
                 effects = {
                     vibrancy()
-                    backdropBlur(16f.dp.toPx())
-                    if (!isOverscroll) lens(12f.dp.toPx(), 24f.dp.toPx())
+                    backdropBlur(8f.dp.toPx())
+                    if (!isOverscroll) lens(16f.dp.toPx(), 32f.dp.toPx(), depthEffect = true, chromaticAberration = true)
                 },
+                highlight = { Highlight.Plain },
                 onDrawSurface = {
                     drawRect(scrim.value)
-                    drawRect(surfaceColor.copy(alpha = 0.55f))
+                    drawRect(panelColor)
                 },
             )
         },
@@ -324,10 +350,6 @@ private fun BoxScope.LiquidPopupSurface(liquid: LiquidBackdrop) {
             .liquidPanel(
                 backdrop = liquid,
                 shape = RoundedCornerShape(GlassDropdownDefaults.CornerRadius),
-                blur = 10.dp,
-                refractionHeight = 10.dp,
-                refractionAmount = 20.dp,
-                tintAlpha = 0.5f,
             ),
     )
 }
@@ -368,8 +390,9 @@ fun AppSwitchPreference(
 }
 
 /**
- * 液态玻璃开关（对齐 Kyant catalog 的 LiquidToggle）：
- * 静止时是实心白色滑块；按下 / 拖动时滑块放大并变成透明的液态玻璃，折射下面的轨道颜色。
+ * 液态玻璃开关：直接移植自 Kyant0/AndroidLiquidGlass catalog 的 LiquidToggle。
+ * 静止时是实心白色滑块；按下 / 拖动时滑块放大并变成透明的液态玻璃，折射下面的轨道（和页面背景）。
+ * [backdrop] 为页面采样层，缺省取 [LocalLiquidBackdrop]；为 null 时只折射轨道。
  */
 @Composable
 fun LiquidSwitch(
@@ -377,91 +400,149 @@ fun LiquidSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    backdrop: LiquidBackdrop? = LocalLiquidBackdrop.current,
 ) {
-    val trackWidth = 58.dp
-    val trackHeight = 30.dp
-    val thumbWidth = 38.dp
-    val thumbHeight = 24.dp
-    val inset = 3.dp
-    val travel = trackWidth - thumbWidth - inset * 2
+    val dark = isAppDarkTheme()
+    val accentColor = if (dark) Color(0xFF30D158) else Color(0xFF34C759)
+    val trackColor = if (dark) Color(0xFF787880).copy(0.36f) else Color(0xFF787878).copy(0.2f)
+
+    val density = LocalDensity.current
+    val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+    val dragWidth = with(density) { 20f.dp.toPx() }
+    val animationScope = rememberCoroutineScope()
+    var didDrag by remember { mutableStateOf(false) }
+    var fraction by remember { mutableFloatStateOf(if (checked) 1f else 0f) }
+    // 回调里要读到最新的 checked / onCheckedChange
+    val latestChecked by rememberUpdatedState(checked)
+    val latestOnChange by rememberUpdatedState(onCheckedChange)
+    val dampedDragAnimation = remember(animationScope) {
+        DampedDragAnimation(
+            animationScope = animationScope,
+            initialValue = fraction,
+            valueRange = 0f..1f,
+            visibilityThreshold = 0.001f,
+            initialScale = 1f,
+            pressedScale = 1.5f,
+            onDragStarted = {},
+            onDragStopped = {
+                if (didDrag) {
+                    fraction = if (targetValue >= 0.5f) 1f else 0f
+                    latestOnChange(fraction == 1f)
+                    didDrag = false
+                } else {
+                    fraction = if (latestChecked) 0f else 1f
+                    latestOnChange(fraction == 1f)
+                }
+            },
+            onDrag = { _, dragAmount ->
+                if (!didDrag) {
+                    didDrag = dragAmount.x != 0f
+                }
+                val delta = dragAmount.x / dragWidth
+                fraction =
+                    if (isLtr) (fraction + delta).fastCoerceIn(0f, 1f)
+                    else (fraction - delta).fastCoerceIn(0f, 1f)
+            },
+        )
+    }
+    LaunchedEffect(dampedDragAnimation) {
+        snapshotFlow { fraction }
+            .collectLatest { fraction ->
+                dampedDragAnimation.updateValue(fraction)
+            }
+    }
+    LaunchedEffect(checked) {
+        val target = if (checked) 1f else 0f
+        if (target != fraction) {
+            fraction = target
+            dampedDragAnimation.animateToValue(target)
+        }
+    }
 
     val trackBackdrop = rememberKyantBackdrop()
-    val fraction by animateFloatAsState(
-        targetValue = if (checked) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
-        label = "liquidSwitchFraction",
-    )
-    var pressed by remember { mutableStateOf(false) }
-    val press by animateFloatAsState(
-        targetValue = if (pressed) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 700f),
-        label = "liquidSwitchPress",
-    )
-    val colors = MiuixTheme.colorScheme
-    val offColor = colors.onSurface.copy(alpha = 0.16f)
-    val onColor = colors.primary
-    var dragged by remember { mutableStateOf(0f) }
+    // 滑块折射：页面背景 + 轨道（轨道按按压进度缩放，对应 catalog 的写法）
+    val trackSampler = rememberBackdrop(trackBackdrop) { drawBackdrop ->
+        val progress = dampedDragAnimation.pressProgress
+        val scaleX = lerp(2f / 3f, 0.75f, progress)
+        val scaleY = lerp(0f, 0.75f, progress)
+        scale(scaleX, scaleY) {
+            drawBackdrop()
+        }
+    }
+    val thumbBackdrop = if (backdrop != null) rememberCombinedBackdrop(backdrop, trackSampler) else trackSampler
 
     Box(
-        modifier = modifier
-            .width(trackWidth)
-            .height(trackHeight)
-            .alpha(if (enabled) 1f else 0.4f)
-            .semantics { role = Role.Switch }
-            .pointerInput(enabled, checked) {
-                if (!enabled) return@pointerInput
-                detectTapGestures(
-                    onPress = {
-                        pressed = true
-                        tryAwaitRelease()
-                        pressed = false
-                    },
-                    onTap = { onCheckedChange(!checked) },
-                )
-            }
-            .pointerInput(enabled, checked) {
-                if (!enabled) return@pointerInput
-                detectHorizontalDragGestures(
-                    onDragStart = { pressed = true; dragged = 0f },
-                    onDragEnd = {
-                        pressed = false
-                        if (dragged > 8f && !checked) onCheckedChange(true)
-                        if (dragged < -8f && checked) onCheckedChange(false)
-                    },
-                    onDragCancel = { pressed = false },
-                    onHorizontalDrag = { _, dx -> dragged += dx },
-                )
-            },
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        // 轨道：被 trackBackdrop 录制，供滑块折射
         Box(
-            modifier = Modifier
-                .fillMaxSize()
+            Modifier
                 .kyantLayerBackdrop(trackBackdrop)
                 .clip(CircleShape)
-                .drawBehind { drawRect(lerpColor(offColor, onColor, fraction)) },
+                .drawBehind {
+                    val f = dampedDragAnimation.value
+                    drawRect(lerpColor(trackColor, accentColor, f))
+                }
+                .size(64f.dp, 28f.dp),
         )
-        // 滑块：放在录制层之外
+
         Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset { IntOffset((inset + travel * fraction).toPx().roundToInt(), 0) }
-                .size(thumbWidth, thumbHeight)
+            Modifier
+                .graphicsLayer {
+                    val f = dampedDragAnimation.value
+                    val padding = 2f.dp.toPx()
+                    translationX =
+                        if (isLtr) lerp(padding, padding + dragWidth, f)
+                        else lerp(-padding, -(padding + dragWidth), f)
+                }
+                .semantics { role = Role.Switch }
+                .then(if (enabled) dampedDragAnimation.modifier else Modifier)
                 .drawBackdrop(
-                    backdrop = trackBackdrop,
+                    backdrop = thumbBackdrop,
                     shape = { CircleShape },
                     effects = {
-                        vibrancy()
-                        backdropBlur(6f.dp.toPx() * press)
-                        lens(5f.dp.toPx() * press, 10f.dp.toPx() * press)
+                        val progress = dampedDragAnimation.pressProgress
+                        backdropBlur(8f.dp.toPx() * (1f - progress))
+                        lens(
+                            5f.dp.toPx() * progress,
+                            10f.dp.toPx() * progress,
+                            chromaticAberration = true,
+                        )
+                    },
+                    highlight = {
+                        val progress = dampedDragAnimation.pressProgress
+                        Highlight.Ambient.copy(
+                            width = Highlight.Ambient.width / 1.5f,
+                            blurRadius = Highlight.Ambient.blurRadius / 1.5f,
+                            alpha = progress,
+                        )
+                    },
+                    shadow = {
+                        Shadow(
+                            radius = 4f.dp,
+                            color = Color.Black.copy(alpha = 0.05f),
+                        )
+                    },
+                    innerShadow = {
+                        val progress = dampedDragAnimation.pressProgress
+                        InnerShadow(
+                            radius = 4f.dp * progress,
+                            alpha = progress,
+                        )
                     },
                     layerBlock = {
-                        val s = lerp(1f, 1.35f, press)
-                        scaleX = s
-                        scaleY = s
+                        scaleX = dampedDragAnimation.scaleX
+                        scaleY = dampedDragAnimation.scaleY
+                        val velocity = dampedDragAnimation.velocity / 50f
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
-                    onDrawSurface = { drawRect(Color.White.copy(alpha = 1f - 0.85f * press)) },
-                ),
+                    onDrawSurface = {
+                        val progress = dampedDragAnimation.pressProgress
+                        drawRect(Color.White.copy(alpha = 1f - progress))
+                    },
+                )
+                .size(40f.dp, 24f.dp),
         )
     }
 }

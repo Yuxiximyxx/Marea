@@ -188,8 +188,8 @@ fun SettingsScreen(
                     )
                     AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
-                        title = "模糊效果",
-                        summary = "miuix-glass 为默认玻璃；liquid glass 为液态玻璃折射；关闭后底栏、收藏卡片和页面顶栏不再模糊",
+                        title = "高级材质",
+                        summary = "开启后提供精美组件效果",
                         items = listOf("miuix-glass", "liquid glass", "关闭模糊"),
                         selectedIndex = settings.blurMode.coerceIn(0, 2),
                         onSelectedIndexChange = { settings.updateBlurMode(it) },

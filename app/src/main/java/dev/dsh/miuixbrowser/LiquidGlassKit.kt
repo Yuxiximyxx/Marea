@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,6 +67,8 @@ fun LiquidGlassSurface(
     modifier: Modifier = Modifier,
     tint: Color = MiuixTheme.colorScheme.surfaceContainer,
     tintAlpha: Float = 0.35f,
+    /** 为 true 时按 catalog 的 LiquidButton 写法着色（Hue 混合 + 75% 叠色），用于主色 / 危险色按钮。 */
+    coloredTint: Boolean = false,
     enabled: Boolean = true,
     /** 玻璃底板是否显示。顶栏按钮传「内容已上滑」：与 miuix GlassTopAppBar 一致，未滚动时只有图标没有圆形背景。 */
     surfaceVisible: Boolean = true,
@@ -120,13 +123,20 @@ fun LiquidGlassSurface(
                             effects = {
                                 vibrancy()
                                 blur(2f.dp.toPx())
-                                lens(12f.dp.toPx(), 24f.dp.toPx())
+                                lens(12f.dp.toPx(), 24f.dp.toPx(), depthEffect = true, chromaticAberration = true)
                             },
                             layerBlock = {
                                 liquidLayer()
                                 alpha = surfaceAlpha
                             },
-                            onDrawSurface = { drawRect(tint.copy(alpha = tintAlpha)) },
+                            onDrawSurface = {
+                                if (coloredTint) {
+                                    drawRect(tint, blendMode = BlendMode.Hue)
+                                    drawRect(tint.copy(alpha = 0.75f))
+                                } else {
+                                    drawRect(tint.copy(alpha = tintAlpha))
+                                }
+                            },
                         ),
                 )
             } else {
@@ -186,6 +196,7 @@ fun LiquidGlassButton(
     size: Dp = 40.dp,
     tint: Color = MiuixTheme.colorScheme.surfaceContainer,
     tintAlpha: Float = 0.35f,
+    coloredTint: Boolean = false,
     enabled: Boolean = true,
     surfaceVisible: Boolean = true,
     content: @Composable () -> Unit,
@@ -204,6 +215,7 @@ fun LiquidGlassButton(
         modifier = modifier.size(size),
         tint = tint,
         tintAlpha = tintAlpha,
+        coloredTint = coloredTint,
         enabled = enabled,
         surfaceVisible = surfaceVisible,
         content = content,
@@ -234,7 +246,8 @@ fun LiquidGlassFab(
         modifier = modifier,
         size = 56.dp,
         tint = if (primary) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer,
-        tintAlpha = if (primary) 0.8f else 0.35f,
+        tintAlpha = 0.35f,
+        coloredTint = primary,
         content = content,
     )
 }
@@ -304,7 +317,8 @@ fun LiquidGlassPillButton(
         backdrop = backdrop,
         modifier = modifier.height(48.dp),
         tint = tint,
-        tintAlpha = if (role == LiquidRole.Normal) 0.35f else 0.8f,
+        tintAlpha = 0.35f,
+        coloredTint = role != LiquidRole.Normal,
         enabled = enabled,
     ) {
         Text(text = text, color = textColor, style = MiuixTheme.textStyles.button)
