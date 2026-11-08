@@ -106,7 +106,7 @@ fun UpdateSheet(
         backdrop = backdrop,
         onDismissRequest = onDismiss,
     ) {
-        if (release == null) return@GlassBottomSheet
+        if (release == null) return@AppBottomSheet
         Column(
             modifier = Modifier
                 .fillMaxWidth()
