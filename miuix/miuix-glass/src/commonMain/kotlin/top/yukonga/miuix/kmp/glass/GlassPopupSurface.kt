@@ -249,9 +249,19 @@ internal fun GlassPopupSurface(
                     GlassPopupBackground(backdrop, shape, visuals)
                 }
             }
+            // 内容放得下时不挂滚动：verticalScroll 会在越过 touch slop 后消费拖动手势，
+            // 拖拽形变（deform.layer 只看 Final 阶段、跳过已消费的手势）就永远收不到事件。
+            // 真正溢出时才启用滚动，此时拖动仍表示滚动。
+            val scrollState = rememberScrollState()
             GlassPopupColumn(
                 modifier = Modifier
-                    .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                    .then(
+                        if (scrollable) {
+                            Modifier.verticalScroll(scrollState, enabled = scrollState.maxValue > 0)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .graphicsLayer {
                         transformOrigin = TransformOrigin(0f, 0f)
                         contentLayer(measured.end, measured.rect)

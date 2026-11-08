@@ -36,6 +36,11 @@ fun parseHomeOrder(raw: String?): List<Int> {
 class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("mafari_settings", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+
+    /** 每次设置壁纸 +1，用来让模糊缓存在同 uri 重选时也能重新生成。 */
+    var wallpaperVersion by mutableStateOf(0)
+        private set
 
     /** 模糊效果模式：0 = miuix-glass，1 = liquid glass（Kyant0/AndroidLiquidGlass），2 = 关闭模糊。旧版布尔开关会迁移过来。 */
     var blurMode by mutableStateOf(
@@ -236,6 +241,9 @@ class AppSettings(context: Context) {
 
     fun updateWallpaper(uri: String) {
         wallpaper = uri
+        // 换壁纸后旧的模糊缓存作废（同一个 uri 内容也可能变）
+        WallpaperBlurCache.clear(appContext)
+        wallpaperVersion++
         prefs.edit().putString(KEY_WALL, uri).apply()
     }
 

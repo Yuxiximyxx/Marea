@@ -236,6 +236,8 @@ fun BrowserScreen(
     remember { Diag.log("BrowserScreen composed, favorites=" + favorites.items.size) }
     val menuOrder = remember { MenuOrderStore(context) }
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
+    // 模糊壁纸：读/写磁盘缓存里已模糊好的小图，不再实时渲染模糊
+    val blurredWallpaper = rememberBlurredWallpaper(settings.wallpaper, settings.wallpaperBlur, settings.wallpaperVersion)
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val wallpaperBackdrop = rememberLayerBackdrop()
@@ -947,10 +949,11 @@ fun BrowserScreen(
                 val sampleBlurred = settings.wallpaperBlur && settings.liquidGlass
                 Box(modifier = Modifier.fillMaxSize().layerBackdrop(wallpaperBackdrop).kyantLayerBackdrop(wallpaperLiquidBackdrop)) {
                     Image(
-                        bitmap = wallpaperImage,
+                        bitmap = if (sampleBlurred && blurredWallpaper != null) blurredWallpaper else wallpaperImage,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().then(if (sampleBlurred) Modifier.blur(28.dp) else Modifier),
+                        filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
+                        modifier = Modifier.fillMaxSize().then(if (sampleBlurred && blurredWallpaper == null) Modifier.blur(28.dp) else Modifier),
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                 }
@@ -958,10 +961,11 @@ fun BrowserScreen(
                 if (settings.wallpaperBlur && !sampleBlurred) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         Image(
-                            bitmap = wallpaperImage,
+                            bitmap = blurredWallpaper ?: wallpaperImage,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().blur(28.dp),
+                            filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
+                            modifier = Modifier.fillMaxSize().then(if (blurredWallpaper == null) Modifier.blur(28.dp) else Modifier),
                         )
                         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                     }
@@ -4324,6 +4328,21 @@ private fun RefreshSpinner(progress: Float, modifier: Modifier = Modifier) {
 }
 
 /** 从 content:// 读壁纸 */
+@Composable
+private fun rememberBlurredWallpaper(uri: String, enabled: Boolean, version: Int): ImageBitmap? {
+    val context = LocalContext.current
+    val image by produceState<ImageBitmap?>(initialValue = null, uri, enabled, version) {
+        value = if (!enabled || uri.isBlank()) {
+            null
+        } else {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                WallpaperBlurCache.getOrCreate(context, uri)?.asImageBitmap()
+            }
+        }
+    }
+    return image
+}
+
 @Composable
 private fun rememberWallpaper(uri: String): ImageBitmap? {
     val context = LocalContext.current
