@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -194,6 +195,69 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                     state = listState,
                     contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 32.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 ) {
+                    // 隐私报告：与指纹保护页同款矩形框
+                    item {
+                        val adOn = AdBlock.enabled
+                        val activeSubs = subs.count { it.enabled }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "隐私报告",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = when {
+                                        !adOn -> "未开启"
+                                        AdBlock.compiling -> "加载规则中"
+                                        else -> "保护中 · $activeSubs 个订阅"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = if (adOn) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.padding(top = 6.dp),
+                                verticalAlignment = Alignment.Bottom,
+                            ) {
+                                Text(
+                                    text = "$blockedTotal",
+                                    fontSize = 34.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = " 次广告与跟踪请求已被拦截",
+                                    fontSize = 14.sp,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                                )
+                            }
+                            Text(
+                                text = when {
+                                    !adOn -> "开启后，这里会统计被拦截的广告与跟踪请求数"
+                                    AdBlock.compiling -> "正在加载规则…"
+                                    else -> "已加载 ${AdBlock.loadedRules} 条规则 · 累计统计"
+                                },
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                            Text(
+                                text = "统计的是被网络层拦截的请求；隐藏页面广告元素不计入",
+                                fontSize = 11.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(12.dp)) }
+
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),

@@ -1096,7 +1096,7 @@ fun BrowserScreen(
             val startFadePx = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
             Box(modifier = Modifier.fillMaxSize()) {
                 TopProgressiveBlurBand(
-                    backdrop = homeBackdrop,
+                    backdrop = browserBackdrop,
                     alpha = { startScroll.value / startFadePx },
                     modifier = Modifier.matchParentSize(),
                     barHeight = 8.dp,
@@ -3136,7 +3136,7 @@ private fun FavoritesBlock(
         ) {
             Text(
                 text = "收藏",
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MiuixTheme.colorScheme.onSurface,
             )
@@ -3521,7 +3521,7 @@ private fun FavoriteTile(
             }
             Text(
                 text = favorite.name,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onSurface,
                 maxLines = 1,
