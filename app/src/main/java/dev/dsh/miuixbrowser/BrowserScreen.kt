@@ -66,6 +66,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -897,6 +898,7 @@ fun BrowserScreen(
         ),
     ) {
     entry<AppRoute.Browser> {
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (homeBlurAvailable && settings.blurEnabled) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MiuixTheme.colorScheme.surface,
@@ -1424,7 +1426,7 @@ fun BrowserScreen(
         LaunchedEffect(activeSheet) {
             if (activeSheet != Sheet.None) sheetHostActive = true
         }
-        GlassBottomSheet(
+        AppBottomSheet(
             show = activeSheet != Sheet.None,
             title = when (lastActiveSheet) {
                 Sheet.Link -> hostOf(linkUrl)
@@ -1788,7 +1790,7 @@ fun BrowserScreen(
         )
 
         val downloadRequest = pendingDownload
-        GlassDialog(
+        AppGlassDialog(
             show = downloadRequest != null,
             title = "下载文件",
             summary = downloadRequest?.let {
@@ -1877,7 +1879,7 @@ fun BrowserScreen(
         // 注意：launchCamera / filePickerLauncher 依赖 fileChooserChoice 里的 callback，
         // 弹层里不要先置 null，由 launcher 回调时再清。
         val captureChoice = fileChooserChoice
-        GlassDialog(
+        AppGlassDialog(
             show = captureChoice != null && captureChoice.params.isCaptureEnabled &&
                 run {
                     val a = captureChoice.params.acceptTypes?.joinToString(",")?.lowercase().orEmpty()
@@ -2013,7 +2015,7 @@ fun BrowserScreen(
         )
 
         val permPrompt = webPermPrompt
-        GlassDialog(
+        AppGlassDialog(
             show = permPrompt != null,
             title = "允许网站" + (permPrompt?.what ?: "") + "？",
             summary = permPrompt?.origin,
@@ -2047,7 +2049,7 @@ fun BrowserScreen(
         }
 
         val scriptImportUrl = pendingScript
-        GlassDialog(
+        AppGlassDialog(
             show = scriptImportUrl != null,
             title = "导入脚本？",
             summary = scriptImportUrl,
@@ -2090,7 +2092,7 @@ fun BrowserScreen(
             }
         }
 
-        GlassDialog(
+        AppGlassDialog(
             show = showClearTabsConfirm,
             title = if (tabsPage == 1) "删除全部无痕浏览页？" else "删除全部标签页？",
             summary = if (tabsPage == 1) {
@@ -2151,6 +2153,7 @@ fun BrowserScreen(
                 showFavEditor = false
             },
         )
+    }
     }
     }
     }
@@ -3589,7 +3592,7 @@ private fun FavoriteEditor(
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial) { mutableStateOf(initial?.url ?: "") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = if (initial == null) "添加收藏" else "编辑收藏",
         backdrop = backdrop,
@@ -3643,7 +3646,7 @@ internal fun UaDialog(
     onConfirm: (String) -> Unit,
 ) {
     var custom by remember(show) { mutableStateOf(initial) }
-    GlassBottomSheet(
+    AppBottomSheet(
         show = show,
         title = "UA 标识管理",
         backdrop = backdrop,
@@ -3743,7 +3746,7 @@ private fun FindDialog(
     onNext: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = "查找页内",
         backdrop = backdrop,

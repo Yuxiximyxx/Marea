@@ -171,7 +171,7 @@ fun AppDialog(
     summary: String? = null,
     content: @Composable () -> Unit,
 ) {
-    GlassDialog(
+    AppGlassDialog(
         onDismissRequest = onDismissRequest,
         show = show,
         backdrop = if (glass) backdrop else null,

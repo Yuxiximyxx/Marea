@@ -9,6 +9,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -143,13 +144,15 @@ class MainActivity : ComponentActivity() {
             }
             val themeController = remember(mode) { ThemeController(mode) }
             MiuixTheme(controller = themeController) {
-                BrowserScreen(
-                    settings = settings,
-                    initialUrl = incomingUrl.value,
-                    onInitialUrlConsumed = { incomingUrl.value = null },
-                    openDownloads = openDownloads.value,
-                    onOpenDownloadsConsumed = { openDownloads.value = false },
-                )
+                CompositionLocalProvider(LocalBlurMode provides settings.blurMode) {
+                    BrowserScreen(
+                        settings = settings,
+                        initialUrl = incomingUrl.value,
+                        onInitialUrlConsumed = { incomingUrl.value = null },
+                        openDownloads = openDownloads.value,
+                        onOpenDownloadsConsumed = { openDownloads.value = false },
+                    )
+                }
             }
         }
     }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -122,6 +123,7 @@ fun SettingsScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -163,7 +165,7 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "显示模式",
                         items = listOf("跟随系统", "日间", "夜间"),
@@ -184,7 +186,7 @@ fun SettingsScreen(
                             }
                         },
                     )
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "模糊效果",
                         summary = "miuix-glass 为默认玻璃；liquid glass 为液态玻璃折射；关闭后底栏、收藏卡片和页面顶栏不再模糊",
@@ -201,14 +203,14 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "地址栏显示",
                         items = listOf("网站标题", "主域名", "完整域名"),
                         selectedIndex = settings.addressDisplay.coerceIn(0, 2),
                         onSelectedIndexChange = { settings.updateAddressDisplay(it) },
                     )
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "标签栏样式",
                         items = listOf("文字显示", "卡片显示"),
@@ -220,7 +222,7 @@ fun SettingsScreen(
                         summary = homeContentSummary(settings),
                         onClick = { showHomeSheet = true },
                     )
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "同站链接新标签页打开",
                         summary = "网页内同站的新窗口链接（target=_blank）在新标签页打开；关闭则在当前标签页打开",
                         checked = settings.sameSiteNewTab,
@@ -235,7 +237,7 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "外部链接打开方式",
                         items = listOf("应用内打开", "自定义标签页", "其他浏览器"),
@@ -272,7 +274,7 @@ fun SettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     // Cookie 直接外部 dropdown，不再进 sheet
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "Cookie 管理",
                         items = listOf("允许第三方 Cookie", "拒绝第三方 Cookie"),
@@ -292,13 +294,13 @@ fun SettingsScreen(
                         },
                         onClick = onOpenFingerprint,
                     )
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "发送禁止跟踪请求",
                         summary = "地址栏与链接导航附带 DNT / Sec-GPC 头，并设置 navigator.doNotTrack",
                         checked = settings.sendDnt,
                         onCheckedChange = { settings.updateSendDnt(it) },
                     )
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "禁用 WebRTC",
                         summary = "移除 RTCPeerConnection 等接口，防止泄露真实 IP（刷新页面后生效）",
                         checked = settings.webrtcDisabled,
@@ -313,7 +315,7 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "网页增强",
                         summary = "总开关：同步启用 / 停用全部油猴脚本和去广告；关闭后也不再检测长按标记广告",
                         checked = settings.pageEnhancements,
@@ -417,7 +419,7 @@ fun SettingsScreen(
                 },
             )
 
-            GlassDialog(
+            AppGlassDialog(
                 show = showWallpaper,
                 title = "主页壁纸",
                 backdrop = if (glass) backdrop else null,
@@ -473,19 +475,19 @@ fun SettingsScreen(
             var proxyPass by remember(showProxyDialog) { mutableStateOf(settings.proxyPass) }
             // SOCKS5 官方 API 不支持账密：认证开关置灰；代理关闭时仍可先配好认证
             val authSwitchEnabled = true
-            GlassDialog(
+            AppGlassDialog(
                 show = showProxyDialog,
                 title = "代理",
                 backdrop = if (glass) backdrop else null,
                 onDismissRequest = { showProxyDialog = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "启用代理",
                         checked = proxyOn,
                         onCheckedChange = { proxyOn = it },
                     )
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "类型",
                         items = listOf("HTTP", "SOCKS5"),
@@ -512,7 +514,7 @@ fun SettingsScreen(
                             singleLine = true,
                         )
                     }
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "认证",
                         checked = proxyAuth,
                         onCheckedChange = { proxyAuth = it },
@@ -593,7 +595,7 @@ fun SettingsScreen(
                 }
             }
 
-            GlassBottomSheet(
+            AppBottomSheet(
                 show = showHomeSheet,
                 title = "首页内容显示",
                 backdrop = if (glass) backdrop else null,
@@ -606,7 +608,7 @@ fun SettingsScreen(
                         HOME_RECENT to "最近浏览",
                         HOME_DOWNLOADS to "下载项",
                     ).forEach { (kind, label) ->
-                        GlassDropdownPreference(
+                        AppDropdownPreference(
                             title = label,
                             items = listOf("显示", "隐藏"),
                             selectedIndex = if (settings.isHomeShown(kind)) 0 else 1,
@@ -625,7 +627,7 @@ fun SettingsScreen(
                 }
             }
 
-            GlassBottomSheet(
+            AppBottomSheet(
                 show = showPermSheet,
                 title = "网站权限管理",
                 backdrop = if (glass) backdrop else null,
@@ -642,7 +644,7 @@ fun SettingsScreen(
                         Triple("网站媒体发声", settings.mediaAutoplay, settings::updateMediaAutoplay),
                         Triple("网页重定向", settings.redirectPermission, settings::updateRedirectPermission),
                     ).forEach { (label, current, update) ->
-                        GlassDropdownPreference(
+                        AppDropdownPreference(
                             title = label,
                             items = permOptions,
                             selectedIndex = current.coerceIn(0, 2),
@@ -655,6 +657,7 @@ fun SettingsScreen(
                 }
             }
         }
+    }
     }
 }
 
@@ -798,7 +801,7 @@ private fun SearchSheet(
     onCustom: (String) -> Unit,
 ) {
     var text by remember(show) { mutableStateOf(custom) }
-    GlassBottomSheet(
+    AppBottomSheet(
         show = show,
         title = "搜索引擎",
         backdrop = backdrop,

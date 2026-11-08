@@ -38,7 +38,10 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tanh
+import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.glass.GlassDialogButton
+import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -172,7 +175,9 @@ fun rememberTopBarScrolled(scrollBehavior: ScrollBehavior): Boolean {
     return scrolled
 }
 
-/** 圆形液态玻璃图标按钮（顶栏按钮用 40dp）。 */
+/**
+ * 圆形图标按钮（顶栏按钮用 40dp）。液态玻璃模式用 Kyant 液态玻璃；miuix-glass / 关闭模糊时还原成 miuix 玻璃图标按钮。
+ */
 @Composable
 fun LiquidGlassButton(
     onClick: () -> Unit,
@@ -184,18 +189,28 @@ fun LiquidGlassButton(
     enabled: Boolean = true,
     surfaceVisible: Boolean = true,
     content: @Composable () -> Unit,
-) = LiquidGlassSurface(
-    onClick = onClick,
-    backdrop = backdrop,
-    modifier = modifier.size(size),
-    tint = tint,
-    tintAlpha = tintAlpha,
-    enabled = enabled,
-    surfaceVisible = surfaceVisible,
-    content = content,
-)
+) {
+    if (LocalBlurMode.current != BLUR_LIQUID) {
+        HapticGlassIconButton(
+            onClick = { if (enabled) onClick() },
+            modifier = modifier.alpha(if (enabled) 1f else 0.4f),
+            content = content,
+        )
+        return
+    }
+    LiquidGlassSurface(
+        onClick = onClick,
+        backdrop = backdrop,
+        modifier = modifier.size(size),
+        tint = tint,
+        tintAlpha = tintAlpha,
+        enabled = enabled,
+        surfaceVisible = surfaceVisible,
+        content = content,
+    )
+}
 
-/** FAB：56dp 圆形。[primary] 为 true 时用主题色着色（原来的主色 FAB），否则是中性玻璃。 */
+/** FAB：56dp 圆形。[primary] 为 true 时用主题色着色。液态玻璃模式用 Kyant 液态玻璃，其它模式是 miuix 的 FAB。 */
 @Composable
 fun LiquidGlassFab(
     onClick: () -> Unit,
@@ -203,19 +218,34 @@ fun LiquidGlassFab(
     modifier: Modifier = Modifier,
     primary: Boolean = false,
     content: @Composable () -> Unit,
-) = LiquidGlassButton(
-    onClick = onClick,
-    backdrop = backdrop,
-    modifier = modifier,
-    size = 56.dp,
-    tint = if (primary) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer,
-    tintAlpha = if (primary) 0.8f else 0.35f,
-    content = content,
-)
+) {
+    if (LocalBlurMode.current != BLUR_LIQUID) {
+        FloatingActionButton(
+            onClick = onClick,
+            modifier = modifier,
+            containerColor = if (primary) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer,
+            content = content,
+        )
+        return
+    }
+    LiquidGlassButton(
+        onClick = onClick,
+        backdrop = backdrop,
+        modifier = modifier,
+        size = 56.dp,
+        tint = if (primary) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer,
+        tintAlpha = if (primary) 0.8f else 0.35f,
+        content = content,
+    )
+}
 
-/** 顶栏返回键（液态玻璃版）。 */
+/** 顶栏返回键。液态玻璃模式用 Kyant 液态玻璃，其它模式是 miuix 玻璃返回键。 */
 @Composable
 fun LiquidGlassBackButton(backdrop: Backdrop?, surfaceVisible: Boolean, onClick: () -> Unit) {
+    if (LocalBlurMode.current != BLUR_LIQUID) {
+        GlassBackButton(onClick = onClick)
+        return
+    }
     LiquidGlassButton(
         onClick = onClick,
         backdrop = backdrop,
@@ -244,6 +274,21 @@ fun LiquidGlassPillButton(
     role: LiquidRole = LiquidRole.Normal,
     enabled: Boolean = true,
 ) {
+    if (LocalBlurMode.current != BLUR_LIQUID) {
+        GlassDialogButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            role = when (role) {
+                LiquidRole.Primary -> GlassDialogButtonRole.Primary
+                LiquidRole.Destructive -> GlassDialogButtonRole.Destructive
+                LiquidRole.Normal -> GlassDialogButtonRole.Normal
+            },
+        ) {
+            Text(text = text, style = MiuixTheme.textStyles.button)
+        }
+        return
+    }
     val colors = MiuixTheme.colorScheme
     val tint = when (role) {
         LiquidRole.Primary -> colors.primary

@@ -33,6 +33,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +92,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
     val scrollBehavior = MiuixScrollBehavior()
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -189,7 +191,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    SwitchPreference(
+                    AppSwitchPreference(
                         title = "指纹保护",
                         summary = if (fpOn) "已开启，可在下方选择保护哪些项目" else "开启后可选择 Canvas · WebGL · Audio · Fonts",
                         checked = fpOn,
@@ -201,25 +203,25 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                         exit = shrinkVertically() + fadeOut(),
                     ) {
                         Column {
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "Canvas 指纹",
                                 summary = "导出画布 / 读取像素时加入不可见的细微噪声",
                                 checked = AdBlock.fpCanvas,
                                 onCheckedChange = { if (it) fpPending = AdBlock.FP_CANVAS else AdBlock.updateFingerprint(AdBlock.FP_CANVAS, false) },
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "WebGL 指纹",
                                 summary = "给 readPixels / WebGL 画布导出加入细微噪声",
                                 checked = AdBlock.fpWebgl,
                                 onCheckedChange = { if (it) fpPending = AdBlock.FP_WEBGL else AdBlock.updateFingerprint(AdBlock.FP_WEBGL, false) },
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "Audio 指纹",
                                 summary = "给音频缓冲和分析器输出加入听不出来的噪声",
                                 checked = AdBlock.fpAudio,
                                 onCheckedChange = { if (it) fpPending = AdBlock.FP_AUDIO else AdBlock.updateFingerprint(AdBlock.FP_AUDIO, false) },
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "Fonts 指纹",
                                 summary = "干扰 Canvas 文字测量与本机字体加载，无法枚举已安装字体",
                                 checked = AdBlock.fpFonts,
@@ -235,7 +237,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "未预注册页面的兜底",
                         items = listOf("仅记录，不干预", "停止并在保护下重载", "停止加载"),
@@ -279,7 +281,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             )
 
             val fpAsk = fpPending
-            GlassDialog(
+            AppGlassDialog(
                 show = fpAsk != null,
                 title = when (fpAsk) {
                     AdBlock.FP_CANVAS -> "开启 Canvas 指纹保护？"
@@ -354,6 +356,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
             }
 
         }
+    }
     }
 }
 

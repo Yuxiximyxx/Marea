@@ -80,7 +80,7 @@ fun ScriptMenuSheet(
     onRunCommand: (ScriptMenuCommand) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    GlassBottomSheet(
+    AppBottomSheet(
         show = show,
         title = null,
         backdrop = backdrop,
@@ -186,7 +186,7 @@ private fun ScriptRow(
     val items = if (commands.isEmpty()) listOf(NO_MENU_TEXT) else commands.map { it.title }
     // 标题只滚动一遍；触摸该条目时换 key 让 marquee 重新滚动一遍
     var marqueeRestart by remember { mutableIntStateOf(0) }
-    GlassDropdownPreference(
+    AppDropdownPreference(
         modifier = Modifier.pointerInput(Unit) {
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)

@@ -30,6 +30,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -163,6 +164,7 @@ fun LibraryScreen(
         }
     }
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -281,7 +283,7 @@ fun LibraryScreen(
                     }
                 }
                 // popup 与 FAB 同级、同在全屏 Box 内，坐标一致
-                GlassPopup(
+                AppGlassPopup(
                     show = showMenu,
                     onDismissRequest = { showMenu = false },
                     anchorBounds = rememberAboveAnchor(menuAnchor),
@@ -337,7 +339,7 @@ fun LibraryScreen(
                         )
                     }
                 }
-                GlassPopup(
+                AppGlassPopup(
                     show = showClearMenu,
                     onDismissRequest = { showClearMenu = false },
                     anchorBounds = rememberAboveAnchor(clearAnchor),
@@ -369,7 +371,7 @@ fun LibraryScreen(
         } else {
             0
         }
-        GlassBottomSheet(
+        AppBottomSheet(
             show = showClearConfirm,
             title = "清除历史记录",
             backdrop = backdrop,
@@ -454,6 +456,7 @@ fun LibraryScreen(
                 editingFav = null
             },
         )
+    }
     }
 }
 

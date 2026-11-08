@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -157,6 +158,7 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
         }
     }
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -216,7 +218,7 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             insideMargin = PaddingValues(0.dp),
                         ) {
-                            GlassDropdownPreference(
+                            AppDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
                                 title = "自动更新脚本",
                                 items = listOf("手动", "每天", "每 3 天", "每周"),
@@ -232,13 +234,13 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             insideMargin = PaddingValues(0.dp),
                         ) {
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "在无痕浏览中启用",
                                 summary = "关闭后无痕标签不运行脚本，切换后刷新页面生效",
                                 checked = settings.scriptsInIncognito,
                                 onCheckedChange = { settings.updateScriptsInIncognito(it) },
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "在轻应用 / 桌面快捷方式中启用",
                                 summary = "关闭后从桌面图标打开的页面不运行脚本，重新打开生效",
                                 checked = settings.scriptsInWebApp,
@@ -342,7 +344,7 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
             }
         } // end outer Box
 
-        GlassDialog(
+        AppGlassDialog(
             show = deleteTarget != null,
             title = "删除脚本",
             summary = deleteTarget?.name,
@@ -407,7 +409,7 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
         )
     }
     // 右上角菜单：与 Scaffold 同级、放在最后 → 位于最上层（盖住顶栏）
-    GlassPopup(
+    AppGlassPopup(
         show = showMore,
         onDismissRequest = { showMore = false },
         anchorBounds = Rect(moreAnchor.left, moreAnchor.bottom, moreAnchor.right, moreAnchor.bottom),
@@ -439,6 +441,7 @@ fun ExtensionsScreen(store: ExtensionStore, settings: AppSettings, onBack: () ->
             },
             icon = MiuixIcons.Glass.Refresh,
         )
+    }
     }
     }
 }
@@ -537,7 +540,7 @@ private fun ScriptDialog(
     var match by remember(initial) { mutableStateOf(initial?.match ?: "") }
     var enabled by remember(initial) { mutableStateOf(initial?.enabled ?: true) }
 
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = if (initial == null) "新建脚本" else "编辑脚本",
         summary = "JavaScript 会在页面加载完成后执行",
@@ -605,7 +608,7 @@ private fun ImportDialog(
     onPickFile: () -> Unit,
 ) {
     var url by remember(show) { mutableStateOf("") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = "导入脚本",
         summary = "支持 .user.js 链接或本地文件；去广告规则会自动转交「去广告」",

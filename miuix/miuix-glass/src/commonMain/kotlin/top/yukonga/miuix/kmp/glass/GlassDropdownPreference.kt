@@ -6,6 +6,7 @@ package top.yukonga.miuix.kmp.glass
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -84,6 +85,7 @@ fun GlassDropdownPreference(
     visuals: GlassPopupVisuals = GlassPopupDefaults.visuals(),
     onExpandedChange: ((Boolean) -> Unit)? = null,
     marqueeItems: Boolean = false,
+    surface: (@Composable BoxScope.(GlassShape) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val mounted = remember { mutableStateOf(false) }
@@ -168,6 +170,7 @@ fun GlassDropdownPreference(
                 visuals = visuals,
                 coordinateOrigin = hostOrigin,
                 onDismissFinished = { mounted.value = false },
+                surface = surface,
             ) {
                 items.forEachIndexed { index, item ->
                     GlassPopupItem(

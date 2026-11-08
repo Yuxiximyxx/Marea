@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -145,6 +146,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
         }
     }
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -263,7 +265,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             insideMargin = PaddingValues(0.dp),
                         ) {
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "启用去广告",
                                 summary = when {
                                     !AdBlock.enabled -> "已关闭"
@@ -273,21 +275,21 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                                 checked = AdBlock.enabled,
                                 onCheckedChange = { AdBlock.updateEnabled(it) },
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "隐藏页面广告元素",
                                 summary = "按规则隐藏页面里的广告位，对新打开的页面生效",
                                 checked = AdBlock.cosmetic,
                                 onCheckedChange = { AdBlock.updateCosmetic(it) },
                                 enabled = AdBlock.enabled,
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "拦截跟踪与统计",
                                 summary = "拦截第三方统计 / 追踪域名的请求",
                                 checked = settings.blockTrackingScripts,
                                 onCheckedChange = { settings.updateBlockTrackingScripts(it) },
                                 enabled = AdBlock.enabled,
                             )
-                            GlassDropdownPreference(
+                            AppDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
                                 title = "自动更新订阅",
                                 items = listOf("手动", "每天", "每 3 天", "每周"),
@@ -303,14 +305,14 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             insideMargin = PaddingValues(0.dp),
                         ) {
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "在无痕浏览中启用",
                                 summary = "关闭后无痕标签不拦截请求、不隐藏广告元素",
                                 checked = settings.adblockInIncognito,
                                 onCheckedChange = { settings.updateAdblockInIncognito(it) },
                                 enabled = AdBlock.enabled,
                             )
-                            SwitchPreference(
+                            AppSwitchPreference(
                                 title = "在轻应用 / 桌面快捷方式中启用",
                                 summary = "关闭后从桌面图标打开的页面不去广告，重新打开生效",
                                 checked = settings.adblockInWebApp,
@@ -432,7 +434,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
         )
 
         val target = deleting
-        GlassDialog(
+        AppGlassDialog(
             show = target != null,
             title = "删除订阅",
             summary = target?.name,
@@ -456,7 +458,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
             }
         }
     }
-    GlassPopup(
+    AppGlassPopup(
         show = showMore,
         onDismissRequest = { showMore = false },
         anchorBounds = Rect(moreAnchor.left, moreAnchor.bottom, moreAnchor.right, moreAnchor.bottom),
@@ -488,6 +490,7 @@ fun AdBlockScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolea
             },
             icon = MiuixIcons.Glass.Refresh,
         )
+    }
     }
     }
 }
@@ -604,7 +607,7 @@ private fun AddSubDialog(
     onPickFile: () -> Unit,
 ) {
     var url by remember(show) { mutableStateOf("") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = "添加订阅",
         summary = "支持 Adblock Plus / uBlock / AdGuard 规则与 hosts 格式",
@@ -650,7 +653,7 @@ private fun CustomRulesDialog(
     onSave: (String) -> Unit,
 ) {
     var text by remember(show) { mutableStateOf(if (show) AdBlock.readCustom() else "") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = "自定义规则",
         summary = "每行一条。例：||ads.example.com^ 或 example.com##.banner",
@@ -712,7 +715,7 @@ internal fun HostListDialog(
 ) {
     val context = LocalContext.current
     var host by remember(show) { mutableStateOf("") }
-    GlassDialog(
+    AppGlassDialog(
         show = show,
         title = title,
         summary = summary,

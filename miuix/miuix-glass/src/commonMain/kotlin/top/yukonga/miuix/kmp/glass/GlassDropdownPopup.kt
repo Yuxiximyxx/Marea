@@ -102,6 +102,7 @@ internal fun BoxScope.GlassDropdownPopupContent(
     contentPadding: PaddingValues = PaddingValues(vertical = GlassPopupDefaults.ContentPaddingVertical),
     coordinateOrigin: Offset = Offset.Zero,
     onDismissFinished: (() -> Unit)? = null,
+    surface: (@Composable BoxScope.(GlassShape) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // Scaffold hosts compose after opening is requested; start closed to retain the enter transition.
@@ -196,6 +197,7 @@ internal fun BoxScope.GlassDropdownPopupContent(
             scaleY = scale
         },
         modifier = modifier,
+        surface = surface,
         interactive = show,
         scrollable = true,
         dragDeform = false,

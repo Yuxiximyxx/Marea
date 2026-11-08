@@ -100,7 +100,7 @@ fun UpdateSheet(
     onIgnore: (AppRelease) -> Unit,
     onDownload: (AppRelease) -> Unit,
 ) {
-    GlassBottomSheet(
+    AppBottomSheet(
         show = show,
         title = "发现新版本",
         backdrop = backdrop,

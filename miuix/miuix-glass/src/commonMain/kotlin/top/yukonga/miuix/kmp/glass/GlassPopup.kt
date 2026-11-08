@@ -208,6 +208,7 @@ fun BoxScope.GlassPopup(
     alignStart: Boolean = false,
     secondary: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(vertical = GlassPopupDefaults.ContentPaddingVertical),
+    surface: (@Composable BoxScope.(GlassShape) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (secondary) {
@@ -277,6 +278,7 @@ fun BoxScope.GlassPopup(
             alpha = fade
         },
         modifier = modifier,
+        surface = surface,
         scrollable = true,
         content = content,
     )

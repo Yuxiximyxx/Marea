@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -195,6 +196,7 @@ fun DownloadsScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -238,14 +240,14 @@ fun DownloadsScreen(
                                 .padding(bottom = 8.dp),
                             insideMargin = PaddingValues(0.dp),
                         ) {
-                            GlassDropdownPreference(
+                            AppDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
                                 title = "线程数",
                                 items = threadOptions.map { it.toString() },
                                 selectedIndex = threadOptions.indexOf(threads).coerceAtLeast(0),
                                 onSelectedIndexChange = { onThreadsChange(threadOptions[it]) },
                             )
-                            GlassDropdownPreference(
+                            AppDropdownPreference(
                                 backdrop = if (glass) backdrop else null,
                                 title = "多线程阈值",
                                 summary = "超过该阈值才使用多线程下载",
@@ -356,7 +358,7 @@ fun DownloadsScreen(
             }
         }
 
-        GlassDialog(
+        AppGlassDialog(
             show = deleteTask != null,
             title = "删除文件",
             summary = deleteTask?.let { it.name + "\n\n会同时删除本地文件" },
@@ -385,5 +387,6 @@ fun DownloadsScreen(
                 }
             }
         }
+    }
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,6 +96,7 @@ fun AboutScreen(
     val iconShape = RoundedCornerShape(26.dp)
     var pendingUpdate by remember { mutableStateOf<AppRelease?>(null) }
 
+    CompositionLocalProvider(LocalLiquidBackdrop provides if (glass) liquidBackdrop else null) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -228,7 +230,7 @@ fun AboutScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    GlassDropdownPreference(
+                    AppDropdownPreference(
                         backdrop = if (glass) pageBackdrop else null,
                         title = "Mafari",
                         summary = BuildConfig.VERSION_NAME,
@@ -351,6 +353,7 @@ fun AboutScreen(
                 }
             }
         }
+    }
     }
 }
 

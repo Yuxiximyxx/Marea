@@ -2,6 +2,10 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.13-dev]
+- 调整：顶栏按钮（返回 / 更多 / 添加）、FAB、对话框底部胶囊按钮在 miuix-glass 与关闭模糊下还原为 miuix-glass 原生组件，只有选「liquid glass」才使用 Kyant 液态玻璃（`LocalBlurMode`）
+- 新增：liquid glass 模式的应用范围扩展到下拉菜单（`GlassDropdownPreference` / `GlassPopup`）、底部 sheet、对话框、开关（`LiquidSwitch`：静止为白色滑块，按下 / 拖动变为折射轨道的透明玻璃）；各页面通过 `LocalLiquidBackdrop` 提供采样层，网页态与不支持时自动回退 miuix。miuix-glass 子工程只新增了可选的 `surface` 参数（默认 null，行为不变）
+
 ## [1.8.12-dev]
 
 - 新增：设置 → 外观 →「模糊效果」由开关改为菜单：miuix-glass / liquid glass / 关闭模糊（旧开关自动迁移）。liquid glass 模式下，首页卡片（收藏 / 隐私报告 / 最近浏览 / 下载项）与底栏改用 Kyant0/AndroidLiquidGlass 的液态玻璃（折射 + 模糊 + 提亮），取样源仍是未模糊的壁纸；其余页面暂沿用 miuix-glass
