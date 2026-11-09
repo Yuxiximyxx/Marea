@@ -7,9 +7,11 @@ import android.provider.MediaStore
 import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -403,14 +405,51 @@ object Downloader {
      * 与弹窗探测共用这一条推导逻辑，站内拦截 / 外部分诊不另造。
      */
     fun fileNameFromQuery(url: String): String? {
-        val query = runCatching {
-            URLDecoder.decode(Uri.parse(url).query ?: "", "UTF-8")
-        }.getOrNull().orEmpty()
-        if (query.isBlank()) return null
-        val raw = Regex("""filename\*?\s*=\s*"?([^";\s]+)""").find(query)?.groupValues?.get(1) ?: return null
-        val decoded = runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
-        val cleaned = decoded.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
-        return cleaned.ifBlank { null }?.let { truncateName(it, 80) }
+        val rawQuery = runCatching { Uri.parse(url).query }.getOrNull().orEmpty()
+        if (rawQuery.isBlank()) return null
+        // fork.16：先在「未解码」的 query 上按 & 切开参数、只对单个参数（含键）解码，再找 filename=。
+        // fork.15 的写法是先整串解码再正则抓——解码后参数值与 & 边界混在一起，捕获集又
+        // 不含 &，一抓就把后续参数全吞进来（真机实证垃圾名：
+        // 「Marea-release-signed.apk&rsct=application_…&skoid=…」）。
+        // 按参数切开后再解码，单个参数内部不可能混入别家的 & 边界；直接以 filename
+        // 作参数名的形态（?filename=xxx.zip）也靠整段含键文本一并覆盖。
+        val parts = rawQuery.split('&').map { part ->
+            runCatching { URLDecoder.decode(part, "UTF-8") }.getOrDefault(part)
+        }
+        // disposition 类参数（rscd / response-content-disposition）优先，其余参数兜底
+        val ordered = parts.filter { it.contains("filename", ignoreCase = true) } + parts
+        for (text in ordered) {
+            val raw = FILENAME_VALUE.find(text)?.groupValues?.get(1) ?: continue
+            // 参数值单独解码后若仍残留编码层（如双重编码的 %26），解开后再截断一次
+            val decoded = runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            val truncated = decoded.takeWhile { !it.isWhitespace() && it != '&' && it != ';' && it != '"' }
+            val cleaned = truncated.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+            if (cleaned.isNotBlank()) return truncateName(cleaned, 80)
+        }
+        return null
+    }
+
+    /** query 参数值里 filename= 的捕获：必须在空白 / & / ; / 引号处截断（fork.16） */
+    private val FILENAME_VALUE = Regex("""filename\*?\s*=\s*"?([^\s&;"]+)""")
+
+    /** 在途 / 已完成的弹窗探测（按 URL 索引，见 [probeShared]） */
+    private val probeJobs = ConcurrentHashMap<String, Deferred<ProbeResult>>()
+
+    /**
+     * 弹窗探测的共享入口（fork.16）：探测本体跑在 Downloader 自有作用域里，不绑弹窗
+     * 组合的生命周期。fork.15 真机实证：probe 在 IO 线程已成功返回，弹窗 effect 却在
+     * 回主线程的恢复点被取消，CancellationException 被 effect 外层的 runCatching 吞成
+     * 与真超时无区别的 null，真结果被当「探测超时」扔掉。改走共享 Deferred 后：
+     * 组合被取消 / 重组掐不死在途探测，弹窗重启后重新 await 直接拿到真实结果。
+     * [fresh] = true 时丢弃旧结果重新探测（弹窗的「重新探测」按钮用）。
+     */
+    fun probeShared(url: String, userAgent: String?, cookie: String?, fresh: Boolean = false): Deferred<ProbeResult> {
+        if (fresh) probeJobs.remove(url)
+        // 顺手清掉其他 URL 的已完成项，避免签名 URL 千变万化把表撑大
+        probeJobs.entries.removeIf { it.key != url && it.value.isCompleted }
+        return probeJobs.computeIfAbsent(url) {
+            scope.async { probe(url, userAgent, cookie) }
+        }
     }
 
     /**

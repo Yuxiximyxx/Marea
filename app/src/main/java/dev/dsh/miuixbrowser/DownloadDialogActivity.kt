@@ -236,13 +236,25 @@ fun NewDownloadSheet(
         probing = true
         probeError = null
         Diag.log("NewDownloadSheet: probe begin url=${url.take(100)}")
-        // 探测绝不许把弹窗拖死（fork.15）：20 秒封顶，超时 / 异常一律按探测失败处理，
-        // 落到下面的兜底态——文件名从链接参数推导、按钮给「直接下载」，不依赖探测元数据
-        val result = runCatching {
-            kotlinx.coroutines.withTimeoutOrNull(20_000) {
-                Downloader.probe(url, null, PrivacyMode.cookieFor(url, privacy = false))
+        // fork.16：落定只认 Downloader.probe 的真实返回。fork.15 的
+        // runCatching { withTimeoutOrNull(20s) { probe } }.getOrNull() 把「真超时」
+        // 与「effect 协程被取消时 runCatching 吞掉的 CancellationException」混成同一个
+        // null——真机实证 probe 已成功返回、弹窗却在 2ms 后按「探测超时」落定。
+        // 现在探测本体跑在 Downloader 的共享 Deferred 上（见 probeShared，组合取消
+        // 掐不死它），这里只 await：全链唯一的 20 秒封顶只捕 TimeoutCancellationException，
+        // 其余 CancellationException 不吞（effect 真被取消就让它取消，重组后重新 await
+        // 共享 Deferred 立刻拿到已完成的真实结果）。
+        val result: Downloader.ProbeResult? = try {
+            kotlinx.coroutines.withTimeout(20_000) {
+                Downloader.probeShared(
+                    url, null, PrivacyMode.cookieFor(url, privacy = false),
+                    fresh = probeTick > 0,
+                ).await()
             }
-        }.getOrNull()
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Diag.log("NewDownloadSheet: probe wait timeout (20s) url=${url.take(100)}")
+            null
+        }
         size = result?.size ?: -1L
         probeMime = result?.mime
         probeError = result?.error ?: if (result == null) "探测超时" else null
@@ -259,6 +271,15 @@ fun NewDownloadSheet(
         }
         probing = false
         Diag.log("NewDownloadSheet: probe settled size=$size mime=$probeMime error=${probeError ?: "-"} fileName=$fileName")
+        // 弹窗最终展示态（fork.16）：与界面渲染同式计算（大小行文案与主按钮文案），
+        // diag 里可直接核对 settled 与用户实际看到的是否一致
+        val displaySizeText = when {
+            size >= 0 -> formatBytes(size)
+            probeError != null -> "未知（探测失败）"
+            else -> "未知"
+        }
+        val displayPrimary = if (probeError != null) "直接下载" else "下载"
+        Diag.log("NewDownloadSheet: display fileName=$fileName sizeText=$displaySizeText primary=$displayPrimary")
     }
 
     AppBottomSheet(
