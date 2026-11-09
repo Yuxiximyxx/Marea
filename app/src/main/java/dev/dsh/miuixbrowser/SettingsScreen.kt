@@ -89,6 +89,7 @@ fun SettingsScreen(
     onOpenScripts: () -> Unit,
     onOpenAdBlock: () -> Unit,
     onOpenDispatch: () -> Unit = {},
+    onOpenPrivacy: () -> Unit = {},
     onOpenFingerprint: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -286,6 +287,11 @@ fun SettingsScreen(
                         title = "网站权限管理",
                         summary = "摄像头 · 麦克风 · 定位 · 网站通知 · 剪贴板 · 媒体发声 · 网页重定向",
                         onClick = { showPermSheet = true },
+                    )
+                    SettingsRow(
+                        title = "隐私模式",
+                        summary = "独立的书签 · 历史 · 下载空间，地址栏输入口令进入",
+                        onClick = onOpenPrivacy,
                     )
                     SettingsRow(
                         title = "指纹保护",

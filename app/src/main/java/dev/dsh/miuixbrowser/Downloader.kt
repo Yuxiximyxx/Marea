@@ -41,6 +41,8 @@ data class DownloadTask(
     /** 远端文件指纹：恢复续传前比对，变了就整单重下，避免新旧内容拼错 */
     val etag: String? = null,
     val lastModified: String? = null,
+    /** 所属空间：0 = 普通，1 = 隐私（fork.5 隐私模式）。隐私任务只在隐私模式的下载列表里出现，文件落 Download/Marea/Private */
+    val space: Int = 0,
 )
 
 /** 内置下载器：断点续传、暂停/继续、失败重试，默认写入 Download/Marea */
@@ -141,6 +143,7 @@ object Downloader {
         mimeType: String?,
         cookie: String? = null,
         referer: String? = null,
+        space: Int = 0,
     ) {
         bindContext(context)
         val task = DownloadTask(
@@ -150,12 +153,111 @@ object Downloader {
             mime = mimeType,
             cookie = cookie,
             referer = referer,
+            space = space,
         )
         tasks.add(0, task)
         persistNow()
         DownloadService.start(context)
         DownloadService.showStart(context, fileName, task.id)
         launch(context, task.id)
+    }
+
+    /** 只建任务不启动（fork.5 新建下载弹窗的「添加」）：PAUSED 落盘，进下载列表等用户手动开始。调用前须先 restore 过。 */
+    fun addPaused(
+        context: Context,
+        url: String,
+        userAgent: String?,
+        fileName: String,
+        mimeType: String?,
+        cookie: String? = null,
+        referer: String? = null,
+        space: Int = 0,
+    ) {
+        bindContext(context)
+        val task = DownloadTask(
+            name = fileName,
+            url = url,
+            userAgent = userAgent,
+            mime = mimeType,
+            cookie = cookie,
+            referer = referer,
+            state = DownloadState.PAUSED,
+            space = space,
+        )
+        tasks.add(0, task)
+        persistNow()
+    }
+
+    /** 已知下载主机：这些域名的链接基本都是文件直链（签名 URL 常没有扩展名） */
+    private val DOWNLOAD_HOSTS = setOf(
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "codeload.github.com",
+    )
+
+    /** 常见可下载文件扩展名（外部链接分诊用：命中即认为是直链下载） */
+    private val FILE_EXTENSIONS = setOf(
+        "apk", "xapk", "apks", "apkm", "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst",
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub",
+        "mp3", "flac", "wav", "ogg", "m4a", "mp4", "mkv", "avi", "mov", "webm",
+        "iso", "img", "dmg", "exe", "msi", "bin", "torrent", "crx", "ipa", "deb", "rpm",
+    )
+
+    /** 外部链接分诊：仅凭 URL 形态判断是否直链下载（不发网络请求）。路径扩展名命中或已知下载主机即算。 */
+    fun looksLikeFileUrl(url: String): Boolean {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host in DOWNLOAD_HOSTS) return true
+        val segment = uri.path?.substringAfterLast('/') ?: return false
+        val ext = segment.substringAfterLast('.', "").lowercase()
+        return ext in FILE_EXTENSIONS
+    }
+
+    /** 探测结果：[size] < 0 表示未知；[fileName] 是 Content-Disposition 推导名（可空）。 */
+    data class ProbeResult(val size: Long, val fileName: String?, val mime: String?)
+
+    /**
+     * 轻量探测（fork.5 新建下载弹窗）：先 HEAD（跟随重定向），拿不到长度或 HEAD 被拒时
+     * 用 Range GET bytes=0-0 兜底，从 Content-Range 读总长；读完响应头即断开、不下正文。
+     * 带 UA / Cookie 保证登录态站点也能探到。
+     */
+    suspend fun probe(url: String, userAgent: String?, cookie: String?): ProbeResult =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            runCatching {
+                val head = openProbe(url, userAgent, cookie, "HEAD")
+                val headCode = head.responseCode
+                var size = head.contentLengthLong
+                var disposition = head.getHeaderField("Content-Disposition")
+                var mime = head.contentType?.substringBefore(';')
+                head.disconnect()
+                if (size < 0 || headCode >= 400) {
+                    val ranged = openProbe(url, userAgent, cookie, "GET", range = true)
+                    ranged.responseCode
+                    size = ranged.getHeaderField("Content-Range")
+                        ?.substringAfterLast('/')?.toLongOrNull()
+                        ?: ranged.contentLengthLong
+                    if (disposition == null) disposition = ranged.getHeaderField("Content-Disposition")
+                    if (mime == null) mime = ranged.contentType?.substringBefore(';')
+                    ranged.disconnect()
+                }
+                ProbeResult(
+                    size = size,
+                    fileName = disposition?.let { fileNameFrom(url, it) },
+                    mime = mime,
+                )
+            }.getOrDefault(ProbeResult(-1L, null, null))
+        }
+
+    private fun openProbe(url: String, userAgent: String?, cookie: String?, method: String, range: Boolean = false): HttpURLConnection {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.requestMethod = method
+        conn.setRequestProperty("User-Agent", userAgent ?: "Mozilla/5.0 mafari")
+        if (!cookie.isNullOrBlank()) conn.setRequestProperty("Cookie", cookie)
+        if (range) conn.setRequestProperty("Range", "bytes=0-0")
+        return conn
     }
 
     fun pause(id: Long) {
@@ -594,7 +696,7 @@ object Downloader {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, task.name)
             put(MediaStore.Downloads.MIME_TYPE, task.mime ?: "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
+            put(MediaStore.Downloads.RELATIVE_PATH, if (task.space == 1) "Download/Marea/Private" else "Download/Marea")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -616,24 +718,24 @@ object Downloader {
     }
 
     /** 保存 data:...;base64 的内嵌 / blob 抽取结果到系统下载目录 */
-    fun saveDataUri(context: Context, dataUri: String, fileName: String): Boolean = runCatching {
+    fun saveDataUri(context: Context, dataUri: String, fileName: String, space: Int = 0): Boolean = runCatching {
         val comma = dataUri.indexOf(',')
         if (comma < 0) return@runCatching false
         val meta = dataUri.substringAfter("data:").substringBefore(',')
         if (!meta.contains("base64", ignoreCase = true)) return@runCatching false
         val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
-        saveBytes(context, bytes, fileName, meta.substringBefore(';').ifBlank { null })
+        saveBytes(context, bytes, fileName, meta.substringBefore(';').ifBlank { null }, space)
         true
     }.getOrDefault(false)
 
     /** 把缓存文件流式复制到 Download/Marea（大 blob 用，不把整个文件读进内存） */
-    fun saveFile(context: Context, file: java.io.File, fileName: String, mime: String?): Boolean {
+    fun saveFile(context: Context, file: java.io.File, fileName: String, mime: String?, space: Int = 0): Boolean {
         var uri: Uri? = null
         return runCatching {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
+                put(MediaStore.Downloads.RELATIVE_PATH, if (space == 1) "Download/Marea/Private" else "Download/Marea")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val target = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -671,11 +773,11 @@ object Downloader {
     }
 
     /** 直接把字节写入 Download/Marea（blob / data URL 共用） */
-    fun saveBytes(context: Context, bytes: ByteArray, fileName: String, mime: String?): Boolean = runCatching {
+    fun saveBytes(context: Context, bytes: ByteArray, fileName: String, mime: String?, space: Int = 0): Boolean = runCatching {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
             put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/Marea")
+            put(MediaStore.Downloads.RELATIVE_PATH, if (space == 1) "Download/Marea/Private" else "Download/Marea")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

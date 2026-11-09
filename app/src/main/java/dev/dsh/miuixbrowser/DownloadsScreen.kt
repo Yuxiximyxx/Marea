@@ -185,7 +185,8 @@ fun DownloadsScreen(
     onMultiThreadMinMbChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val tasks = Downloader.tasks
+    // 按空间过滤：隐私模式只看隐私任务，普通模式看不到隐私任务（fork.5 隐私模式）
+    val tasks = Downloader.tasks.filter { it.space == (if (PrivacyMode.active) 1 else 0) }
     val backdrop = rememberLayerBackdrop()
     val liquidBackdrop = rememberKyantBackdrop()
     val glass = rememberGlassActive(blurEnabled)

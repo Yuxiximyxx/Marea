@@ -7,14 +7,14 @@ import org.json.JSONObject
 
 data class HistoryEntry(val url: String, val title: String, val time: Long)
 
-class HistoryStore(context: Context) {
+class HistoryStore(context: Context, private val storageKey: String = KEY) {
 
     private val prefs = context.getSharedPreferences("mafari_history", Context.MODE_PRIVATE)
 
     val items = mutableStateListOf<HistoryEntry>().apply { addAll(load()) }
 
     private fun load(): List<HistoryEntry> {
-        val raw = prefs.getString(KEY, null) ?: return emptyList()
+        val raw = prefs.getString(storageKey, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
             buildList {
@@ -66,7 +66,7 @@ class HistoryStore(context: Context) {
         items.forEach {
             array.put(JSONObject().put("url", it.url).put("title", it.title).put("time", it.time))
         }
-        prefs.edit().putString(KEY, array.toString()).apply()
+        prefs.edit().putString(storageKey, array.toString()).apply()
     }
 
     private companion object {

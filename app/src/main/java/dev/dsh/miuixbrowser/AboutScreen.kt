@@ -277,7 +277,7 @@ fun AboutScreen(
                         Text("项目地址", fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "https://github.com/rosenii/mafari",
+                            text = "https://github.com/Yuxiximyxx/Marea",
                             fontSize = 12.sp,
                             color = MiuixTheme.colorScheme.primary,
                             maxLines = 1,
@@ -339,7 +339,7 @@ fun AboutScreen(
                                             context = context,
                                             url = url,
                                             userAgent = null,
-                                            fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                                            fileName = "Marea-${rel.version.removePrefix("v")}.apk",
                                             mimeType = "application/vnd.android.package-archive",
                                         )
                                         Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
@@ -367,9 +367,9 @@ data class AppRelease(
     val notes: String = "",
 )
 
-private const val PROJECT_URL = "https://github.com/rosenii/mafari"
+private const val PROJECT_URL = "https://github.com/Yuxiximyxx/Marea"
 private const val COPYRIGHT = "Copyright © 2026 rosenii. All rights reserved."
-private const val RELEASES_API = "https://api.github.com/repos/rosenii/mafari/releases?per_page=30"
+private const val RELEASES_API = "https://api.github.com/repos/Yuxiximyxx/Marea/releases?per_page=30"
 
 /** 预览类后缀；带这些后缀的 tag 归入 dev 分支（-dev 为主，其余预览后缀一并算 dev） */
 private val PRE_TAG = Regex("(dev|alpha|beta|rc|snapshot)", RegexOption.IGNORE_CASE)

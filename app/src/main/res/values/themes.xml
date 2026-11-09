@@ -13,4 +13,11 @@
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
         <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
+
+    <!-- fork.5 新建下载悬浮弹窗：透明主题，背景透出当前 App，关掉直接回到原 App -->
+    <style name="Theme.Marea.Translucent" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
 </resources>

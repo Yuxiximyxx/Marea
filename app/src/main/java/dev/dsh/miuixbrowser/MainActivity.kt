@@ -28,6 +28,9 @@ class MainActivity : ComponentActivity() {
     /** 点下载通知进来时要求打开下载页 */
     private val openDownloads = mutableStateOf(false)
 
+    /** 本次外部链接是否已被分诊处理（规则送出 / 下载弹窗），已处理则不进浏览器主界面 */
+    private var externalHandled = false
+
     companion object {
         const val EXTRA_OPEN_DOWNLOADS = "open_downloads"
     }
@@ -37,6 +40,11 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
+        if (externalHandled) {
+            externalHandled = false
+            // 已浮出下载弹窗 / 已按规则送出：把浏览器任务退回后台，回到刚才那个 App
+            moveTaskToBack(true)
+        }
     }
 
     private fun consumeOpenDownloads(intent: Intent?) {
@@ -55,7 +63,15 @@ class MainActivity : ComponentActivity() {
         when (settings.linkOpenMode) {
             1 -> openWithCustomTab(data)
             2 -> forwardToOtherBrowser(data)
-            else -> incomingUrl.value = data.toString()
+            else -> {
+                // fork.5 分诊：分发规则送出 / 直链下载弹窗命中时不进浏览器（见 LinkRouter）
+                val url = data.toString()
+                if (LinkRouter.tryHandleExternal(this, url)) {
+                    externalHandled = true
+                } else {
+                    incomingUrl.value = url
+                }
+            }
         }
     }
 
@@ -86,8 +102,22 @@ class MainActivity : ComponentActivity() {
     /** 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉 */
     override fun onStop() {
         super.onStop()
+        // 隐私模式：切后台 / 锁屏自动退回普通模式（下载任务跑在独立服务里，不受影响）
+        PrivacyMode.exit()
+        // 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉；
+        // 「默认」图标走日夜自动（fork.5），手动选的图标走原同步逻辑
         val wanted = AppSettings(this).appIcon
-        if (AppIconManager.current(this) != wanted) AppIconManager.apply(this, wanted)
+        if (wanted == 0) {
+            AppIconManager.applyAutoDayNight(this)
+        } else if (AppIconManager.current(this) != wanted) {
+            AppIconManager.apply(this, wanted)
+        }
+    }
+
+    /** 系统日夜切换时 Activity 不重建（configChanges 含 uiMode），在这里同步「默认」图标 */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (AppSettings(this).appIcon == 0) AppIconManager.applyAutoDayNight(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,6 +127,11 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             consumeOpenDownloads(intent)
             consumeViewIntent(intent)
+            if (externalHandled) {
+                // 冷启动即被分诊处理：弹窗已浮在原 App 之上，本 Activity 不进主界面、直接退出
+                finish()
+                return
+            }
         }
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
@@ -105,6 +140,8 @@ class MainActivity : ComponentActivity() {
         // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化
         Downloader.restore(this)
         LinkDispatch.init(this)
+        // 「默认」图标按当前系统日夜状态对齐（冷启动时启动器还没把本应用摆到前台，切换最安全）
+        if (AppSettings(this).appIcon == 0) AppIconManager.applyAutoDayNight(this)
 
         // 全屏沉浸：内容画到状态栏和手势小白条下面，小白条保留可见。
         WindowCompat.setDecorFitsSystemWindows(window, false)

@@ -250,7 +250,10 @@ fun BrowserScreen(
             it.applyUserAgent(settings.userAgent)
         }
     }
-    val favorites = remember { FavoritesStore(context) }
+    val favoritesNormal = remember { FavoritesStore(context) }
+    val favoritesPrivate = remember { FavoritesStore(context, "favorites_privacy") }
+    // 隐私模式下书签走隐私空间那一套（普通模式不可见、不混入）
+    val favorites = if (PrivacyMode.active) favoritesPrivate else favoritesNormal
     remember { Diag.log("BrowserScreen composed, favorites=" + favorites.items.size) }
     val menuOrder = remember { MenuOrderStore(context) }
     val wallpaperBitmap = rememberWallpaper(settings.wallpaper)
@@ -301,7 +304,9 @@ fun BrowserScreen(
         runCatching { extensions.bootstrapRecommended() }
         runCatching { extensions.autoUpdateIfDue() }
     }
-    val history = remember { HistoryStore(context) }
+    val historyNormal = remember { HistoryStore(context) }
+    val historyPrivate = remember { HistoryStore(context, "entries_privacy") }
+    val history = if (PrivacyMode.active) historyPrivate else historyNormal
     val tab = state.activeTab
     // 页面加载期间也禁用 MIUIX 采集，避免 URL 尚未更新时误把 WebView 帧送进 RuntimeShader。
     // 回主页时 WebView 要先真正隐藏，再开启 MIUIX 背景采集：
@@ -403,6 +408,21 @@ fun BrowserScreen(
     // 网页增强总开关 → 所有标签页
     LaunchedEffect(settings.pageEnhancements, state.tabs.size) {
         state.tabs.forEach { it.pageEnhancements = settings.pageEnhancements }
+    }
+
+    // 隐私模式进/退：PrivacyMode 是进程级状态（地址栏口令 / 菜单 / 设置 / 切后台都会改它），
+    // 这里统一做标签空间切换并给一声提示。初次组合时 active=false 且当前非隐私标签，exit 是空操作。
+    LaunchedEffect(PrivacyMode.active) {
+        if (PrivacyMode.active) {
+            state.enterPrivacySpace()
+            android.widget.Toast.makeText(context, "已进入隐私模式", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            val wasInPrivacy = state.activeTab.privacySpace
+            state.exitPrivacySpace()
+            if (wasInPrivacy) {
+                android.widget.Toast.makeText(context, "已退出隐私模式", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     LaunchedEffect(tab.id) {
@@ -755,7 +775,13 @@ fun BrowserScreen(
     // 向下滚超过一小段 → 收起底栏；向上滚或回到顶部 → 展开。
     LaunchedEffect(tab.id, extensions.items.toList()) {
         tab.userScripts = extensions.items.toList()
-        tab.onVisited = { url, title -> if (!tab.incognito) history.record(url, title) }
+        tab.onVisited = { url, title ->
+            // 历史按标签所属空间分流：隐私标签只写隐私历史，无痕不写，普通写普通历史
+            when {
+                tab.privacySpace -> historyPrivate.record(url, title)
+                !tab.incognito -> historyNormal.record(url, title)
+            }
+        }
     }
 
     // 文件选择：非 capture 直接拉系统选择器；单一类型 capture 直接开相机；
@@ -790,7 +816,7 @@ fun BrowserScreen(
                     userAgent = ua,
                     fileName = Downloader.fileNameFrom(url, disposition),
                     mime = mime,
-                    cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(url) }.getOrNull(),
+                    cookie = PrivacyMode.cookieFor(url, tab.privacySpace),
                     referer = tab.url.ifBlank { null },
                 )
             }
@@ -1167,7 +1193,7 @@ fun BrowserScreen(
                 maxLines = 1,
             ).size.width
             val measuredAddressWidth = with(LocalDensity.current) { measuredAddressPx.toDp() }
-            val fixedToolbarWidth = 44.dp * 4 + 12.dp + 24.dp
+            val fixedToolbarWidth = 44.dp * 4 + 12.dp + 24.dp + if (PrivacyMode.active) 46.dp else 0.dp
             val loadingIndicatorWidth = if (tab.loading) 15.dp else 0.dp
             val requestedBarWidth = fixedToolbarWidth + measuredAddressWidth + loadingIndicatorWidth
             // 显式比较 Dp，避免当前 Kotlin/Compose 版本对 coerceAtMost 的错误重载推断。
@@ -1305,7 +1331,8 @@ fun BrowserScreen(
                 loading = tab.loading,
                 canGoBack = tab.canGoBack,
                 canGoForward = tab.canGoForward,
-                tabCount = state.tabs.size,
+                tabCount = state.tabs.count { it.privacySpace == PrivacyMode.active },
+                privacyActive = PrivacyMode.active,
                 onChange = {
                     address = it
                     addressDirty = true
@@ -1433,7 +1460,9 @@ fun BrowserScreen(
             return@LaunchedEffect
         }
         val pageIncognito = tabsPage == 1
-        val visible = state.tabs.withIndex().filter { it.value.incognito == pageIncognito }
+        val visible = state.tabs.withIndex().filter {
+            it.value.incognito == pageIncognito && it.value.privacySpace == PrivacyMode.active
+        }
         val pos = visible.indexOfFirst { it.index == state.activeIndex }
         if (pos >= 0) {
             val row = if (settings.tabsStyle == 1) pos / 2 else pos
@@ -1467,7 +1496,9 @@ fun BrowserScreen(
             // 头部同一行：新建 | 标签页/无痕浏览页 切换 | 删除（整行放在 startAction，自己铺满宽度）
             startAction = if (lastActiveSheet == Sheet.Tabs) {
                 {
-                    val pageCount = state.tabs.count { it.incognito == (tabsPage == 1) }
+                    val pageCount = state.tabs.count {
+                        it.incognito == (tabsPage == 1) && it.privacySpace == PrivacyMode.active
+                    }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         val liquid = if (homeBlurAvailable && settings.blurEnabled) liquidBackdrop else null
                         TabAddButton(
@@ -1620,7 +1651,9 @@ fun BrowserScreen(
                     badgeFor = { action ->
                         when (action) {
                             MenuAction.Downloads ->
-                                Downloader.tasks.count { it.state == DownloadState.RUNNING }
+                                Downloader.tasks.count {
+                                    it.state == DownloadState.RUNNING && it.space == (if (PrivacyMode.active) 1 else 0)
+                                }
                             MenuAction.ScriptMenu -> scriptRunCount
                             else -> 0
                         }
@@ -1681,6 +1714,27 @@ fun BrowserScreen(
                     onMove = { action, toHidden, toIndex -> menuOrder.place(action, toHidden, toIndex) },
                     incognitoActive = tab.incognito,
                 )
+                if (PrivacyMode.active) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                PrivacyMode.exit()
+                                sheet = Sheet.None
+                            }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Glass.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MiuixTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(text = "退出隐私模式", fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
+                    }
+                }
             }
 
             Sheet.Link -> {
@@ -1729,7 +1783,7 @@ fun BrowserScreen(
                     when {
                         inlineImage -> {
                             val name = "image_" + System.currentTimeMillis() + ".png"
-                            val ok = Downloader.saveDataUri(context, imageUrl, name)
+                            val ok = Downloader.saveDataUri(context, imageUrl, name, space = if (tab.privacySpace) 1 else 0)
                             android.widget.Toast.makeText(
                                 context,
                                 if (ok) "已保存到 Download/Marea" else "保存失败",
@@ -1868,12 +1922,13 @@ fun BrowserScreen(
                                                     f,
                                                     req.fileName,
                                                     req.mime,
+                                                    space = if (PrivacyMode.active) 1 else 0,
                                                 )
                                                 runCatching { f.delete() }
                                                 ok
                                             }
                                             req.dataUri != null ->
-                                                Downloader.saveDataUri(context, req.dataUri, req.fileName)
+                                                Downloader.saveDataUri(context, req.dataUri, req.fileName, space = if (PrivacyMode.active) 1 else 0)
                                             else -> {
                                                 Downloader.start(
                                                     context = context,
@@ -1883,6 +1938,7 @@ fun BrowserScreen(
                                                     mimeType = req.mime,
                                                     cookie = req.cookie,
                                                     referer = req.referer,
+                                                    space = if (PrivacyMode.active) 1 else 0,
                                                 )
                                                 true
                                             }
@@ -2200,6 +2256,7 @@ fun BrowserScreen(
             onOpenScripts = { pushPage(AppRoute.Extensions) },
             onOpenAdBlock = { pushPage(AppRoute.AdBlockPage) },
             onOpenDispatch = { pushPage(AppRoute.DispatchPage) },
+            onOpenPrivacy = { pushPage(AppRoute.PrivacyPage) },
             onOpenFingerprint = { pushPage(AppRoute.FingerprintPage) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
@@ -2235,6 +2292,12 @@ fun BrowserScreen(
     }
     entry<AppRoute.DispatchPage> {
         DispatchScreen(
+            onBack = { popPage() },
+            blurEnabled = settings.blurEnabled,
+        )
+    }
+    entry<AppRoute.PrivacyPage> {
+        PrivacySettingsScreen(
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
         )
@@ -2340,6 +2403,7 @@ private fun BottomBar(
     canGoForward: Boolean,
     onHome: () -> Unit,
     tabCount: Int,
+    privacyActive: Boolean = false,
     onChange: (String) -> Unit,
     onGo: () -> Unit,
     onBack: () -> Unit,
@@ -2417,6 +2481,18 @@ private fun BottomBar(
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (privacyActive) {
+                    // 隐私模式标记：地址栏内的小药丸（低调但一眼可辨，身在哪个空间不靠猜）
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(MiuixTheme.colorScheme.primary)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    ) {
+                        Text(text = "隐私", fontSize = 11.sp, color = MiuixTheme.colorScheme.onPrimary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 if (loading) {
                     LoadingDot()
                     Spacer(Modifier.width(8.dp))

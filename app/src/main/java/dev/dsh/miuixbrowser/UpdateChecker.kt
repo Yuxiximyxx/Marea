@@ -64,7 +64,7 @@ object UpdateChecker {
                     context = context,
                     url = url,
                     userAgent = null,
-                    fileName = "mafari-${rel.version.removePrefix("v")}.apk",
+                    fileName = "Marea-${rel.version.removePrefix("v")}.apk",
                     mimeType = "application/vnd.android.package-archive",
                 )
                 Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()

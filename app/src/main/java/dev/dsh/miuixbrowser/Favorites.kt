@@ -19,7 +19,7 @@ data class Favorite(
 }
 
 /** 主页收藏（书签）的增删改、分组 + 本地持久化。 */
-class FavoritesStore(context: Context) {
+class FavoritesStore(context: Context, private val storageKey: String = KEY) {
 
     private val prefs = context.getSharedPreferences("mafari", Context.MODE_PRIVATE)
 
@@ -28,7 +28,7 @@ class FavoritesStore(context: Context) {
     }
 
     private fun load(): List<Favorite> {
-        val raw = prefs.getString(KEY, null) ?: return defaults()
+        val raw = prefs.getString(storageKey, null) ?: return defaults()
         return runCatching {
             val array = JSONArray(raw)
             buildList {
@@ -188,7 +188,7 @@ class FavoritesStore(context: Context) {
                     .put("group", it.group),
             )
         }
-        prefs.edit().putString(KEY, array.toString()).apply()
+        prefs.edit().putString(storageKey, array.toString()).apply()
     }
 
     private fun escapeHtml(s: String): String = buildString(s.length) {

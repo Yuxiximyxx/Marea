@@ -16,6 +16,8 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
 import android.webkit.WebViewClient
 import android.view.View
 import androidx.compose.runtime.getValue
@@ -179,6 +181,27 @@ class BrowserTab(private val appContext: Context) {
     /** 无痕浏览标签 */
     var incognito by mutableStateOf(false)
         private set
+
+    /**
+     * 隐私空间标签（fork.5 隐私模式）：与无痕正交——它照常记历史 / 书签 / 下载，
+     * 但只进隐私空间的那一套（普通空间不可见）；Cookie 在 WebView 支持多 Profile 时进独立 Profile。
+     */
+    var privacySpace by mutableStateOf(false)
+        private set
+
+    fun applyPrivacySpace(value: Boolean) {
+        privacySpace = value
+        if (value && PrivacyMode.profileSupported()) {
+            // 必须赶在首次加载前把 WebView 绑到隐私 Profile（Cookie / 本地存储隔离）
+            runCatching {
+                ProfileStore.getInstance().getOrCreateProfile(PrivacyMode.PROFILE_NAME)
+                WebViewCompat.setProfile(webView, PrivacyMode.PROFILE_NAME)
+            }
+        }
+    }
+
+    /** 地址栏输入命中隐私口令时回调（BrowserState 把它接到 PrivacyMode.enter） */
+    var onPrivacyUnlock: (() -> Unit)? = null
 
     fun applyIncognito(value: Boolean) {
         if (incognito == value) return
@@ -1246,6 +1269,15 @@ class BrowserTab(private val appContext: Context) {
     }
 
     fun load(input: String) {
+        // 隐私口令（fork.5）：地址栏输入与预设口令一致 → 进隐私模式，不当搜索词、不进历史；
+        // 输错就走下面正常流程当普通搜索词，不给任何特殊提示。隐私空间内再输入口令按普通词处理。
+        val trimmed = input.trim()
+        if (!privacySpace && onPrivacyUnlock != null &&
+            PrivacyVault.isSet(appContext) && PrivacyVault.verify(appContext, trimmed)
+        ) {
+            onPrivacyUnlock?.invoke()
+            return
+        }
         val target = toUrl(input, searchTemplate)
         // 用户主动发起的顶层加载先过分发引擎：命中规则且送出/挂起确认 → 本次不再站内加载
         if (dispatchTopLevel(target)) return
@@ -2015,7 +2047,11 @@ class BrowserState(private val context: Context) {
         val tab = BrowserTab(context)
         tab.customUserAgent = userAgent
         tab.applyUserAgent()
-        tab.applyIncognito(incognito)
+        // 隐私模式里新建的标签一律进隐私空间（且不算无痕：它有独立的一套历史/书签/下载）
+        val inPrivacy = PrivacyMode.active
+        tab.applyIncognito(if (inPrivacy) false else incognito)
+        tab.applyPrivacySpace(inPrivacy)
+        tab.onPrivacyUnlock = { PrivacyMode.enter() }
         tab.openerId = opener?.id ?: -1
         // 页面自己要开的新标签（window.open / 允许的重定向 / GM_openInTab）以它为 opener
         tab.onOpenInNewTab = { u -> newTab(u, tab.incognito, tab, fromLink = true) }
@@ -2037,7 +2073,7 @@ class BrowserState(private val context: Context) {
     ) {
         if (target.isEmpty()) {
             val cur = tabs.getOrNull(activeIndex)
-            if (cur != null && cur.isBlank && cur.incognito == incognito) return
+            if (cur != null && cur.isBlank && cur.incognito == incognito && cur.privacySpace == PrivacyMode.active) return
         }
         if (tabs.size >= MAX_TABS) {
             android.widget.Toast.makeText(
@@ -2073,7 +2109,7 @@ class BrowserState(private val context: Context) {
         if (!looksLikeUrl(target)) return -1
         val key = siteKey(toUrl(target)) ?: return -1
         return tabs.indexOfFirst { tab ->
-            tab.incognito == incognito && siteKey(tab.effectiveUrl) == key
+            tab.incognito == incognito && tab.privacySpace == PrivacyMode.active && siteKey(tab.effectiveUrl) == key
         }
     }
 
@@ -2107,7 +2143,7 @@ class BrowserState(private val context: Context) {
             return
         }
         val cur = activeTab
-        if (cur.incognito == incognito && cur.url.isEmpty() && (fromStartPage || cur.isBlank)) {
+        if (cur.incognito == incognito && cur.privacySpace == PrivacyMode.active && cur.url.isEmpty() && (fromStartPage || cur.isBlank)) {
             cur.load(target)
         } else {
             newTab(target, incognito)
@@ -2118,8 +2154,40 @@ class BrowserState(private val context: Context) {
     val activeIncognito: Boolean
         get() = activeTab.incognito
 
+    /** 进入隐私模式时调用：切到最近用过的隐私标签，没有就新建一张隐私空间的首页标签 */
+    fun enterPrivacySpace() {
+        val existing = tabs.lastOrNull { it.privacySpace }
+        if (existing != null) {
+            activate(tabs.indexOf(existing))
+        } else {
+            newTab(incognito = false)
+        }
+    }
+
+    /** 退出隐私模式时调用：回到最近用过的普通标签（隐私标签保留，下次进入还在） */
+    fun exitPrivacySpace() {
+        if (!activeTab.privacySpace) return
+        val normal = lastUsedNormal()
+        if (normal != null) {
+            activate(tabs.indexOf(normal))
+        } else {
+            newTab(incognito = false)
+        }
+    }
+
+    /** 最近用过的普通空间标签 */
+    private fun lastUsedNormal(): BrowserTab? {
+        for (id in recentIds.asReversed()) {
+            val t = tabs.firstOrNull { it.id == id }
+            if (t != null && !t.privacySpace) return t
+        }
+        return tabs.lastOrNull { !it.privacySpace }
+    }
+
     /** 切换当前标签无痕状态（无痕时新开标签，已有无痕则关闭回普通） */
     fun toggleIncognito() {
+        // 隐私空间里没有无痕子模式，避免两套隔离语义打架
+        if (PrivacyMode.active) return
         if (activeTab.incognito) {
             // 回到普通：关闭当前无痕标签，回到最近用过的普通标签；没有就新建一个
             closeTab(activeIndex)
@@ -2189,7 +2257,10 @@ class BrowserState(private val context: Context) {
         tabs.getOrNull(i + 1)?.let { candidates.add(it) }
         tabs.getOrNull(i - 1)?.let { candidates.add(it) }
         candidates.addAll(others)
-        return candidates.firstOrNull { it.incognito == closing.incognito } ?: candidates.first()
+        return candidates.firstOrNull { it.privacySpace == closing.privacySpace && it.incognito == closing.incognito }
+            ?: candidates.firstOrNull { it.privacySpace == closing.privacySpace }
+            ?: candidates.firstOrNull { it.incognito == closing.incognito }
+            ?: candidates.first()
     }
 
     fun closeTab(index: Int) {
@@ -2204,6 +2275,11 @@ class BrowserState(private val context: Context) {
             return
         }
         // 关掉的是后台标签时当前标签不能变；关掉当前标签才按层级回退
+        if (wasActive && successor != null && successor.privacySpace != closing.privacySpace) {
+            // 关掉的是当前空间的最后一张：新开一张本空间的，不能落到另一个空间去
+            newTab()
+            return
+        }
         val target = successor?.let { tabs.indexOf(it) } ?: -1
         if (wasActive) {
             activate(if (target >= 0) target else index.coerceAtMost(tabs.lastIndex))

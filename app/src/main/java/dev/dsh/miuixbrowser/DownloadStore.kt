@@ -55,6 +55,7 @@ object DownloadStore {
                 o.put("createdAt", t.createdAt)
                 o.put("etag", t.etag ?: JSONObject.NULL)
                 o.put("lastModified", t.lastModified ?: JSONObject.NULL)
+                o.put("space", t.space)
                 segTables[t.id]?.let { table ->
                     val segs = JSONArray()
                     for (s in table.segments) {
@@ -103,6 +104,7 @@ object DownloadStore {
                     createdAt = o.optLong("createdAt", 0L),
                     etag = str("etag"),
                     lastModified = str("lastModified"),
+                    space = o.optInt("space", 0),
                 )
                 val segs = o.optJSONArray("segments")
                 if (segs != null && segs.length() > 0) {
