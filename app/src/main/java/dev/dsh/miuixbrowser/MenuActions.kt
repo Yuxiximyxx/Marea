@@ -15,6 +15,7 @@ import top.yukonga.miuix.kmp.icon.glass.Link
 import top.yukonga.miuix.kmp.icon.glass.Hide
 import top.yukonga.miuix.kmp.icon.glass.GridView
 import top.yukonga.miuix.kmp.icon.glass.Favorites
+import top.yukonga.miuix.kmp.icon.glass.Folder
 import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Copy
@@ -28,6 +29,7 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     Find("find", "页内查找", MiuixIcons.Glass.Search),
     Translate("translate", "翻译", MiuixIcons.Glass.Translate),
     Favorite("favorite", "收藏", MiuixIcons.Glass.Favorites),
+    FavoritesFolder("favorites_folder", "收藏夹", MiuixIcons.Glass.Folder),
     Share("share", "分享", MiuixIcons.Glass.Share),
     Refresh("refresh", "刷新", MiuixIcons.Glass.Refresh),
     CopyLink("copy", "复制链接", MiuixIcons.Glass.Copy),
@@ -59,7 +61,16 @@ class MenuOrderStore(context: Context) {
                 .mapNotNull { id -> MenuAction.entries.firstOrNull { it.id == id } }
         hidden.addAll(read(KEY_HIDDEN).filter { it != MenuAction.Settings }.distinct())
         order.addAll(read(KEY).filter { it !in hidden }.distinct())
-        MenuAction.entries.forEach { if (it !in order && it !in hidden) order.add(it) }
+        MenuAction.entries.filter { it !in order && it !in hidden }.forEach { action ->
+            if (action == MenuAction.FavoritesFolder) {
+                // 「收藏夹」是后加的入口：紧挨「收藏」插入，老用户升级后也落在收藏旁边而非队尾；
+                // 一旦用户自己拖动排序并持久化，存量顺序里已有它，不再走这个分支
+                val favIndex = order.indexOf(MenuAction.Favorite)
+                if (favIndex >= 0) order.add(favIndex + 1, action) else order.add(action)
+            } else {
+                order.add(action)
+            }
+        }
     }
 
     /** 把 [action] 放到显示区 / 隐藏区的第 [toIndex] 位；「设置」不允许隐藏，避免找不到入口 */

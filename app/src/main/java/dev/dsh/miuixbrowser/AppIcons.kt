@@ -30,6 +30,32 @@ object AppIcons {
             }
         }.build()
 
+    private fun filled(name: String, vararg paths: String): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            paths.forEach { d ->
+                addPath(
+                    pathData = addPathNodes(d),
+                    fill = SolidColor(Color.Black),
+                )
+            }
+        }.build()
+
+    /** 实心爱心：工具菜单里表示「已收藏」。miuix 图标集的心形只有描边粗细变体、没有实心版，故自绘填充版。 */
+    val HeartFilled: ImageVector by lazy {
+        filled(
+            "HeartFilled",
+            "M12,21.35 L10.55,20.03 C5.4,15.36 2,12.28 2,8.5 C2,5.42 4.42,3 7.5,3 " +
+                "C9.24,3 10.91,3.81 12,5.09 C13.09,3.81 14.76,3 16.5,3 " +
+                "C19.58,3 22,5.42 22,8.5 C22,12.28 18.6,15.36 13.45,20.03 Z",
+        )
+    }
+
     /** iOS 风格标签页：前方圆角方块 + 后方露出一个 L 形轮廓。 */
     val Tabs: ImageVector by lazy {
         stroked(

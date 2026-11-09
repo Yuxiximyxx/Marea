@@ -1627,14 +1627,26 @@ fun BrowserScreen(
 
 
             Sheet.Menu -> {
+                // 当前页在「当前空间」书签里的收藏状态：文案、图标与点击行为都按它走。
+                // favorites 已按 PrivacyMode.active 选空间（普通/隐私各一份 store），不会串。
+                val isFavorite = tab.url.isNotBlank() && favorites.items.any { it.url == tab.url }
                 MenuGrid(
                     labelFor = { action ->
-                        if (action == MenuAction.Desktop) {
-                            if (tab.desktopMode) "移动版" else "桌面版"
-                        } else {
-                            action.label
+                        when {
+                            action == MenuAction.Desktop ->
+                                if (tab.desktopMode) "移动版" else "桌面版"
+                            action == MenuAction.Favorite && isFavorite -> "已收藏"
+                            else -> action.label
                         }
                     },
+                    iconFor = { action ->
+                        if (action == MenuAction.Favorite && isFavorite) {
+                            AppIcons.HeartFilled
+                        } else {
+                            action.icon
+                        }
+                    },
+                    favoriteActive = isFavorite,
                     badgeFor = { action ->
                         when (action) {
                             MenuAction.Downloads ->
@@ -1661,8 +1673,14 @@ fun BrowserScreen(
                                 )
                             }
                             MenuAction.Favorite -> if (tab.url.isNotBlank()) {
-                                favorites.add(tab.title.ifBlank { hostOf(tab.url) }, tab.url)
+                                // 状态化：已收藏再点 = 取消收藏，未收藏 = 添加（与菜单显示的状态一致）
+                                if (isFavorite) {
+                                    favorites.removeAtUrl(tab.url)
+                                } else {
+                                    favorites.add(tab.title.ifBlank { hostOf(tab.url) }, tab.url)
+                                }
                             }
+                            MenuAction.FavoritesFolder -> pushPage(AppRoute.Library(0))
                             MenuAction.Share -> if (tab.url.isNotBlank()) {
                                 runCatching {
                                     context.startActivity(
@@ -3924,6 +3942,8 @@ private fun MenuGrid(
     onAction: (MenuAction) -> Unit,
     onMove: (MenuAction, Boolean, Int) -> Unit,
     incognitoActive: Boolean = false,
+    favoriteActive: Boolean = false,
+    iconFor: (MenuAction) -> ImageVector = { it.icon },
     badgeFor: (MenuAction) -> Int = { 0 },
 ) {
     val density = LocalDensity.current
@@ -3981,11 +4001,16 @@ private fun MenuGrid(
                         MenuCell(
                             modifier = Modifier.weight(1f),
                             action = action,
+                            icon = iconFor(action),
                             label = labelFor(action),
                             badge = badgeFor(action),
                             cellHeight = cellHeight,
-                            tint = if (action == MenuAction.Incognito && incognitoActive) purple
-                            else MiuixTheme.colorScheme.onSurface,
+                            tint = when {
+                                action == MenuAction.Incognito && incognitoActive -> purple
+                                action == MenuAction.Favorite && favoriteActive ->
+                                    MiuixTheme.colorScheme.primary
+                                else -> MiuixTheme.colorScheme.onSurface
+                            },
                             dragged = dragAction == action,
                             dragOffset = { dragOffset },
                             dimmed = (dragAction != null && dragAction != action) || (inHidden && dragAction == null),
@@ -4091,6 +4116,7 @@ private fun MenuGrid(
 private fun MenuCell(
     modifier: Modifier,
     action: MenuAction,
+    icon: ImageVector,
     label: String,
     badge: Int,
     cellHeight: androidx.compose.ui.unit.Dp,
@@ -4139,7 +4165,7 @@ private fun MenuCell(
             // 统一 32dp 的图标槽，各格子文字基线一致；脚本图标本身线条偏细偏小，单独放大
             Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = action.icon,
+                    imageVector = icon,
                     contentDescription = label,
                     tint = tint,
                     modifier = Modifier.size(if (action == MenuAction.Extensions) 31.dp else 26.dp),
