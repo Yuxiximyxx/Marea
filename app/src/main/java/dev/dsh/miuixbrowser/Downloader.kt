@@ -384,43 +384,103 @@ object Downloader {
 
     /**
      * 探测结果：[size] < 0 表示未知；[fileName] 是 Content-Disposition 推导名（可空）；
-     * [finalUrl] 是跟随重定向后的最终地址（fork.7：弹窗据此回填，文件名与下载都以它为准）。
+     * [finalUrl] 是跟随重定向后的最终地址（fork.7：弹窗据此回填，文件名与下载都以它为准）；
+     * [error] 是探测失败原因（fork.15）——探测只是锦上添花，失败时弹窗走「直接下载」兜底，
+     * 绝不允许探测把整个弹窗拖死（fork.14 真机：弹窗组成后卡在探测、什么都做不了）。
      */
-    data class ProbeResult(val size: Long, val fileName: String?, val mime: String?, val finalUrl: String? = null)
+    data class ProbeResult(
+        val size: Long,
+        val fileName: String?,
+        val mime: String?,
+        val finalUrl: String? = null,
+        val error: String? = null,
+    )
 
     /**
-     * 轻量探测（fork.5 新建下载弹窗）：先 HEAD（跟随重定向），拿不到长度或 HEAD 被拒时
-     * 用 Range GET bytes=0-0 兜底，从 Content-Range 读总长；读完响应头即断开、不下正文。
+     * 从签名直链的查询参数里推导文件名（fork.15 探测兜底）：GitHub 的 release-assets
+     * 把文件名藏在 rscd（response-content-disposition）参数里——attachment; filename="xxx.apk"，
+     * 路径本身没有文件名、探测又可能失败。解码 query 后按 filename= 提取并清洗；找不到返回 null。
+     * 与弹窗探测共用这一条推导逻辑，站内拦截 / 外部分诊不另造。
+     */
+    fun fileNameFromQuery(url: String): String? {
+        val query = runCatching {
+            URLDecoder.decode(Uri.parse(url).query ?: "", "UTF-8")
+        }.getOrNull().orEmpty()
+        if (query.isBlank()) return null
+        val raw = Regex("""filename\*?\s*=\s*"?([^";\s]+)""").find(query)?.groupValues?.get(1) ?: return null
+        val decoded = runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+        val cleaned = decoded.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        return cleaned.ifBlank { null }?.let { truncateName(it, 80) }
+    }
+
+    /**
+     * 轻量探测（fork.5 新建下载弹窗；fork.15 加固）：读完响应头即断开、不下正文。
+     * - 已知下载主机（签名直链）：跳过 HEAD、直接 Range GET bytes=0-0——HEAD 在这类
+     *   服务器 / 网络下可能迟迟不回，Range 一次就能拿到总长、文件名与最终地址；
+     *   服务器忽略 Range 回 200 时，contentLength 就是全长，照样有效。
+     * - 其他站点：先 HEAD（跟随重定向），拿不到长度或被拒时 Range GET 兜底。
+     * 全程 Diag 步进（开始 / 每次尝试的方法与响应码 / 最终结果 / 失败原因）；
+     * 失败不再静默吞成空结果，原因经 [ProbeResult.error] 交回弹窗走兜底。
      * 带 UA / Cookie 保证登录态站点也能探到。
      */
     suspend fun probe(url: String, userAgent: String?, cookie: String?): ProbeResult =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
-            runCatching {
-                val head = openProbe(url, userAgent, cookie, "HEAD")
-                val headCode = head.responseCode
-                var size = head.contentLengthLong
-                var disposition = head.getHeaderField("Content-Disposition")
-                var mime = head.contentType?.substringBefore(';')
-                var finalUrl = runCatching { head.url?.toString() }.getOrNull()
-                head.disconnect()
-                if (size < 0 || headCode >= 400) {
-                    val ranged = openProbe(url, userAgent, cookie, "GET", range = true)
-                    ranged.responseCode
-                    size = ranged.getHeaderField("Content-Range")
-                        ?.substringAfterLast('/')?.toLongOrNull()
-                        ?: ranged.contentLengthLong
-                    if (disposition == null) disposition = ranged.getHeaderField("Content-Disposition")
-                    if (mime == null) mime = ranged.contentType?.substringBefore(';')
-                    finalUrl = runCatching { ranged.url?.toString() }.getOrNull() ?: finalUrl
-                    ranged.disconnect()
+            val host = runCatching { Uri.parse(url).host }.getOrNull()
+            Diag.log("probe start: host=$host url=${url.take(100)}")
+            val result = runCatching {
+                var disposition: String? = null
+                var mime: String? = null
+                var finalUrl: String? = null
+                val skipHead = host?.lowercase() in DOWNLOAD_HOSTS
+                if (!skipHead) {
+                    val head = openProbe(url, userAgent, cookie, "HEAD")
+                    val headCode = head.responseCode
+                    Diag.log("probe attempt: HEAD host=$host -> HTTP $headCode")
+                    val headSize = head.contentLengthLong
+                    disposition = head.getHeaderField("Content-Disposition")
+                    mime = head.contentType?.substringBefore(';')
+                    finalUrl = runCatching { head.url?.toString() }.getOrNull()
+                    head.disconnect()
+                    if (headCode in 200..399 && headSize >= 0) {
+                        return@runCatching ProbeResult(
+                            size = headSize,
+                            fileName = disposition?.let { fileNameFrom(finalUrl ?: url, it) },
+                            mime = mime,
+                            finalUrl = finalUrl,
+                        )
+                    }
                 }
+                val ranged = openProbe(url, userAgent, cookie, "GET", range = true)
+                val rangeCode = ranged.responseCode
+                Diag.log("probe attempt: RangeGET host=$host -> HTTP $rangeCode")
+                val rangeTotal = ranged.getHeaderField("Content-Range")
+                    ?.substringAfterLast('/')?.toLongOrNull()
+                val size = when {
+                    rangeCode == 206 && rangeTotal != null -> rangeTotal
+                    // 服务器忽略 Range 直接回 200 全文：contentLength 就是总长，有效
+                    rangeCode == 200 -> ranged.contentLengthLong
+                    rangeTotal != null -> rangeTotal
+                    else -> ranged.contentLengthLong
+                }
+                if (disposition == null) disposition = ranged.getHeaderField("Content-Disposition")
+                if (mime == null) mime = ranged.contentType?.substringBefore(';')
+                finalUrl = runCatching { ranged.url?.toString() }.getOrNull() ?: finalUrl
+                ranged.disconnect()
+                if (rangeCode >= 400) throw IllegalStateException("HTTP $rangeCode")
                 ProbeResult(
                     size = size,
                     fileName = disposition?.let { fileNameFrom(finalUrl ?: url, it) },
                     mime = mime,
                     finalUrl = finalUrl,
                 )
-            }.getOrDefault(ProbeResult(-1L, null, null))
+            }.getOrElse { e ->
+                ProbeResult(-1L, null, null, error = "${e.javaClass.simpleName}: ${e.message}")
+            }
+            Diag.log(
+                "probe result: host=$host size=${result.size} mime=${result.mime} " +
+                    "fileName=${result.fileName} error=${result.error ?: "-"} finalUrl=${result.finalUrl?.take(80)}",
+            )
+            result
         }
 
     private fun openProbe(url: String, userAgent: String?, cookie: String?, method: String, range: Boolean = false): HttpURLConnection {

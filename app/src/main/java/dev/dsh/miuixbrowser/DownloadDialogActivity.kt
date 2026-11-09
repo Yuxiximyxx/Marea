@@ -137,6 +137,7 @@ class DownloadDialogActivity : ComponentActivity() {
                                 finish()
                             },
                             onConfirm = { fileName, startNow ->
+                                Diag.log("DownloadDialogActivity: confirm clicked startNow=$startNow fileName=$fileName")
                                 val cookie = PrivacyMode.cookieFor(url, privacy = false)
                                 if (startNow) {
                                     Downloader.start(
@@ -159,6 +160,7 @@ class DownloadDialogActivity : ComponentActivity() {
                                     )
                                     Toast.makeText(this@DownloadDialogActivity, "已添加到下载列表", Toast.LENGTH_SHORT).show()
                                 }
+                                Diag.log("DownloadDialogActivity: task created via ${if (startNow) "Downloader.start" else "Downloader.addPaused"} fileName=$fileName")
                                 finish()
                             },
                         )
@@ -226,22 +228,37 @@ fun NewDownloadSheet(
     var probing by remember(url) { mutableStateOf(true) }
     var size by remember(url) { mutableStateOf(-1L) }
     var probeMime by remember(url) { mutableStateOf<String?>(null) }
+    var probeError by remember(url) { mutableStateOf<String?>(null) }
     var resolvedUrl by remember(url) { mutableStateOf(url) }
     var probeTick by remember(url) { mutableIntStateOf(0) }
 
     LaunchedEffect(url, probeTick) {
         probing = true
-        val result = Downloader.probe(url, null, PrivacyMode.cookieFor(url, privacy = false))
-        size = result.size
-        probeMime = result.mime
+        probeError = null
+        Diag.log("NewDownloadSheet: probe begin url=${url.take(100)}")
+        // 探测绝不许把弹窗拖死（fork.15）：20 秒封顶，超时 / 异常一律按探测失败处理，
+        // 落到下面的兜底态——文件名从链接参数推导、按钮给「直接下载」，不依赖探测元数据
+        val result = runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(20_000) {
+                Downloader.probe(url, null, PrivacyMode.cookieFor(url, privacy = false))
+            }
+        }.getOrNull()
+        size = result?.size ?: -1L
+        probeMime = result?.mime
+        probeError = result?.error ?: if (result == null) "探测超时" else null
         // 重定向后的最终地址回填：文件名与实际下载都以它为准
-        if (!result.finalUrl.isNullOrBlank()) {
+        if (!result?.finalUrl.isNullOrBlank()) {
             resolvedUrl = result.finalUrl
             if (result.finalUrl != url) onUrlResolved(result.finalUrl)
         }
         // 探测带回的 Content-Disposition 文件名只在用户还没手改时覆盖
-        if (!nameEdited && !result.fileName.isNullOrBlank()) fileName = result.fileName
+        if (!nameEdited && !result?.fileName.isNullOrBlank()) fileName = result.fileName
+        // 探测没给出文件名时，从签名直链的查询参数推导（release-assets 的 rscd 里藏着真名）
+        if (!nameEdited && result?.fileName.isNullOrBlank()) {
+            Downloader.fileNameFromQuery(url)?.let { fileName = it }
+        }
         probing = false
+        Diag.log("NewDownloadSheet: probe settled size=$size mime=$probeMime error=${probeError ?: "-"} fileName=$fileName")
     }
 
     AppBottomSheet(
@@ -301,6 +318,7 @@ fun NewDownloadSheet(
                 text = when {
                     probing -> "探测中…"
                     size >= 0 -> formatBytes(size)
+                    probeError != null -> "未知（探测失败）"
                     else -> "未知"
                 },
                 fontSize = 14.sp,
@@ -340,7 +358,7 @@ fun NewDownloadSheet(
         Row(modifier = Modifier.fillMaxWidth()) {
             AppDialogButton(
                 onClick = {
-                    onConfirm(fileName.ifBlank { Downloader.fileNameFrom(url, null) }, false)
+                    onConfirm(fileName.ifBlank { Downloader.fileNameFromQuery(url) ?: Downloader.fileNameFrom(url, null) }, false)
                 },
                 modifier = Modifier.weight(1f),
             ) {
@@ -349,12 +367,15 @@ fun NewDownloadSheet(
             Spacer(Modifier.width(12.dp))
             AppDialogButton(
                 onClick = {
-                    onConfirm(fileName.ifBlank { Downloader.fileNameFrom(url, null) }, true)
+                    onConfirm(fileName.ifBlank { Downloader.fileNameFromQuery(url) ?: Downloader.fileNameFrom(url, null) }, true)
                 },
                 modifier = Modifier.weight(1f),
                 role = GlassDialogButtonRole.Primary,
             ) {
-                Text(text = "下载", style = MiuixTheme.textStyles.button)
+                // 兜底铁律（fork.15）：探测失败时主按钮明示「直接下载」——不依赖任何探测
+                // 元数据（大小 / MIME / 最终地址），拿链接与推导文件名直接建任务开下；
+                // 「在浏览器打开」永远只是附加出口，绝不是唯一出路。探测中也不锁按钮。
+                Text(text = if (probeError != null) "直接下载" else "下载", style = MiuixTheme.textStyles.button)
             }
         }
         Spacer(Modifier.height(8.dp))
