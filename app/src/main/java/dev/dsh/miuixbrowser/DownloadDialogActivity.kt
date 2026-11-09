@@ -8,16 +8,21 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -32,13 +37,16 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -117,7 +125,7 @@ class DownloadDialogActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalBlurMode provides settings.blurMode) {
                     val url = urlState.value
                     if (url.isNotBlank()) {
-                        NewDownloadSheet(
+                        DownloadConfirmPanel(
                             url = url,
                             onDismiss = { finish() },
                             onUrlResolved = { resolved ->
@@ -426,4 +434,213 @@ private fun formatBytes(bytes: Long): String = when {
     bytes < 1024 * 1024 -> String.format("%.1f KB", bytes / 1024.0)
     bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
     else -> String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024))
+}
+
+/**
+ * fork.18：下载确认改普通内联面板——直接画进本 Activity 自己的窗口，不再经
+ * NewDownloadSheet → AppBottomSheet → miuix 覆盖层 sheet（GlassBottomSheet /
+ * OverlayBottomSheet 靠独立 Dialog / Popup 窗口呈现）。fork.17 真机实证：本 Activity
+ * 窗口已获焦（dialog window focused 双行俱在）、主题正常，唯独那套覆盖层内容自
+ * fork.5 起从未在该机渲染出来过（状态 / 探测 / 日志全跑、画面不出）。本面板的组合树
+ * 里只有基础内联组件（Box / Column / Row / Text / TextField / TextButton），探测状态
+ * 机与 NewDownloadSheet 同一份口径：probeShared await（只捕 TimeoutCancellation-
+ * Exception）、probe settled / display 两行 Diag 一字未改、fileNameFromQuery 兜底、
+ * onUrlResolved 回填、onConfirm 建任务；NewDownloadSheet 本体保留不动。
+ */
+@Composable
+fun DownloadConfirmPanel(
+    url: String,
+    onDismiss: () -> Unit,
+    onConfirm: (fileName: String, startNow: Boolean) -> Unit,
+    onUrlResolved: (String) -> Unit = {},
+    onOpenInBrowser: (String) -> Unit = {},
+) {
+    val clipboard = LocalClipboardManager.current
+    var fileName by remember(url) { mutableStateOf(Downloader.fileNameFrom(url, null)) }
+    var nameEdited by remember(url) { mutableStateOf(false) }
+    var probing by remember(url) { mutableStateOf(true) }
+    var size by remember(url) { mutableStateOf(-1L) }
+    var probeMime by remember(url) { mutableStateOf<String?>(null) }
+    var probeError by remember(url) { mutableStateOf<String?>(null) }
+    var resolvedUrl by remember(url) { mutableStateOf(url) }
+    var probeTick by remember(url) { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) { Diag.log("DownloadDialogActivity: plain panel composed") }
+
+    LaunchedEffect(url, probeTick) {
+        probing = true
+        probeError = null
+        Diag.log("NewDownloadSheet: probe begin url=${url.take(100)}")
+        // 与 NewDownloadSheet 相同的探测口径（fork.16）：只 await Downloader 的共享
+        // Deferred，全链唯一的 20 秒封顶只捕 TimeoutCancellationException，其余取消不吞。
+        val result: Downloader.ProbeResult? = try {
+            kotlinx.coroutines.withTimeout(20_000) {
+                Downloader.probeShared(
+                    url, null, PrivacyMode.cookieFor(url, privacy = false),
+                    fresh = probeTick > 0,
+                ).await()
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Diag.log("NewDownloadSheet: probe wait timeout (20s) url=${url.take(100)}")
+            null
+        }
+        size = result?.size ?: -1L
+        probeMime = result?.mime
+        probeError = result?.error ?: if (result == null) "探测超时" else null
+        // 重定向后的最终地址回填：文件名与实际下载都以它为准
+        if (!result?.finalUrl.isNullOrBlank()) {
+            resolvedUrl = result.finalUrl
+            if (result.finalUrl != url) onUrlResolved(result.finalUrl)
+        }
+        // 探测带回的 Content-Disposition 文件名只在用户还没手改时覆盖
+        if (!nameEdited && !result?.fileName.isNullOrBlank()) fileName = result.fileName
+        // 探测没给出文件名时，从签名直链的查询参数推导（release-assets 的 rscd 里藏着真名）
+        if (!nameEdited && result?.fileName.isNullOrBlank()) {
+            Downloader.fileNameFromQuery(url)?.let { fileName = it }
+        }
+        probing = false
+        Diag.log("NewDownloadSheet: probe settled size=$size mime=$probeMime error=${probeError ?: "-"} fileName=$fileName")
+        // 弹窗最终展示态（fork.16）：与界面渲染同式计算，diag 里可直接核对
+        val displaySizeText = when {
+            size >= 0 -> formatBytes(size)
+            probeError != null -> "未知（探测失败）"
+            else -> "未知"
+        }
+        val displayPrimary = if (probeError != null) "直接下载" else "下载"
+        Diag.log("NewDownloadSheet: display fileName=$fileName sizeText=$displaySizeText primary=$displayPrimary")
+    }
+
+    // 遮罩与面板都是本窗口内的普通内联布局：点遮罩关闭，面板本体消费点击不穿透
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ComposeColor.Black.copy(alpha = 0.35f))
+            .clickable { onDismiss() },
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clickable { }
+                .background(
+                    MiuixTheme.colorScheme.surface,
+                    RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                )
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+        ) {
+            Text(
+                text = "新建下载",
+                fontSize = 19.sp,
+                color = MiuixTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(14.dp))
+            // 链接行：完整 URL（最多三行省略）+ 复制按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = url,
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clickable { clipboard.setText(AnnotatedString(url)) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Copy,
+                        contentDescription = "复制链接",
+                        modifier = Modifier.size(19.dp),
+                        tint = MiuixTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            TextField(
+                value = fileName,
+                onValueChange = {
+                    fileName = it
+                    nameEdited = true
+                },
+                label = "文件名",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(12.dp))
+            // 信息行：文件大小（探测中 / 数值 / 未知 + 重探）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "文件大小", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = when {
+                        probing -> "探测中…"
+                        size >= 0 -> formatBytes(size)
+                        probeError != null -> "未知（探测失败）"
+                        else -> "未知"
+                    },
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable(enabled = !probing) { probeTick++ },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Refresh,
+                        contentDescription = "重新探测",
+                        modifier = Modifier.size(17.dp),
+                        tint = if (probing) {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        } else {
+                            MiuixTheme.colorScheme.primary
+                        },
+                    )
+                }
+            }
+            // 逃生口：探测发现下到的其实是网页（text/html）时给一条回主界面的路
+            if (!probing && probeMime?.startsWith("text/html") == true) {
+                Spacer(Modifier.height(14.dp))
+                TextButton(
+                    text = "在浏览器打开",
+                    onClick = { onOpenInBrowser(resolvedUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TextButton(
+                    text = "添加",
+                    onClick = {
+                        onConfirm(fileName.ifBlank { Downloader.fileNameFromQuery(url) ?: Downloader.fileNameFrom(url, null) }, false)
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                TextButton(
+                    // 兜底铁律（fork.15）：探测失败时主按钮明示「直接下载」，不依赖探测
+                    // 元数据直接建任务开下；探测中也不锁按钮
+                    text = if (probeError != null) "直接下载" else "下载",
+                    onClick = {
+                        onConfirm(fileName.ifBlank { Downloader.fileNameFromQuery(url) ?: Downloader.fileNameFrom(url, null) }, true)
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
 }
