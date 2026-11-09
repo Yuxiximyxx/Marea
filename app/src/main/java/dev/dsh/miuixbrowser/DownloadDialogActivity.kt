@@ -197,7 +197,13 @@ class DownloadDialogActivity : ComponentActivity() {
         private val URL_IN_TEXT = Regex("""https?://[^\s<>"']+""")
 
         fun intent(context: Context, url: String): Intent =
-            Intent(context, DownloadDialogActivity::class.java).putExtra(EXTRA_URL, url)
+            Intent(context, DownloadDialogActivity::class.java)
+                .putExtra(EXTRA_URL, url)
+                .apply {
+                    // 非 Activity 上下文（如标签持有的 appContext，fork.15 的站内拦截）拉起
+                    // 必须带 NEW_TASK，否则系统直接抛异常、弹窗出不来
+                    if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
     }
 }
 

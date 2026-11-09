@@ -810,6 +810,16 @@ class BrowserTab(private val appContext: Context) {
                         if (LinkDispatch.dispatch(appContext, rule, finalUrl)) return true
                     }
                 }
+                // 直链下载拦截（fork.15）：主框架 http(s) 导航先按文件形态判定——GitHub 资产
+                // 链接这类点击，目标本身就是下载地址（下载域名 / 路径扩展名 / 参数里的文件名），
+                // 命中就取消导航、直接拉起下载确认框，不让 WebView 把直链当网页加载成死页。
+                // 位置在分发规则（CLICK）之后，规则优先级不变；服务器 3xx 跳转不经过这里，
+                // 最终响应的附件由 DownloadListener 兜底，两处都留了 Diag 步进便于真机对路径。
+                if (request.isForMainFrame && (clickScheme == "http" || clickScheme == "https") &&
+                    tryInterceptFileDownload(target, "click")
+                ) {
+                    return true
+                }
                 val scheme = request.url.scheme ?: return false
                 if (scheme == "http" || scheme == "https") {
                     val proceed = { openRedirectInNewTab(target) }
@@ -922,6 +932,8 @@ class BrowserTab(private val appContext: Context) {
         }
 
         webView.setDownloadListener { link, userAgent, contentDisposition, mimeType, _ ->
+            // fork.15 步进：最终响应被 WebView 判为下载时落盘——与点击拦截互为对照，真机可读出直链最终走了哪条路
+            Diag.log("DownloadListener fired: host=${runCatching { Uri.parse(link).host }.getOrNull()} mime=$mimeType disposition=${contentDisposition?.take(60)} url=${link.take(100)}")
             // 一些站点把 .user.js 以附件形式返回，会走到下载回调；这里改成「导入脚本」
             when {
                 isUserScriptUrl(link) -> onUserScriptLink?.invoke(link)
@@ -1299,8 +1311,35 @@ class BrowserTab(private val appContext: Context) {
         performLoad(target)
     }
 
+    /**
+     * 直链下载拦截（fork.15）：目标 URL 命中文件形态（[Downloader.looksLikeFileUrl]：
+     * 已知下载域名 / 路径扩展名 / 查询参数里的文件名）时，取消本次站内加载，改走应用内
+     * 显式拉起既有的下载确认框（DownloadDialogActivity，与外部分诊同一个弹窗），
+     * 返回 true 表示已接管。只认 http(s)，判定不发网络请求。
+     * 调用点共三处：标签内点击（shouldOverrideUrlLoading，分发规则之后）、顶层加载
+     * （performLoad）、新窗口目标（handlePopupTarget）——把进 WebView 的路都堵上，
+     * 避免直链被当网页打开成「不下载、什么也做不了」的死页。
+     */
+    private fun tryInterceptFileDownload(target: String, source: String): Boolean {
+        val uri = runCatching { Uri.parse(target) }.getOrNull() ?: return false
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return false
+        val hit = Downloader.looksLikeFileUrl(target)
+        Diag.log("FileDownloadCheck[$source]: host=${uri.host} hit=$hit url=${target.take(100)}")
+        if (!hit) return false
+        val launched = runCatching {
+            appContext.startActivity(DownloadDialogActivity.intent(appContext, target))
+        }.isSuccess
+        Diag.log("FileDownloadCheck[$source]: dialog launched=$launched url=${target.take(100)}")
+        return launched
+    }
+
     /** 实际执行站内加载（已过分发判定，或分发确认被拒/送出失败回退时调用） */
     private fun performLoad(target: String) {
+        // 顶层加载的直链拦截（fork.15）：地址栏 / 外部链接 / 书签历史进来的直链同样不进
+        // WebView——在分发判定之后、真正加载之前拉起下载确认框（分发确认被拒的回退加载
+        // 也会走到这里，文件链接被拒送出后改走下载框正是想要的结果）。
+        if (tryInterceptFileDownload(target, "top-level")) return
         if (url.isEmpty() && !openedFromLink) {
             // 从主页进入新页面：记下 WebView 历史的当前位置，返回到这一层就回主页
             fromHome = true
@@ -1701,6 +1740,8 @@ class BrowserTab(private val appContext: Context) {
     }
 
     private fun handlePopupTarget(target: String, targetHost: String, linkClick: Boolean) {
+        // 新窗口目标若是直链下载（fork.15）：不新开标签当网页打开，改走下载确认框
+        if (tryInterceptFileDownload(target, "popup")) return
         val open = onOpenInNewTab ?: return
         val sameSite = pageHost.isNotEmpty() && targetHost.isNotEmpty() && isSameSite(targetHost, pageHost)
         if (sameSite || pageHost.isEmpty()) {

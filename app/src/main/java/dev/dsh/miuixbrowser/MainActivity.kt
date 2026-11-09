@@ -89,9 +89,12 @@ class MainActivity : ComponentActivity() {
                         // EXTRA_OPEN_IN_BROWSER 回来，这类意图不再重复拦截（防循环）。
                         // 注意：命中弹窗时不设 externalHandled——主界面留在弹窗之下，不做退场收尾，
                         // 关弹窗即回浏览器（与 fork.5/6 分诊转手时序吞启动的老问题无关）。
-                        if (!intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false) &&
-                            Downloader.looksLikeFileUrl(url)
-                        ) {
+                        val fromDialogEscape = intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false)
+                        val fileLike = Downloader.looksLikeFileUrl(url)
+                        // fork.15 步进：外部分诊的输入与判定结果都落盘（规则结果见 LinkRouter 日志），
+                        // 真机再出问题时能直接读出链接在哪一环被放行进了浏览器
+                        Diag.log("MainActivity triage: host=${data.host} fileLike=$fileLike escape=$fromDialogEscape")
+                        if (!fromDialogEscape && fileLike) {
                             Diag.log("MainActivity: file-like external url -> download dialog: ${url.take(100)}")
                             runCatching { startActivity(DownloadDialogActivity.intent(this, url)) }
                                 .onFailure { incomingUrl.value = url }
