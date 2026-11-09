@@ -209,6 +209,9 @@ class BrowserTab(private val appContext: Context) {
     /** 地址栏输入命中隐私口令时回调（BrowserState 把它接到 PrivacyMode.enter） */
     var onPrivacyUnlock: (() -> Unit)? = null
 
+    /** 地址栏在隐私模式中再次命中同一口令时回调（fork.12 开关式退出，接到 PrivacyMode.exit） */
+    var onPrivacyLock: (() -> Unit)? = null
+
     fun applyIncognito(value: Boolean) {
         if (incognito == value) return
         incognito = value
@@ -1275,14 +1278,20 @@ class BrowserTab(private val appContext: Context) {
     }
 
     fun load(input: String) {
-        // 隐私口令（fork.5）：地址栏输入与预设口令一致 → 进隐私模式，不当搜索词、不进历史；
-        // 输错就走下面正常流程当普通搜索词，不给任何特殊提示。隐私空间内再输入口令按普通词处理。
+        // 隐私口令（fork.5；fork.12 改开关式）：地址栏输入与预设口令一致 → 切换隐私模式——
+        // 未开启时进入、已开启时再次输入同一口令退出；命中口令的输入不当搜索词、不进历史。
+        // 输错就走下面正常流程当普通搜索词，不给任何特殊提示。
         val trimmed = input.trim()
-        if (!privacySpace && onPrivacyUnlock != null &&
-            PrivacyVault.isSet(appContext) && PrivacyVault.verify(appContext, trimmed)
-        ) {
-            onPrivacyUnlock?.invoke()
-            return
+        if (PrivacyVault.isSet(appContext) && PrivacyVault.verify(appContext, trimmed)) {
+            if (PrivacyMode.active) {
+                if (onPrivacyLock != null) {
+                    onPrivacyLock?.invoke()
+                    return
+                }
+            } else if (!privacySpace && onPrivacyUnlock != null) {
+                onPrivacyUnlock?.invoke()
+                return
+            }
         }
         val target = toUrl(input, searchTemplate)
         // 用户主动发起的顶层加载先过分发引擎：命中规则且送出/挂起确认 → 本次不再站内加载
@@ -2058,6 +2067,7 @@ class BrowserState(private val context: Context) {
         tab.applyIncognito(if (inPrivacy) false else incognito)
         tab.applyPrivacySpace(inPrivacy)
         tab.onPrivacyUnlock = { PrivacyMode.enter() }
+        tab.onPrivacyLock = { PrivacyMode.exit() }
         tab.openerId = opener?.id ?: -1
         // 页面自己要开的新标签（window.open / 允许的重定向 / GM_openInTab）以它为 opener
         tab.onOpenInNewTab = { u -> newTab(u, tab.incognito, tab, fromLink = true) }

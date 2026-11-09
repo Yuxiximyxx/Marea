@@ -3,6 +3,7 @@ package dev.dsh.miuixbrowser
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -54,10 +57,11 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantBackdr
  * 已在真机大量使用、确认不崩的链接分发页（DispatchScreen）逐件同构重写——
  * 骨架 / 顶栏 / 双 backdrop / 卡片 / 输入框一律与分发页同款同用法，只保留隐私
  * 业务内容与既有 Diag 步进日志，做结构级整体排除。与分发页对齐的取舍：
- * - 输入框用分发页编辑器的确切调用形态（miuix TextField，仅 value/onValueChange/
- *   fillMaxWidth/label/singleLine）；本版口令**明文显示**、不设密码键盘——纯粹为
- *   结构对齐的诊断取舍，定位收口后恢复掩码与密码键盘。
- * - 字段的 onFocusChanged 获焦日志随该修饰符一并去除（三行）；其余步进日志保留。
+ * - 输入框用分发页编辑器的调用形态（miuix TextField）；fork.11 时口令为结构
+ *   对齐一度**明文显示**，fork.12 已恢复掩码（PasswordVisualTransformation）
+ *   与密码键盘，但当年随「密码三件套」一并摘掉的焦点监听修饰符**不带回**——
+ *   它当年只挂诊断日志、本无功能必要；真凶未逐个隔离，这样恢复掩码最稳妥。
+ * - 字段的获焦日志随焦点监听修饰符一并去除（三行）；其余步进日志保留。
  * - 清除口令确认弹窗移到 Scaffold 内容 Box 内（与分发页的编辑器 / 报告弹窗同位置）。
  */
 @Composable
@@ -226,6 +230,8 @@ fun PrivacySettingsScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         label = "当前口令",
                                         singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                        visualTransformation = PasswordVisualTransformation(),
                                     )
                                     Spacer(Modifier.height(10.dp))
                                 }
@@ -235,6 +241,8 @@ fun PrivacySettingsScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     label = if (passwordSet) "新口令" else "设置口令",
                                     singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    visualTransformation = PasswordVisualTransformation(),
                                 )
                                 Spacer(Modifier.height(10.dp))
                                 TextField(
@@ -243,6 +251,8 @@ fun PrivacySettingsScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     label = "再输入一次",
                                     singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    visualTransformation = PasswordVisualTransformation(),
                                 )
                                 Spacer(Modifier.height(12.dp))
                                 AppTextButton(
