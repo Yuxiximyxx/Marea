@@ -9,7 +9,7 @@
         <item name="android:colorPrimary">#3B7DFF</item>
         <item name="android:colorAccent">#3B7DFF</item>
         <item name="android:windowSplashScreenBackground">#FF111111</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_night</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
         <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
 </resources>
