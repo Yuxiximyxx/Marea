@@ -17,12 +17,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,10 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -72,6 +78,7 @@ fun DispatchScreen(
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
     var editing by remember { mutableStateOf<DispatchRule?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
+    var organizeOpen by remember { mutableStateOf(false) }
     var importReport by remember { mutableStateOf<LinkDispatch.ImportReport?>(null) }
     val context = LocalContext.current
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -248,6 +255,33 @@ fun DispatchScreen(
                                 }
                             }
                         }
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp)
+                                    .padding(bottom = 8.dp),
+                                insideMargin = PaddingValues(14.dp),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { organizeOpen = true },
+                                ) {
+                                    Text(
+                                        text = "整理规则",
+                                        fontSize = 15.sp,
+                                        color = MiuixTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        text = "按目标应用归类、启用状态或名称重排规则顺序，或检测目标应用未安装的规则一键停用 / 移到末尾",
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -273,6 +307,12 @@ fun DispatchScreen(
                 report = importReport,
                 backdrop = if (glass) backdrop else null,
                 onDismiss = { importReport = null },
+            )
+
+            OrganizeSheet(
+                show = organizeOpen,
+                backdrop = if (glass) backdrop else null,
+                onDismiss = { organizeOpen = false },
             )
         }
     }
@@ -558,5 +598,186 @@ private fun RuleEditorDialog(
                 }
             }
         }
+    }
+}
+
+/** 整理规则面板（底部弹窗，形态对齐 LinkGo 一键整理）：多选排序维度 + 未安装应用检测清理 */
+@Composable
+private fun OrganizeSheet(
+    show: Boolean,
+    backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var groupByApp by remember(show) { mutableStateOf(false) }
+    var enabledFirst by remember(show) { mutableStateOf(false) }
+    var byName by remember(show) { mutableStateOf(false) }
+    var uninstalled by remember(show) { mutableStateOf<List<DispatchRule>>(emptyList()) }
+    LaunchedEffect(show) {
+        if (show) uninstalled = LinkDispatch.uninstalledRules(context)
+    }
+    val anySort = groupByApp || enabledFirst || byName
+
+    AppBottomSheet(
+        show = show,
+        title = "整理规则",
+        backdrop = backdrop,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp),
+        ) {
+            Text(
+                text = "多选排序维度，重新排列规则顺序或清理失效规则",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "排序方式",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(0.dp),
+            ) {
+                OrganizeOptionRow(
+                    title = "按目标应用归类",
+                    summary = "相同应用的规则聚在一块，组内按匹配精度排序",
+                    checked = groupByApp,
+                    onCheckedChange = { groupByApp = it },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                OrganizeOptionRow(
+                    title = "已启用的排在前面",
+                    summary = "开启的规则置顶，关闭的规则沉底",
+                    checked = enabledFirst,
+                    onCheckedChange = { enabledFirst = it },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                OrganizeOptionRow(
+                    title = "按规则名称（A-Z）",
+                    summary = "按规则名称拼音/字母顺序排列",
+                    checked = byName,
+                    onCheckedChange = { byName = it },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "规则顺序即分发优先级：排在前面的先命中。重排会改变命中顺序，应用后立即生效。",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(10.dp))
+            AppDialogButton(
+                onClick = {
+                    LinkDispatch.organize(groupByApp, enabledFirst, byName)
+                    uninstalled = LinkDispatch.uninstalledRules(context)
+                    android.widget.Toast.makeText(context, "已按所选维度重新排序", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = anySort,
+                role = GlassDialogButtonRole.Primary,
+            ) {
+                Text(text = "应用排序", style = MiuixTheme.textStyles.button)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = "失效规则清理",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                insideMargin = PaddingValues(14.dp),
+            ) {
+                Text(
+                    text = "未安装应用检测",
+                    fontSize = 15.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                if (uninstalled.isEmpty()) {
+                    Text(
+                        text = "未检测到目标应用未安装的规则",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                } else {
+                    Text(
+                        text = "检测到 ${uninstalled.size} 条规则的目标应用在本机未安装",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        AppTextButton(
+                            text = "一键停用",
+                            enabled = uninstalled.any { it.enabled },
+                            onClick = {
+                                LinkDispatch.disableByIds(uninstalled.map { it.id }.toSet())
+                                uninstalled = LinkDispatch.uninstalledRules(context)
+                                android.widget.Toast.makeText(context, "已停用目标应用未安装的规则", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        AppDialogButton(
+                            onClick = {
+                                LinkDispatch.moveToEndByIds(uninstalled.map { it.id }.toSet())
+                                uninstalled = LinkDispatch.uninstalledRules(context)
+                                android.widget.Toast.makeText(context, "已把这批规则移到末尾", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(text = "移到末尾", style = MiuixTheme.textStyles.button)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrganizeOptionRow(
+    title: String,
+    summary: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                color = MiuixTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = summary,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Checkbox(
+            state = if (checked) ToggleableState.On else ToggleableState.Off,
+            onClick = null,
+        )
     }
 }

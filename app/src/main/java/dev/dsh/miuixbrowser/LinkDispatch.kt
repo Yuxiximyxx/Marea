@@ -3,6 +3,7 @@ package dev.dsh.miuixbrowser
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -10,6 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.Collator
+import java.util.Locale
 import java.util.UUID
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
@@ -463,4 +466,123 @@ object LinkDispatch {
     }
 
     fun enabledRuleCount(): Int = rules.count { it.enabled }
+
+    // ---------- 规则整理（排序 / 未安装检测）：只重排与批量改启停，不动判定语义 ----------
+
+    /**
+     * 匹配精度评分（越大越具体、越靠前），「整理规则」的兜底排序键。启发式：
+     * - 匹配方式基线：正则整行 300 > 域名 200 > 包含子串 100（正则能锚定整行，最具体；包含最泛）；
+     * - 正则带 ^ / $ 锚点 +40（去掉开头的 (?i) 等标志组后判断首尾）；
+     * - 模式串长度每字符 +1（上限 +100）：越长通常越具体；
+     * - 正则里每个 .* / .+ 通配 -15：通配越多越泛。
+     */
+    fun specificityScore(rule: DispatchRule): Int {
+        var score = when (rule.matchType) {
+            0 -> 300
+            1 -> 200
+            else -> 100
+        }
+        val p = rule.pattern.trim()
+        score += minOf(p.length, 100)
+        if (rule.matchType == 0) {
+            val body = p.replace(Regex("^\\(\\?[a-zA-Z]+\\)"), "")
+            if (body.startsWith("^") || body.endsWith("$")) score += 40
+            score -= 15 * Regex("\\.\\*|\\.\\+").findAll(p).count()
+        }
+        return score
+    }
+
+    private fun compareForOrganize(
+        x: IndexedValue<DispatchRule>,
+        y: IndexedValue<DispatchRule>,
+        enabledFirst: Boolean,
+        byName: Boolean,
+        collator: Collator,
+    ): Int {
+        val a = x.value
+        val b = y.value
+        if (enabledFirst) {
+            val c = b.enabled.compareTo(a.enabled)
+            if (c != 0) return c
+        }
+        if (byName) {
+            val c = collator.compare(a.name, b.name)
+            if (c != 0) return c
+        }
+        val c = specificityScore(b).compareTo(specificityScore(a))
+        if (c != 0) return c
+        return x.index.compareTo(y.index)
+    }
+
+    /**
+     * 按所选维度重排规则并落盘（列表顺序即分发优先级）。组合语义是确定的：
+     * 1) 归类（groupByApp）为最外层：相同目标包名的规则聚成一组（目标为空 = 系统选择，自成一组）；
+     *    组与组的先后由「组内排得最靠前的那条规则在全体中的名次」决定；
+     * 2) 组内（未开归类时即全体）依次比较：启用优先（enabledFirst）→ 名称序（byName，
+     *    Collator Locale.CHINA，中文按拼音）→ 匹配精度高者优先 → 原顺序兜底，全程稳定。
+     */
+    @Synchronized
+    fun organize(groupByApp: Boolean, enabledFirst: Boolean, byName: Boolean) {
+        if (rules.size < 2) return
+        val collator = Collator.getInstance(Locale.CHINA)
+        val innerSorted = rules.withIndex()
+            .sortedWith(Comparator { x, y -> compareForOrganize(x, y, enabledFirst, byName, collator) })
+        val result: List<DispatchRule> = if (groupByApp) {
+            val groupRank = HashMap<String, Int>()
+            innerSorted.forEachIndexed { pos, iv ->
+                groupRank.putIfAbsent(iv.value.targetPackage.trim(), pos)
+            }
+            innerSorted.mapIndexed { pos, iv ->
+                Triple(groupRank.getValue(iv.value.targetPackage.trim()), pos, iv.value)
+            }.sortedWith(compareBy({ it.first }, { it.second })).map { it.third }
+        } else {
+            innerSorted.map { it.value }
+        }
+        rules.clear()
+        rules.addAll(result)
+        saveLocked()
+    }
+
+    /**
+     * 目标应用未安装的规则（目标包名为空 = 系统选择，豁免检测）。
+     * 纯本地 PackageManager 查询；任意包名可查依赖 Manifest 的 QUERY_ALL_PACKAGES 声明
+     * （Android 11+ 包可见性），查询结果只用于整理面板计数，不出设备。
+     */
+    fun uninstalledRules(context: Context): List<DispatchRule> {
+        val pm = context.packageManager
+        return rules.filter { rule ->
+            val pkg = rule.targetPackage.trim()
+            pkg.isNotEmpty() && !isPackageInstalled(pm, pkg)
+        }
+    }
+
+    private fun isPackageInstalled(pm: PackageManager, pkg: String): Boolean =
+        runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
+
+    /** 把给定 id 的规则全部停用并落盘（整理面板「一键停用」用） */
+    @Synchronized
+    fun disableByIds(ids: Set<String>) {
+        var changed = false
+        for (i in rules.indices) {
+            val r = rules[i]
+            if (r.id in ids && r.enabled) {
+                rules[i] = r.copy(enabled = false)
+                changed = true
+            }
+        }
+        if (changed) saveLocked()
+    }
+
+    /** 把给定 id 的规则整体移到列表末尾（保持相对顺序）并落盘（整理面板「移到末尾」用） */
+    @Synchronized
+    fun moveToEndByIds(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        val stay = rules.filter { it.id !in ids }
+        val tail = rules.filter { it.id in ids }
+        if (tail.isEmpty() || stay.size == rules.size) return
+        rules.clear()
+        rules.addAll(stay)
+        rules.addAll(tail)
+        saveLocked()
+    }
 }
