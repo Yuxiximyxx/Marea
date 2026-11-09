@@ -31,6 +31,19 @@ class MainActivity : ComponentActivity() {
     /** 本次外部链接是否已被分诊处理（规则送出 / 下载弹窗），已处理则不进浏览器主界面 */
     private var externalHandled = false
 
+    /**
+     * 分诊判定要开下载弹窗的链接（fork.6）：不在 onCreate / onNewIntent 里当场拉起，
+     * 等 onResume（Activity 真正到前台）再启动，避免冷启动 finish 紧跟 startActivity
+     * 把弹窗启动吞掉（fork.5 的「点了没反应」）。
+     */
+    private var pendingDialogUrl: String? = null
+
+    /** 本次外部链接已处理完，onResume 后收尾：冷启动 finish、已运行 moveTaskToBack */
+    private var retreatAfterResume = false
+
+    /** 本次处理发生在冷启动（onCreate）路径，收尾用 finish 而不是 moveTaskToBack */
+    private var coldExternal = false
+
     companion object {
         const val EXTRA_OPEN_DOWNLOADS = "open_downloads"
     }
@@ -41,9 +54,9 @@ class MainActivity : ComponentActivity() {
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
         if (externalHandled) {
-            externalHandled = false
-            // 已浮出下载弹窗 / 已按规则送出：把浏览器任务退回后台，回到刚才那个 App
-            moveTaskToBack(true)
+            // 收尾推迟到 onResume 统一做（见 onResume 注释）：先把弹窗真正拉起来再退后台，
+            // 顺序反过来弹窗会被一起退到后台、外部看就是没反应
+            retreatAfterResume = true
         }
     }
 
@@ -64,12 +77,15 @@ class MainActivity : ComponentActivity() {
             1 -> openWithCustomTab(data)
             2 -> forwardToOtherBrowser(data)
             else -> {
-                // fork.5 分诊：分发规则送出 / 直链下载弹窗命中时不进浏览器（见 LinkRouter）
+                // fork.5 分诊（fork.6 改为判定与启动分离）：规则送出 / 直链下载弹窗命中时不进浏览器（见 LinkRouter）
                 val url = data.toString()
-                if (LinkRouter.tryHandleExternal(this, url)) {
-                    externalHandled = true
-                } else {
-                    incomingUrl.value = url
+                when (val r = LinkRouter.routeExternal(this, url)) {
+                    is LinkRouter.Result.Dialog -> {
+                        pendingDialogUrl = r.url
+                        externalHandled = true
+                    }
+                    LinkRouter.Result.Dispatched -> externalHandled = true
+                    LinkRouter.Result.Unhandled -> incomingUrl.value = url
                 }
             }
         }
@@ -99,6 +115,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 外部链接分诊的收尾统一放在 onResume（fork.6）：此时 Activity 已真正到前台，
+     * 从这里 startActivity 拉下载弹窗不会被后台启动限制吞掉；fork.5 在 onCreate 里
+     * startActivity 后立即 finish、或在 onNewIntent 里启动后立即 moveTaskToBack，
+     * 冷启动 / 任务退后台的时序都会让弹窗无声消失且链接丢失。
+     * 弹窗拉起失败 → 回退成进浏览器打开该链接，保证任何路径都有可见结果。
+     */
+    override fun onResume() {
+        super.onResume()
+        val dialogUrl = pendingDialogUrl
+        if (dialogUrl != null) {
+            pendingDialogUrl = null
+            retreatAfterResume = false
+            externalHandled = false
+            val launched = runCatching {
+                startActivity(DownloadDialogActivity.intent(this, dialogUrl))
+            }.isSuccess
+            Diag.log("LinkRouter: dialog launch -> $launched url=${dialogUrl.take(80)}")
+            if (launched) {
+                if (coldExternal) finish() else moveTaskToBack(true)
+            } else {
+                // 弹窗没拉起来：不许静默吞掉，回退到浏览器里打开这条链接
+                incomingUrl.value = dialogUrl
+            }
+            coldExternal = false
+            return
+        }
+        if (retreatAfterResume) {
+            retreatAfterResume = false
+            externalHandled = false
+            if (coldExternal) {
+                coldExternal = false
+                finish()
+            } else {
+                moveTaskToBack(true)
+            }
+        }
+    }
+
     /** 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉 */
     override fun onStop() {
         super.onStop()
@@ -123,23 +178,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
+        dev.dsh.miuixbrowser.Diag.init(this)
+        dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
+        AdBlock.init(this)
+        CacheCleaner.runOnColdStart(this)
+        // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化。
+        // fork.6：必须赶在下面 consumeViewIntent 分诊之前——fork.5 时 init 在分诊之后，
+        // 冷启动 match() 因未初始化恒返回 null，规则判定与回退链在冷启动下全程静默失效。
+        Downloader.restore(this)
+        LinkDispatch.init(this)
         // 系统重建 Activity（savedInstanceState != null）时 intent 还是当初那条，不能再重复打开一次链接
         if (savedInstanceState == null) {
             consumeOpenDownloads(intent)
             consumeViewIntent(intent)
             if (externalHandled) {
-                // 冷启动即被分诊处理：弹窗已浮在原 App 之上，本 Activity 不进主界面、直接退出
-                finish()
-                return
+                // 冷启动被分诊处理：不在 onCreate 里 finish（弹窗还没拉起就 finish 会把启动连带吞掉），
+                // 只登记，等 onResume 拉起弹窗 / 确认送出后再收尾（见 onResume）
+                coldExternal = true
+                retreatAfterResume = true
             }
         }
-        dev.dsh.miuixbrowser.Diag.init(this)
-        dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
-        AdBlock.init(this)
-        CacheCleaner.runOnColdStart(this)
-        // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化
-        Downloader.restore(this)
-        LinkDispatch.init(this)
         // 「默认」图标按当前系统日夜状态对齐（冷启动时启动器还没把本应用摆到前台，切换最安全）
         if (AppSettings(this).appIcon == 0) AppIconManager.applyAutoDayNight(this)
 

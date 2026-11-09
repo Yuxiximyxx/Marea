@@ -21,30 +21,38 @@ object PrivacyVault {
     private const val KEY_SALT = "salt"
     private const val KEY_HASH = "hash"
 
+    // fork.6 防御：保险库的全部 prefs 读写都包 runCatching——设置页在「无口令」初始状态下
+    // 也会走 isSet 读取，任何存储层异常都不许冒泡成闪退，最差按「未设置 / 校验不通过」处理。
+    private fun prefs(context: Context) =
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }.getOrNull()
+
     fun isSet(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).contains(KEY_HASH)
+        prefs(context)?.contains(KEY_HASH) ?: false
 
     fun setPassword(context: Context, password: String) {
-        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
-            .putString(KEY_HASH, Base64.encodeToString(hash(salt, password), Base64.NO_WRAP))
-            .apply()
+        runCatching {
+            val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+            prefs(context)?.edit()
+                ?.putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
+                ?.putString(KEY_HASH, Base64.encodeToString(hash(salt, password), Base64.NO_WRAP))
+                ?.apply()
+        }
     }
 
     fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        runCatching { prefs(context)?.edit()?.clear()?.apply() }
     }
 
-    fun verify(context: Context, candidate: String): Boolean {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val saltB64 = prefs.getString(KEY_SALT, null) ?: return false
-        val hashB64 = prefs.getString(KEY_HASH, null) ?: return false
-        val salt = runCatching { Base64.decode(saltB64, Base64.NO_WRAP) }.getOrNull() ?: return false
-        val expected = runCatching { Base64.decode(hashB64, Base64.NO_WRAP) }.getOrNull() ?: return false
-        return MessageDigest.isEqual(expected, hash(salt, candidate))
-    }
+    fun verify(context: Context, candidate: String): Boolean = runCatching {
+        val prefs = prefs(context) ?: return@runCatching false
+        val saltB64 = prefs.getString(KEY_SALT, null) ?: return@runCatching false
+        val hashB64 = prefs.getString(KEY_HASH, null) ?: return@runCatching false
+        val salt = runCatching { Base64.decode(saltB64, Base64.NO_WRAP) }.getOrNull()
+            ?: return@runCatching false
+        val expected = runCatching { Base64.decode(hashB64, Base64.NO_WRAP) }.getOrNull()
+            ?: return@runCatching false
+        MessageDigest.isEqual(expected, hash(salt, candidate))
+    }.getOrDefault(false)
 
     private fun hash(salt: ByteArray, password: String): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -73,9 +81,22 @@ object PrivacyMode {
         active = false
     }
 
-    /** 设备 WebView 是否支持多 Profile（Cookie / 存储隔离的前提） */
-    fun profileSupported(): Boolean =
-        runCatching { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) }.getOrDefault(false)
+    @Volatile
+    private var profileSupportedCache: Boolean? = null
+
+    /**
+     * 设备 WebView 是否支持多 Profile（Cookie / 存储隔离的前提）。
+     * fork.6：结果按进程缓存，只在首次调用时碰 WebViewFeature——设置页组合阶段不再反复裸调
+     * 厂商 WebView 的特性检测，检测本身异常也只按「不支持」降级，绝不冒泡。
+     */
+    fun profileSupported(): Boolean {
+        profileSupportedCache?.let { return it }
+        val result = runCatching {
+            WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+        }.getOrDefault(false)
+        profileSupportedCache = result
+        return result
+    }
 
     /**
      * 按空间取 Cookie：隐私空间且 Profile 可用时读隐私 Profile 的 CookieManager，

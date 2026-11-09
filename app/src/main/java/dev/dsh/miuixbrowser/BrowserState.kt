@@ -190,12 +190,18 @@ class BrowserTab(private val appContext: Context) {
         private set
 
     fun applyPrivacySpace(value: Boolean) {
+        // fork.6：状态未变直接返回——setProfile 对同一 WebView 只能调一次，重复调用必抛
+        // IllegalStateException；不依赖 catch 兜底，从源头杜绝重复绑定。
+        if (privacySpace == value) return
         privacySpace = value
         if (value && PrivacyMode.profileSupported()) {
             // 必须赶在首次加载前把 WebView 绑到隐私 Profile（Cookie / 本地存储隔离）
             runCatching {
                 ProfileStore.getInstance().getOrCreateProfile(PrivacyMode.PROFILE_NAME)
                 WebViewCompat.setProfile(webView, PrivacyMode.PROFILE_NAME)
+            }.onFailure {
+                // 厂商 WebView 误报支持 / 时机违规等一律降级为共享 Cookie，不许冒泡成闪退
+                Diag.log("applyPrivacySpace setProfile failed: ${it.javaClass.simpleName}: ${it.message}")
             }
         }
     }

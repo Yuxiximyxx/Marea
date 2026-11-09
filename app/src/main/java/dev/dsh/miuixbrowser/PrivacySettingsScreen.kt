@@ -62,7 +62,14 @@ fun PrivacySettingsScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
-    var passwordSet by remember { mutableStateOf(PrivacyVault.isSet(context)) }
+    // fork.6 防御：初始状态读取全部消毒——口令是否已设走 runCatching（异常按未设置处理），
+    // 多 Profile 支持检测只在进入本页时算一次（结果在 PrivacyMode 内按进程缓存），
+    // 不在组合热路径上反复碰厂商 WebView 的特性检测 API。
+    var passwordSet by remember {
+        mutableStateOf(runCatching { PrivacyVault.isSet(context) }.getOrDefault(false))
+    }
+    val profileSupported = remember { PrivacyMode.profileSupported() }
+    remember { Diag.log("PrivacySettingsScreen composed, passwordSet=$passwordSet, profile=$profileSupported"); true }
     var oldPw by remember { mutableStateOf("") }
     var newPw by remember { mutableStateOf("") }
     var newPw2 by remember { mutableStateOf("") }
@@ -139,7 +146,7 @@ fun PrivacySettingsScreen(
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = if (PrivacyMode.profileSupported()) {
+                                    text = if (profileSupported) {
                                         "Cookie 隔离：已启用 WebView 多 Profile，隐私空间使用独立 Cookie 与网站存储。"
                                     } else {
                                         "Cookie 隔离：当前设备的 WebView 不支持多 Profile，Cookie 与普通模式共享；书签 / 历史 / 下载仍完全独立。"

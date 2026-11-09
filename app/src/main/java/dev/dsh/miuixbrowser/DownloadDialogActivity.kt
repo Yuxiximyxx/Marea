@@ -60,10 +60,12 @@ class DownloadDialogActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 冷进程直达：先恢复落盘任务再建任务，否则 persistNow 会整表覆盖旧任务
-        Downloader.restore(this)
-        LinkDispatch.init(this)
+        // fork.6 防御：恢复 / 初始化异常不许把弹窗 Activity 直接带崩（外部看就是「点了没反应」）
+        runCatching { Downloader.restore(this) }
+        runCatching { LinkDispatch.init(this) }
         urlState.value = intent?.getStringExtra(EXTRA_URL) ?: intent?.data?.toString() ?: ""
         if (urlState.value.isBlank()) {
+            Diag.log("DownloadDialogActivity: blank url, finish")
             finish()
             return
         }
