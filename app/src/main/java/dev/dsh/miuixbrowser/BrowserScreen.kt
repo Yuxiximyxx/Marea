@@ -3592,7 +3592,7 @@ private fun FavoriteTile(
     Box(
         modifier = modifier
             .height(58.dp)
-            .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop)
+            // 将位移层放在整个卡片容器最外侧：玻璃底板、标题、图标、删除按钮和描边一起移动。
             .graphicsLayer {
                 translationX = dragOffset.x
                 translationY = dragOffset.y
@@ -3617,16 +3617,12 @@ private fun FavoriteTile(
                                 onDragStart = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     total = Offset.Zero
-                                    currentIndex = -1
+                                    currentIndex = tileIndexForDrag
                                 },
                                 onDrag = { change, amount ->
                                     change.consume()
                                     total += amount
                                     dragOffset = total
-                                    if (currentIndex < 0) {
-                                        // 此指针输入绑定到当前列表位置，由父项传入的 onMove 首次移动时确定源位置。
-                                        currentIndex = tileIndexForDrag
-                                    }
                                     val cellWidth = size.width + with(density) { 10.dp.toPx() }
                                     val cellHeight = with(density) { 68.dp.toPx() }
                                     val colDelta = (total.x / cellWidth).roundToInt()
@@ -3656,6 +3652,12 @@ private fun FavoriteTile(
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // 玻璃背景作为卡片内容绘制在同一个外层图层内，避免只移动前景文字。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop),
+        )
         Row(
             modifier = Modifier.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
