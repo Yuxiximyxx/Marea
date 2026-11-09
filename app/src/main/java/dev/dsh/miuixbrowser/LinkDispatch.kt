@@ -17,7 +17,7 @@ import java.util.UUID
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
-/** 分发作用域：链接点击 / 下载触发。本期只落这两个拦截点。 */
+/** 分发作用域：链接点击 / 下载触发。长按菜单分发（fork.20）复用 CLICK 作用域判定。 */
 enum class DispatchScope { CLICK, DOWNLOAD }
 
 /**
@@ -41,6 +41,13 @@ data class DispatchRule(
     val action: Int = 0,
     val confirm: Boolean = false,
     val builtin: Boolean = false,
+    /** 短链预解析（fork.20）：判定前先跟随重定向展开短链，再用展开后的地址匹配与送出 */
+    val resolveShortLink: Boolean = false,
+    /**
+     * 提取正则（fork.20，LinkGo extractPattern 真语义）：仅正则模式有意义——
+     * pattern 只作入口门槛，命中后用它在链接里 find 提取，提取串作工作链接、捕获组供模板引用
+     */
+    val extractPattern: String = "",
 )
 
 /**
@@ -132,6 +139,8 @@ object LinkDispatch {
             action = o.optInt("action", 0),
             confirm = o.optBoolean("confirm", false),
             builtin = o.optBoolean("builtin", false),
+            resolveShortLink = o.optBoolean("resolve", false),
+            extractPattern = o.optString("extract"),
         )
     }
 
@@ -211,11 +220,12 @@ object LinkDispatch {
     /**
      * LinkGo 规则 → Marea 规则。返回 (规则, 降级原因列表, 是否携带被丢弃的专有字段)。
      * 关键语义对齐：
-     * - LinkGo 正则是部分匹配（find），Marea 引擎是整行 matches()：pattern 与 extractPattern
-     *   都包成 .*(?:…).* 的整行等价式（非捕获组包裹，原捕获组编号不变，模板 $n 不受影响；
+     * - LinkGo 正则是部分匹配（find），Marea 引擎是整行 matches()：pattern 包成
+     *   .*(?:…).* 的整行等价式（非捕获组包裹，原捕获组编号不变，模板 $n 不受影响；
      *   整行式下 $0 恰好等于完整链接，与 LinkGo 的 {url} 同义）。
-     * - 带 extractPattern 时模板的捕获组来自它，因此以 extractPattern 作为匹配正则承载，
-     *   原 pattern 只作入口门槛这一点与 LinkGo 有差异，记入降级原因。
+     * - extractPattern（fork.20 起落真语义）：pattern 只作入口门槛，extractPattern 原样存下，
+     *   命中后由引擎在链接里 find 提取工作链接、其捕获组供模板引用（见 applyMatch 的提取支路）。
+     * - 短链预解析（fork.20 起落地）：resolveShortLink / resolveStrategy 落进规则字段，不再丢弃。
      * - 模板占位符：{url}→$0、{n}→$n；带变换后缀的（{1_url_dec}、{url_b64_enc} 等）
      *   Marea 引擎暂不支持，退化为对应分组并记入降级原因。
      */
@@ -250,10 +260,12 @@ object LinkDispatch {
 
         val matchType: Int
         val pattern: String
+        // fork.20：extractPattern 不再冒充匹配正则——pattern 作门槛（整行等价式），
+        // extractPattern 原样存进规则字段，提取在命中后发生。pattern 缺失时以 extract
+        // 的整行式作门槛（提得到必然过得了门槛，语义等价）。
         if (extract.isNotBlank()) {
             matchType = 0
-            pattern = wholeLine(extract)
-            reasons.add("以 extractPattern 作为匹配正则（LinkGo 中 pattern 仅作入口门槛，命中条件有差异）")
+            pattern = wholeLine(patternRaw.ifBlank { extract })
         } else if (o.optString("matchType") == "CONTAINS") {
             matchType = 2
             pattern = patternRaw
@@ -262,11 +274,12 @@ object LinkDispatch {
             pattern = wholeLine(patternRaw)
         }
 
-        // 短链预解析（resolveShortLink / resolveStrategy）是后续期功能，本期只导入规则主体
+        // 短链预解析（fork.20 落地）：resolveShortLink 或 resolveStrategy 非 NONE 都记为开启。
+        // DIRECT / RE_DISPATCH 的差别由引擎统一消化：展开后每条规则先测展开地址再测原地址
+        // （见 matchAfterResolve），DIRECT 规则吃展开地址、RE_DISPATCH 的后续规则也能对展开地址重走。
         val strategy = o.optString("resolveStrategy")
-        if (o.optBoolean("resolveShortLink", false) || (strategy.isNotBlank() && strategy != "NONE")) {
-            reasons.add("短链预解析暂未支持，仅导入规则主体")
-        }
+        val resolveShort = o.optBoolean("resolveShortLink", false) ||
+            (strategy.isNotBlank() && strategy != "NONE")
         // LinkGo 专有字段：预热、启动模式、最近任务排除等，Marea 无对应概念，整批丢弃只计数
         val hasProprietary = o.optBoolean("isPreheatEnabled", false) ||
             o.optBoolean("excludeFromRecents", false) ||
@@ -285,6 +298,8 @@ object LinkDispatch {
             action = 0,
             confirm = false,
             builtin = false,
+            resolveShortLink = resolveShort,
+            extractPattern = extract,
         )
         return Triple(rule, reasons, hasProprietary)
     }
@@ -329,7 +344,9 @@ object LinkDispatch {
                     .put("act", r.targetActivity)
                     .put("action", r.action)
                     .put("confirm", r.confirm)
-                    .put("builtin", r.builtin),
+                    .put("builtin", r.builtin)
+                    .put("resolve", r.resolveShortLink)
+                    .put("extract", r.extractPattern),
             )
         }
         val root = JSONObject().put("enabled", enabled).put("rules", arr)
@@ -377,16 +394,23 @@ object LinkDispatch {
         return compiled
     }
 
-    /** 正则语法校验（编辑器用）：合法返回 null，否则返回错误信息 */
+    /** 正则语法校验（编辑器用）：合法返回 null，否则返回错误信息；提取正则一并校验 */
     fun patternError(rule: DispatchRule): String? {
         if (rule.matchType != 0) return null
         if (rule.pattern.isBlank()) return "模式为空"
-        return try {
+        try {
             Pattern.compile(rule.pattern)
-            null
         } catch (e: PatternSyntaxException) {
-            "正则语法错误：" + (e.description ?: e.message ?: "")
+            return "正则语法错误：" + (e.description ?: e.message ?: "")
         }
+        if (rule.extractPattern.isNotBlank()) {
+            try {
+                Pattern.compile(rule.extractPattern)
+            } catch (e: PatternSyntaxException) {
+                return "提取正则语法错误：" + (e.description ?: e.message ?: "")
+            }
+        }
+        return null
     }
 
     private val namedRef = Regex("""\$<([A-Za-z][A-Za-z0-9_]*)>""")
@@ -400,6 +424,9 @@ object LinkDispatch {
                 val p = compile(rule.pattern) ?: return null
                 val m = p.matcher(url)
                 if (!m.matches()) return null
+                // fork.20：extractPattern 真语义——上面的 pattern 只作门槛，命中后走提取支路。
+                // 无 extractPattern 的规则走下方原路径，行为与旧版一致。
+                if (rule.extractPattern.isNotBlank()) return applyExtract(rule, url)
                 if (rule.rewrite.isBlank()) return url
                 // $<name> 转成 Java replacement 的 ${name}；$1 原生支持
                 val template = namedRef.replace(rule.rewrite) { "\${" + it.groupValues[1] + "}" }
@@ -421,6 +448,33 @@ object LinkDispatch {
         }
     }
 
+    /**
+     * extractPattern 提取支路（门槛已在 [applyMatch] 里过）：用 extractPattern 在链接里
+     * find 提取——提取串（group 0）成为工作链接，模板 $1..$n / $name 引用提取的捕获组；
+     * 提取不到回退原链接（规则仍算命中，与 LinkGo「提不到就用原文」一致）。
+     * 模板结果 / 提取串不带 scheme 时逐级回退，避免把半截串当链接送出。
+     */
+    private fun applyExtract(rule: DispatchRule, url: String): String {
+        val ep = compile(rule.extractPattern) ?: return url
+        val em = ep.matcher(url)
+        if (!em.find()) {
+            Diag.log("Dispatch extract miss: rule='${rule.name}' url=${url.take(80)}")
+            return url
+        }
+        val working = runCatching { em.group(0) }.getOrNull() ?: return url
+        Diag.log("Dispatch extract hit: rule='${rule.name}' extracted=${working.take(80)}")
+        if (rule.rewrite.isBlank()) {
+            return if (schemeRef.containsMatchIn(working)) working else url
+        }
+        val template = namedRef.replace(rule.rewrite) { "\${" + it.groupValues[1] + "}" }
+        val out = runCatching { em.replaceAll(template) }.getOrNull()
+        return when {
+            out != null && schemeRef.containsMatchIn(out) -> out
+            schemeRef.containsMatchIn(working) -> working
+            else -> url
+        }
+    }
+
     private fun applyTemplate(rule: DispatchRule, url: String): String {
         if (rule.rewrite.isBlank()) return url
         val out = rule.rewrite.replace("\$0", url)
@@ -437,6 +491,64 @@ object LinkDispatch {
         }
         return null
     }
+
+    /**
+     * 本次判定是否需要先做短链预解析（fork.20）：按优先级走查——在「不靠解析就能命中」
+     * 的规则之前先遇到开启预解析的规则就返回 true（那条规则及它之后的规则，
+     * 都要等展开结果出来才能定命中与否）。
+     */
+    fun needsResolve(url: String, scope: DispatchScope): Boolean {
+        if (!enabled || !inited) return false
+        for (rule in rules) {
+            if (!rule.enabled || scope !in rule.scopes) continue
+            if (rule.resolveShortLink) return true
+            if (applyMatch(rule, url) != null) return false
+        }
+        return false
+    }
+
+    /**
+     * 展开后判定（fork.20）：规则顺序不变，每条先测展开地址、再测原地址——
+     * DIRECT 型规则吃展开地址；RE_DISPATCH 语义下后续规则也能对展开地址重走一遍；
+     * 写给短链形态本身的规则仍有机会测中原地址，优先级不被展开打乱。
+     */
+    fun matchAfterResolve(url: String, resolved: String, scope: DispatchScope): Pair<DispatchRule, String>? {
+        if (!enabled || !inited) return null
+        for (rule in rules) {
+            if (!rule.enabled || scope !in rule.scopes) continue
+            val outResolved = applyMatch(rule, resolved)
+            if (outResolved != null) return rule to outResolved
+            if (resolved != url) {
+                val outOriginal = applyMatch(rule, url)
+                if (outOriginal != null) return rule to outOriginal
+            }
+        }
+        return null
+    }
+
+    /**
+     * 带短链预解析的异步判定（fork.20）：不需要解析时同步回调既有 [match] 结果；
+     * 需要时先展开（失败 / 无跳转自动回退原地址判定）。异步路径的回调恒在主线程。
+     */
+    fun matchAsync(url: String, scope: DispatchScope, callback: (Pair<DispatchRule, String>?) -> Unit) {
+        if (!needsResolve(url, scope)) {
+            callback(match(url, scope))
+            return
+        }
+        Diag.log("Dispatch matchAsync: resolving short link scope=$scope url=${url.take(80)}")
+        ShortLinkResolver.resolve(url) { resolved ->
+            val hit = if (resolved.isNullOrBlank() || resolved == url) {
+                match(url, scope)
+            } else {
+                matchAfterResolve(url, resolved, scope)
+            }
+            Diag.log("Dispatch matchAsync: resolved=${resolved?.take(80)} hit=${hit?.first?.name}")
+            callback(hit)
+        }
+    }
+
+    /** 长按菜单「发送到…」强行套用：不看命中与否，模板 / 提取能套则套、套不上用原链接 */
+    fun applyForced(rule: DispatchRule, url: String): String = applyMatch(rule, url) ?: url
 
     /** 把 [url] 按规则送到目标应用；成功返回 true，失败（未装/无组件）返回 false 由调用方回退 */
     fun dispatch(context: Context, rule: DispatchRule, url: String): Boolean {

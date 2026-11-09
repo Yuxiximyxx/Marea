@@ -322,6 +322,8 @@ fun BrowserScreen(
     var sheet by remember { mutableStateOf(Sheet.None) }
     var linkUrl by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
+    /** 长按菜单「发送到…（分发）」选中的待送链接，非空时打开规则选择器 */
+    var dispatchPickUrl by remember { mutableStateOf<String?>(null) }
     var elementHit by remember { mutableStateOf<BrowserTab.ElementHit?>(null) }
     var address by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
@@ -1753,6 +1755,23 @@ fun BrowserScreen(
             }
 
             Sheet.Link -> {
+                // 链接分发（fork.20，长按第三拦截点）：命中 CLICK 规则置顶直达，
+                // 另常驻「发送到…」进规则选择器强行套用；长按是显式选择，命中确认型也直接送出
+                val linkHit = LinkDispatch.match(linkUrl, DispatchScope.CLICK)
+                if (linkHit != null) {
+                    SheetRow(
+                        title = "用「${linkHit.first.name}」打开",
+                        subtitle = "链接分发 → ${linkHit.first.targetPackage.ifBlank { "系统选择" }}",
+                        highlight = true,
+                    ) {
+                        sheet = Sheet.None
+                        dispatchLongPressHit(context, linkUrl)
+                    }
+                }
+                SheetRow(title = "发送到…（分发）", subtitle = "选择一条规则强行打开此链接") {
+                    sheet = Sheet.None
+                    dispatchPickUrl = linkUrl
+                }
                 SheetRow(title = "打开链接") {
                     sheet = Sheet.None
                     // 走 load() 而非 loadUrl()：与地址栏同一条顶层加载通道，分发引擎 CLICK 判定不被绕过
@@ -1786,6 +1805,24 @@ fun BrowserScreen(
             Sheet.Image -> {
                 val inlineImage = imageUrl.startsWith("data:", ignoreCase = true)
                 val blobImage = imageUrl.startsWith("blob:", ignoreCase = true)
+                if (!inlineImage && !blobImage) {
+                    // 链接分发（fork.20）：图片地址命中规则时同样给分发入口（判定的是图片 URL 本身）
+                    val imageHit = LinkDispatch.match(imageUrl, DispatchScope.CLICK)
+                    if (imageHit != null) {
+                        SheetRow(
+                            title = "用「${imageHit.first.name}」打开",
+                            subtitle = "链接分发 · 以图片地址送出",
+                            highlight = true,
+                        ) {
+                            sheet = Sheet.None
+                            dispatchLongPressHit(context, imageUrl)
+                        }
+                    }
+                    SheetRow(title = "发送到…（分发）", subtitle = "选择一条规则强行打开此图片地址") {
+                        sheet = Sheet.None
+                        dispatchPickUrl = imageUrl
+                    }
+                }
                 SheetRow(
                     title = "保存图片",
                     subtitle = when {
@@ -1874,6 +1911,44 @@ fun BrowserScreen(
             }
         }
 
+
+        // 链接分发规则选择器（fork.20）：长按菜单「发送到…」点开，列已启用规则，点选即强行套用送出
+        val pickUrl = dispatchPickUrl
+        AppBottomSheet(
+            show = pickUrl != null,
+            title = "发送到…",
+            backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
+            onDismissRequest = { dispatchPickUrl = null },
+        ) {
+            if (pickUrl != null) {
+                val enabledRules = LinkDispatch.rules.filter { it.enabled }
+                if (!LinkDispatch.enabled || enabledRules.isEmpty()) {
+                    Text(
+                        text = if (!LinkDispatch.enabled) {
+                            "链接分发未开启（在设置 → 高级 → 链接分发里打开）"
+                        } else {
+                            "还没有已启用的分发规则"
+                        },
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
+                enabledRules.forEach { rule ->
+                    SheetRow(
+                        title = rule.name.ifBlank { "未命名规则" },
+                        subtitle = "→ " + rule.targetPackage.ifBlank { "系统选择" },
+                    ) {
+                        val out = LinkDispatch.applyForced(rule, pickUrl)
+                        Diag.log("LongPress dispatch pick: rule='${rule.name}' url=${pickUrl.take(80)} -> ${out.take(80)}")
+                        dispatchPickUrl = null
+                        if (!LinkDispatch.dispatch(context, rule, out)) {
+                            android.widget.Toast.makeText(context, "目标应用不可用", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
 
         // fork.10：UpdateSheet 已随自动检查一并删除（新版本提示改为关于页手动检查弹窗）
 
@@ -2880,6 +2955,23 @@ private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
 /* ------------------------------ 弹层行 ------------------------------ */
 
 @Composable
+/**
+ * 长按菜单命中分发规则后的送出（fork.20）：规则带短链预解析时先展开再定最终链接，
+ * 其余同步送出；送出走 matchAsync 统一入口，未命中 / 送出失败都给 Toast，不吞链接。
+ */
+private fun dispatchLongPressHit(context: android.content.Context, url: String) {
+    LinkDispatch.matchAsync(url, DispatchScope.CLICK) { hit ->
+        if (hit == null) {
+            android.widget.Toast.makeText(context, "没有命中分发规则", android.widget.Toast.LENGTH_SHORT).show()
+            return@matchAsync
+        }
+        Diag.log("LongPress dispatch: rule='${hit.first.name}' url=${url.take(80)} -> ${hit.second.take(80)}")
+        if (!LinkDispatch.dispatch(context, hit.first, hit.second)) {
+            android.widget.Toast.makeText(context, "目标应用不可用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
 private fun SheetRow(
     title: String,
     subtitle: String? = null,

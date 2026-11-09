@@ -794,6 +794,32 @@ class BrowserTab(private val appContext: Context) {
                 // 命中先确认的规则复用重定向确认弹窗，拒绝/送出失败都回退为站内打开原链接
                 val clickScheme = request.url.scheme
                 if ((clickScheme == "http" || clickScheme == "https") && request.isForMainFrame && request.hasGesture()) {
+                    if (LinkDispatch.needsResolve(target, DispatchScope.CLICK)) {
+                        // fork.20：短链预解析——先拦下本次导航，异步展开后重走判定；
+                        // 未命中 / 展开失败 / 确认被拒 / 送出失败都回退站内加载原链接
+                        Diag.log("click dispatch: resolve first url=${target.take(80)}")
+                        LinkDispatch.matchAsync(target, DispatchScope.CLICK) { hit ->
+                            if (hit == null) {
+                                view.post { view.loadUrl(target) }
+                            } else {
+                                val (rule, finalUrl) = hit
+                                if (rule.confirm) {
+                                    if (redirectPromptPending) {
+                                        view.post { view.loadUrl(target) }
+                                    } else {
+                                        askRedirect(request.url.host ?: target, "用「${rule.name}」在外部应用打开此链接") { allow ->
+                                            if (!allow || !LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                                                view.post { view.loadUrl(target) }
+                                            }
+                                        }
+                                    }
+                                } else if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                                    view.post { view.loadUrl(target) }
+                                }
+                            }
+                        }
+                        return true
+                    }
                     val hitRule = LinkDispatch.match(target, DispatchScope.CLICK)
                     if (hitRule != null) {
                         val (rule, finalUrl) = hitRule
@@ -951,32 +977,18 @@ class BrowserTab(private val appContext: Context) {
                     onBlobReady?.invoke(link, name, mimeType ?: dataMime, null)
                 }
                 else -> {
-                    // 链接分发（下载作用域）：命中规则直接送目标应用；未命中/拒绝/送出失败回退内置下载确认框
-                    val hitRule = LinkDispatch.match(link, DispatchScope.DOWNLOAD)
-                    if (hitRule == null) {
-                        onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
-                    } else {
-                        val (rule, finalUrl) = hitRule
-                        val fallback = { onDownload?.invoke(link, userAgent, contentDisposition, mimeType) }
-                        if (rule.confirm) {
-                            if (redirectPromptPending) {
-                                fallback()
-                            } else {
-                                askRedirect(Uri.parse(link).host ?: link, "把这个下载发送到「${rule.name}」") { allow ->
-                                    if (allow) {
-                                        if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
-                                            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
-                                            fallback()
-                                        }
-                                    } else {
-                                        fallback()
-                                    }
-                                }
-                            }
-                        } else if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
-                            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
-                            fallback()
+                    // 链接分发（下载作用域）：命中规则直接送目标应用；未命中/拒绝/送出失败回退内置下载确认框。
+                    // fork.20：判定前若有规则要短链预解析，先异步展开再判定，其余同步判定（needsResolve 走查决定）。
+                    if (LinkDispatch.needsResolve(link, DispatchScope.DOWNLOAD)) {
+                        Diag.log("download dispatch: resolve first url=${link.take(80)}")
+                        LinkDispatch.matchAsync(link, DispatchScope.DOWNLOAD) { hit ->
+                            handleDownloadDispatch(hit, link, userAgent, contentDisposition, mimeType)
                         }
+                    } else {
+                        handleDownloadDispatch(
+                            LinkDispatch.match(link, DispatchScope.DOWNLOAD),
+                            link, userAgent, contentDisposition, mimeType,
+                        )
                     }
                 }
             }
@@ -1360,6 +1372,45 @@ class BrowserTab(private val appContext: Context) {
     }
 
     /**
+     * 下载触发点的分发判定结果处理（同步 / 短链展开后异步共用同一份逻辑）：
+     * 未命中 → 内置下载确认框；命中确认型 → 复用重定向确认弹窗（已有弹窗在途则直接回退）；
+     * 送出失败 → Toast 提示并回退内置下载。绝不吞链接。
+     */
+    private fun handleDownloadDispatch(
+        hitRule: Pair<DispatchRule, String>?,
+        link: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimeType: String?,
+    ) {
+        if (hitRule == null) {
+            onDownload?.invoke(link, userAgent, contentDisposition, mimeType)
+            return
+        }
+        val (rule, finalUrl) = hitRule
+        val fallback = { onDownload?.invoke(link, userAgent, contentDisposition, mimeType) }
+        if (rule.confirm) {
+            if (redirectPromptPending) {
+                fallback()
+            } else {
+                askRedirect(Uri.parse(link).host ?: link, "把这个下载发送到「${rule.name}」") { allow ->
+                    if (allow) {
+                        if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
+                            fallback()
+                        }
+                    } else {
+                        fallback()
+                    }
+                }
+            }
+        } else if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+            android.widget.Toast.makeText(appContext, "目标应用不可用，已改用内置下载", android.widget.Toast.LENGTH_SHORT).show()
+            fallback()
+        }
+    }
+
+    /**
      * 顶层加载分发判定（CLICK 作用域）：地址栏输入/粘贴回车、外部 ACTION_VIEW 拉起、
      * 剪贴板/主页快捷方式/书签历史打开，最终都汇到 [load]，在这里统一判定一次。
      * 这类加载是 App 自己调 WebView.loadUrl，不经过 shouldOverrideUrlLoading
@@ -1372,6 +1423,32 @@ class BrowserTab(private val appContext: Context) {
     private fun dispatchTopLevel(target: String): Boolean {
         val scheme = Uri.parse(target).scheme
         if (scheme != "http" && scheme != "https") return false
+        if (LinkDispatch.needsResolve(target, DispatchScope.CLICK)) {
+            // fork.20：短链预解析——先接管本次加载，异步展开后重走判定；
+            // 未命中 / 展开失败 / 确认被拒 / 送出失败都回退站内加载原链接
+            Diag.log("top-level dispatch: resolve first url=${target.take(80)}")
+            LinkDispatch.matchAsync(target, DispatchScope.CLICK) { hit ->
+                if (hit == null) {
+                    webView.post { performLoad(target) }
+                } else {
+                    val (rule, finalUrl) = hit
+                    if (rule.confirm) {
+                        if (redirectPromptPending) {
+                            webView.post { performLoad(target) }
+                        } else {
+                            askRedirect(Uri.parse(target).host ?: target, "用「${rule.name}」在外部应用打开此链接") { allow ->
+                                if (!allow || !LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                                    webView.post { performLoad(target) }
+                                }
+                            }
+                        }
+                    } else if (!LinkDispatch.dispatch(appContext, rule, finalUrl)) {
+                        webView.post { performLoad(target) }
+                    }
+                }
+            }
+            return true
+        }
         val (rule, finalUrl) = LinkDispatch.match(target, DispatchScope.CLICK) ?: return false
         if (rule.confirm) {
             if (redirectPromptPending) return false

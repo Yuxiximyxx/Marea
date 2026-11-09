@@ -62,7 +62,12 @@ private fun ruleSummary(rule: DispatchRule): String {
         if (DispatchScope.DOWNLOAD in rule.scopes) add("下载")
     }.joinToString("+").ifBlank { "无作用域" }
     val target = rule.targetPackage.ifBlank { "系统选择" }
-    return "$scope · ${MATCH_TYPE_LABELS.getOrElse(rule.matchType) { "正则" }} · → $target"
+    val extras = buildList {
+        if (rule.resolveShortLink) add("短链预解析")
+        if (rule.extractPattern.isNotBlank()) add("链接提取")
+    }.joinToString(" · ")
+    return "$scope · ${MATCH_TYPE_LABELS.getOrElse(rule.matchType) { "正则" }} · → $target" +
+        if (extras.isNotBlank()) " · $extras" else ""
 }
 
 @Composable
@@ -248,7 +253,7 @@ fun DispatchScreen(
                                     )
                                     Spacer(Modifier.height(3.dp))
                                     Text(
-                                        text = "支持 LinkGo 导出 JSON 与 Marea 自有格式；导入条目追加到列表末尾，LinkGo 专有能力（短链预解析、模板变换）会降级并在报告中注明",
+                                        text = "支持 LinkGo 导出 JSON 与 Marea 自有格式；导入条目追加到列表末尾。LinkGo 的短链预解析与链接提取已按原语义支持，模板变换等专有能力仍会降级并在报告中注明",
                                         fontSize = 12.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
@@ -408,6 +413,8 @@ private fun RuleEditorDialog(
     var scopeClick by remember(key) { mutableStateOf(rule?.scopes?.contains(DispatchScope.CLICK) ?: false) }
     var scopeDownload by remember(key) { mutableStateOf(rule?.scopes?.contains(DispatchScope.DOWNLOAD) ?: true) }
     var confirm by remember(key) { mutableStateOf(rule?.confirm ?: false) }
+    var resolveShort by remember(key) { mutableStateOf(rule?.resolveShortLink ?: false) }
+    var extractPat by remember(key) { mutableStateOf(rule?.extractPattern ?: "") }
     var ruleEnabled by remember(key) { mutableStateOf(rule?.enabled ?: true) }
     var testUrl by remember(key) { mutableStateOf("") }
 
@@ -428,6 +435,8 @@ private fun RuleEditorDialog(
         action = action,
         confirm = confirm,
         builtin = rule?.builtin ?: false,
+        resolveShortLink = resolveShort,
+        extractPattern = extractPat.trim(),
     )
     val patternError = LinkDispatch.patternError(draft)
     val testResult = if (testUrl.isNotBlank() && patternError == null) {
@@ -495,6 +504,14 @@ private fun RuleEditorDialog(
             )
             Spacer(Modifier.height(8.dp))
             TextField(
+                value = extractPat,
+                onValueChange = { extractPat = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = "提取正则（可空，仅正则匹配：命中后从链接中提取，$0 = 提取串）",
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            TextField(
                 value = pkg,
                 onValueChange = { pkg = it },
                 modifier = Modifier.fillMaxWidth(),
@@ -532,6 +549,12 @@ private fun RuleEditorDialog(
                 summary = "命中时先弹窗确认，拒绝则站内打开/内置下载",
                 checked = confirm,
                 onCheckedChange = { confirm = it },
+            )
+            AppSwitchPreference(
+                title = "短链预解析",
+                summary = "判定前先真实访问一次短链、跟随跳转展开成最终地址再匹配（不带 Cookie，最多 5 跳）；短链平台会记到这次访问，一次性链接可能被消耗",
+                checked = resolveShort,
+                onCheckedChange = { resolveShort = it },
             )
             AppSwitchPreference(
                 title = "启用这条规则",

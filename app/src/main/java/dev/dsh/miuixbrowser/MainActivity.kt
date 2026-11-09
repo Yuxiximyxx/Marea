@@ -54,6 +54,19 @@ class MainActivity : ComponentActivity() {
     /** 本次处理发生在冷启动（onCreate）路径，收尾用 finish 而不是 moveTaskToBack */
     private var coldExternal = false
 
+    /**
+     * fork.20：本次外部链接的规则判定需要先做短链预解析（异步未回）。
+     * 同步收尾登记（onCreate / onNewIntent 返回后那段）会错过它，回调里要补登记；
+     * 冷启时在判定回来之前先不组合浏览器界面，Unhandled 回落时再补组合。
+     */
+    private var externalResolvePending = false
+
+    /** 浏览器界面是否已经 setContent（异步回落时补组合的判据，避免重复 setContent） */
+    private var browserComposed = false
+
+    /** 当前是否 resumed：异步回调晚于 onResume 时直接补收尾的判据 */
+    private var activityResumed = false
+
     companion object {
         const val EXTRA_OPEN_DOWNLOADS = "open_downloads"
 
@@ -98,48 +111,78 @@ class MainActivity : ComponentActivity() {
             2 -> forwardToOtherBrowser(data)
             else -> {
                 // 分发规则仍走主界面这条原路径（见 LinkRouter）：命中送出则不进浏览器。
+                // fork.20：带短链预解析的规则改走异步判定——同步完成的链接行为与旧版
+                // 完全一致；异步的在回调里补收尾登记（见 externalResolvePending）。
                 val url = data.toString()
-                when (LinkRouter.routeExternal(this, url)) {
-                    LinkRouter.Result.Dispatched -> externalHandled = true
-                    LinkRouter.Result.Unhandled -> {
-                        // fork.17：规则没接的链接里，命中下载形态的由主界面当跳板转交下载弹窗。
-                        // 背景（fork.7/8 实证）：Marea 是默认浏览器时，GitHub 签名直链这类意图被系统
-                        // 直接判给 MainActivity，弹窗的 intent-filter 没机会上场——仍走应用内显式拉起，
-                        // 判定只认既有域名/扩展名清单（Downloader.looksLikeFileUrl），普通网页链接不命中。
-                        // fork.19：弹窗已与主界面合回同一任务（去掉 fork.17 的独立 taskAffinity 与
-                        // 恒 NEW_TASK）——拆任务当时是怀疑任务归属让弹窗不可见，fork.18 已证明真凶
-                        // 是 miuix 覆盖层组件并换成普通内联面板、真机确认可见。同任务后转交只发生
-                        // 一次窗口切换、无中间黑闪。退场语义按路径分：冷启收尾 finish（任务里只剩
-                        // 弹窗，关掉即回来源应用，ABDM 跳板同款）；已运行实例不退场，弹窗叠在现有
-                        // 主界面之上、关掉回原浏览器状态（见 onResume 的 retreatViaTrampoline 分支），
-                        // 且冷启时不再 setContent——浏览器界面全程不出现。拉起失败才落回浏览器打开。
-                        // 弹窗探测发现是网页时带 EXTRA_OPEN_IN_BROWSER 回来，这类意图不再重复
-                        // 拦截（防循环）。
-                        val fromDialogEscape = intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false)
-                        val fileLike = Downloader.looksLikeFileUrl(url)
-                        // fork.15 步进：外部分诊的输入与判定结果都落盘（规则结果见 LinkRouter 日志），
-                        // 真机再出问题时能直接读出链接在哪一环被放行进了浏览器
-                        Diag.log("MainActivity triage: host=${data.host} fileLike=$fileLike escape=$fromDialogEscape")
-                        if (!fromDialogEscape && fileLike) {
-                            Diag.log("MainActivity: file-like external url -> download dialog (trampoline): ${url.take(100)}")
-                            val launched = runCatching {
-                                startActivity(DownloadDialogActivity.intent(this, url))
-                            }.isSuccess
-                            Diag.log("MainActivity: download dialog trampoline launched=$launched")
-                            if (launched) {
-                                downloadTrampoline = true
-                                externalHandled = true
-                            } else {
-                                incomingUrl.value = url
+                if (LinkRouter.needsResolve(url)) externalResolvePending = true
+                LinkRouter.routeExternalAsync(this, url) { result ->
+                    when (result) {
+                        LinkRouter.Result.Dispatched -> {
+                            externalHandled = true
+                            if (externalResolvePending) {
+                                externalResolvePending = false
+                                retreatViaTrampoline = downloadTrampoline
+                                retreatAfterResume = true
+                                if (activityResumed) performArmedRetreat()
                             }
-                        } else {
-                            incomingUrl.value = url
                         }
+                        LinkRouter.Result.Unhandled -> handleExternalUnhandled(intent, url)
                     }
                 }
             }
         }
     }
+
+    /**
+     * 外部链接未被规则送出后的分诊（同步判定与短链异步回落共用）：
+     * 命中下载形态由主界面当跳板转交下载弹窗，其余进浏览器打开。
+     */
+    private fun handleExternalUnhandled(intent: Intent, url: String) {
+        val wasPending = externalResolvePending
+        externalResolvePending = false
+        // fork.17：规则没接的链接里，命中下载形态的由主界面当跳板转交下载弹窗。
+        // 背景（fork.7/8 实证）：Marea 是默认浏览器时，GitHub 签名直链这类意图被系统
+        // 直接判给 MainActivity，弹窗的 intent-filter 没机会上场——仍走应用内显式拉起，
+        // 判定只认既有域名/扩展名清单（Downloader.looksLikeFileUrl），普通网页链接不命中。
+        // fork.19：弹窗已与主界面合回同一任务（去掉 fork.17 的独立 taskAffinity 与
+        // 恒 NEW_TASK）——拆任务当时是怀疑任务归属让弹窗不可见，fork.18 已证明真凶
+        // 是 miuix 覆盖层组件并换成普通内联面板、真机确认可见。同任务后转交只发生
+        // 一次窗口切换、无中间黑闪。退场语义按路径分：冷启收尾 finish（任务里只剩
+        // 弹窗，关掉即回来源应用，ABDM 跳板同款）；已运行实例不退场，弹窗叠在现有
+        // 主界面之上、关掉回原浏览器状态（见 onResume 的 retreatViaTrampoline 分支），
+        // 且冷启时不再 setContent——浏览器界面全程不出现。拉起失败才落回浏览器打开。
+        // 弹窗探测发现是网页时带 EXTRA_OPEN_IN_BROWSER 回来，这类意图不再重复
+        // 拦截（防循环）。
+        val fromDialogEscape = intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false)
+        val fileLike = Downloader.looksLikeFileUrl(url)
+        // fork.15 步进：外部分诊的输入与判定结果都落盘（规则结果见 LinkRouter 日志），
+        // 真机再出问题时能直接读出链接在哪一环被放行进了浏览器
+        Diag.log("MainActivity triage: host=${intent.data?.host} fileLike=$fileLike escape=$fromDialogEscape")
+        if (!fromDialogEscape && fileLike) {
+            Diag.log("MainActivity: file-like external url -> download dialog (trampoline): ${url.take(100)}")
+            val launched = runCatching {
+                startActivity(DownloadDialogActivity.intent(this, url))
+            }.isSuccess
+            Diag.log("MainActivity: download dialog trampoline launched=$launched")
+            if (launched) {
+                downloadTrampoline = true
+                externalHandled = true
+                if (wasPending) {
+                    // fork.20：异步回落才命中跳板，同步收尾登记已错过，在这里补
+                    retreatViaTrampoline = true
+                    retreatAfterResume = true
+                    if (activityResumed) performArmedRetreat()
+                }
+            } else {
+                incomingUrl.value = url
+            }
+        } else {
+            incomingUrl.value = url
+        }
+        // fork.20：冷启时为等异步判定推迟了组合，落到浏览器打开就在这里补上
+        if (wasPending && !browserComposed && !downloadTrampoline) composeBrowser()
+    }
+
 
     /** Chrome 自定义标签页 */
     private fun openWithCustomTab(uri: Uri) {
@@ -173,22 +216,35 @@ class MainActivity : ComponentActivity() {
      */
     override fun onResume() {
         super.onResume()
-        if (retreatAfterResume) {
-            retreatAfterResume = false
-            externalHandled = false
-            val viaTrampoline = retreatViaTrampoline
-            retreatViaTrampoline = false
-            if (coldExternal) {
-                coldExternal = false
-                finish()
-            } else if (viaTrampoline) {
-                // fork.19：已运行实例的下载跳板不退场——弹窗与主界面同任务，弹窗正叠在
-                // 本 Activity 之上，moveTaskToBack 会连弹窗一起把整个任务沉底；
-                // 留在这里，弹窗关闭后正好回到转交前的浏览器状态。
-                Diag.log("MainActivity: download trampoline on running instance, dialog stacked in same task, stay (no retreat)")
-            } else {
-                moveTaskToBack(true)
-            }
+        activityResumed = true
+        performArmedRetreat()
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
+    }
+
+    /**
+     * 已登记的外部处理收尾真正执行（只执行一次）：onResume 调用；
+     * fork.20 的短链异步判定回落晚于 onResume 时，回调里也调它补收尾。
+     */
+    private fun performArmedRetreat() {
+        if (!retreatAfterResume) return
+        retreatAfterResume = false
+        externalHandled = false
+        val viaTrampoline = retreatViaTrampoline
+        retreatViaTrampoline = false
+        if (coldExternal) {
+            coldExternal = false
+            finish()
+        } else if (viaTrampoline) {
+            // fork.19：已运行实例的下载跳板不退场——弹窗与主界面同任务，弹窗正叠在
+            // 本 Activity 之上，moveTaskToBack 会连弹窗一起把整个任务沉底；
+            // 留在这里，弹窗关闭后正好回到转交前的浏览器状态。
+            Diag.log("MainActivity: download trampoline on running instance, dialog stacked in same task, stay (no retreat)")
+        } else {
+            moveTaskToBack(true)
         }
     }
 
@@ -243,6 +299,10 @@ class MainActivity : ComponentActivity() {
                 coldExternal = true
                 retreatViaTrampoline = downloadTrampoline
                 retreatAfterResume = true
+            } else if (externalResolvePending) {
+                // fork.20：短链预解析还在路上——先按冷启登记，判定回来后在回调里补
+                // 收尾（Dispatched / 跳板）或补组合浏览器界面（Unhandled 进浏览器）
+                coldExternal = true
             }
         }
         // 「默认」图标按当前系统日夜状态对齐（冷启动时启动器还没把本应用摆到前台，切换最安全）
@@ -263,12 +323,21 @@ class MainActivity : ComponentActivity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
-        if (downloadTrampoline) {
+        if (downloadTrampoline || externalResolvePending) {
             // fork.17 跳板冷启：直链已转交同一任务的下载弹窗，主界面到此为止——不请求
             // 通知权限、不 setContent（BrowserScreen 不组合、主页与标签都不加载），
             // onResume 收尾时 finish，本 Activity 退出后任务里只剩下载弹窗压在来源应用之上。
+            // fork.20：短链预解析未回时同样先不组合，判定回落 Unhandled 再补 composeBrowser()。
             Diag.log("MainActivity: download trampoline launch, skip browser UI")
         } else {
+            composeBrowser()
+        }
+    }
+
+    /** 组合浏览器主界面（onCreate 同步路径与短链异步回落补组合共用，只执行一次） */
+    private fun composeBrowser() {
+        if (browserComposed) return
+        browserComposed = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
@@ -305,7 +374,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-        }
         }
     }
 

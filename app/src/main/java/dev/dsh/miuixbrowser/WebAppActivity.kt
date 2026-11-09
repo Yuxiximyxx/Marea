@@ -436,16 +436,26 @@ class WebAppActivity : ComponentActivity() {
             if (link.startsWith("http", ignoreCase = true)) {
                 // 链接分发（下载作用域）与主浏览器共用同一引擎；轻应用没有确认弹窗，
                 // 带「命中先确认」的规则不在这里生效，未命中/送出失败走内置下载
-                val hitRule = LinkDispatch.match(link, DispatchScope.DOWNLOAD)
-                if (hitRule != null && !hitRule.first.confirm &&
-                    LinkDispatch.dispatch(this, hitRule.first, hitRule.second)
-                ) {
-                    Toast.makeText(this, "已发送到「${hitRule.first.name}」", Toast.LENGTH_SHORT).show()
-                } else {
+                val startBuiltin: () -> Unit = {
                     val name = Downloader.withExtension(Downloader.fileNameFrom(link, disposition), mime)
                     val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(link) }.getOrNull()
                     Downloader.start(this, link, userAgent, name, mime, cookie = cookie, referer = startUrl)
                     Toast.makeText(this, "已开始下载，可在 Marea「下载」中查看", Toast.LENGTH_SHORT).show()
+                }
+                val handleHit: (Pair<DispatchRule, String>?) -> Unit = { hitRule ->
+                    if (hitRule != null && !hitRule.first.confirm &&
+                        LinkDispatch.dispatch(this, hitRule.first, hitRule.second)
+                    ) {
+                        Toast.makeText(this, "已发送到「${hitRule.first.name}」", Toast.LENGTH_SHORT).show()
+                    } else {
+                        startBuiltin()
+                    }
+                }
+                // fork.20：短链预解析与主浏览器下载挂点同口径——需要展开的先异步判定，其余同步
+                if (LinkDispatch.needsResolve(link, DispatchScope.DOWNLOAD)) {
+                    LinkDispatch.matchAsync(link, DispatchScope.DOWNLOAD) { hit -> handleHit(hit) }
+                } else {
+                    handleHit(LinkDispatch.match(link, DispatchScope.DOWNLOAD))
                 }
             } else {
                 Toast.makeText(this, "这类下载请在 Marea 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()

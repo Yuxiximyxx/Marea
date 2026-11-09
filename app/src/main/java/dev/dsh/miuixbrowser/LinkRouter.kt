@@ -39,4 +39,40 @@ object LinkRouter {
         Diag.log("LinkRouter: unhandled url=${url.take(80)}")
         return Result.Unhandled
     }
+
+    /** 这条外部链接的判定是否需要先做短链预解析（MainActivity 用来决定是否要等异步回落） */
+    fun needsResolve(url: String): Boolean =
+        LinkDispatch.needsResolve(url, DispatchScope.CLICK) ||
+            LinkDispatch.needsResolve(url, DispatchScope.DOWNLOAD)
+
+    /**
+     * 带短链预解析的外部链接判定（fork.20）：不需要解析时同步走 [routeExternal]；
+     * 需要时先展开，再按同一口径（CLICK → DOWNLOAD、确认型跳过、送出失败不算处理）判定。
+     * 异步路径的回调恒在主线程；回调晚于 MainActivity.onCreate 同步收尾时，
+     * 由 MainActivity 那边补登记收尾（见它的 externalResolvePending）。
+     */
+    fun routeExternalAsync(context: Context, url: String, callback: (Result) -> Unit) {
+        if (!needsResolve(url)) {
+            callback(routeExternal(context, url))
+            return
+        }
+        Diag.log("LinkRouter: external url needs short-link resolve url=${url.take(80)}")
+        ShortLinkResolver.resolve(url) { resolved ->
+            if (resolved.isNullOrBlank() || resolved == url) {
+                callback(routeExternal(context, url))
+                return@resolve
+            }
+            for (scope in listOf(DispatchScope.CLICK, DispatchScope.DOWNLOAD)) {
+                val (rule, finalUrl) = LinkDispatch.matchAfterResolve(url, resolved, scope) ?: continue
+                if (rule.confirm) continue
+                if (LinkDispatch.dispatch(context, rule, finalUrl)) {
+                    Diag.log("LinkRouter: rule '${rule.name}' dispatched after resolve ($scope) url=${url.take(80)}")
+                    callback(Result.Dispatched)
+                    return@resolve
+                }
+            }
+            Diag.log("LinkRouter: unhandled after resolve url=${url.take(80)}")
+            callback(Result.Unhandled)
+        }
+    }
 }
