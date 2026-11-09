@@ -59,6 +59,11 @@ class DownloadDialogActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // fork.7 顺手修复：本 Activity 此前从不调用 Diag.init——进程若被系统直接拉进弹窗
+        // （主界面不在场），它内部的 Diag.log 会因 file 未初始化被静默丢弃。补上初始化
+        // （追加模式 + 进程内只初始化一次，重复调用无副作用）。
+        Diag.init(this)
+        Diag.log("DownloadDialogActivity.onCreate: url=${intent?.getStringExtra(EXTRA_URL) ?: intent?.data}")
         // 冷进程直达：先恢复落盘任务再建任务，否则 persistNow 会整表覆盖旧任务
         // fork.6 防御：恢复 / 初始化异常不许把弹窗 Activity 直接带崩（外部看就是「点了没反应」）
         runCatching { Downloader.restore(this) }
@@ -78,6 +83,8 @@ class DownloadDialogActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         setContent {
+            // fork.7 步进日志：弹窗首帧组合完成，证明 Activity 真的活到了能画面的程度
+            LaunchedEffect(Unit) { Diag.log("DownloadDialogActivity: first frame composed") }
             val context = LocalContext.current
             val settings = remember { AppSettings(context) }
             val systemDark = isSystemInDarkTheme()

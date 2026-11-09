@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,8 @@ fun PrivacySettingsScreen(
     onBack: () -> Unit,
     blurEnabled: Boolean = true,
 ) {
+    // fork.7 步进日志：本页组合的最早一步——排在任何 backdrop 创建 / 状态读取之前落盘
+    remember { Diag.log("Privacy: screen composition entered"); true }
     val context = LocalContext.current
     val backdrop = rememberLayerBackdrop()
     val liquidBackdrop = rememberKyantBackdrop()
@@ -70,6 +73,8 @@ fun PrivacySettingsScreen(
     }
     val profileSupported = remember { PrivacyMode.profileSupported() }
     remember { Diag.log("PrivacySettingsScreen composed, passwordSet=$passwordSet, profile=$profileSupported"); true }
+    // fork.7 步进日志：首帧真正组合完成才打这一行，与「composition entered」之间夹着的步骤就是崩溃嫌疑区
+    LaunchedEffect(Unit) { Diag.log("Privacy: screen first frame composed") }
     var oldPw by remember { mutableStateOf("") }
     var newPw by remember { mutableStateOf("") }
     var newPw2 by remember { mutableStateOf("") }

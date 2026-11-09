@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // fork.7 步进日志：外部链接进入的第一现场——action 与完整 URL 原样落盘，
+        // 在任何过滤 / 分诊之前，先确认 GitHub 等外部 App 到底发来了什么形态的意图
+        Diag.log("MainActivity.onNewIntent: action=${intent.action} data=${intent.data}")
         setIntent(intent)
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
@@ -73,6 +76,7 @@ class MainActivity : ComponentActivity() {
         val scheme = data.scheme?.lowercase() ?: return
         if (scheme != "http" && scheme != "https") return
         val settings = AppSettings(this)
+        Diag.log("consumeViewIntent: action=${intent.action} data=$data linkOpenMode=${settings.linkOpenMode}")
         when (settings.linkOpenMode) {
             1 -> openWithCustomTab(data)
             2 -> forwardToOtherBrowser(data)
@@ -129,6 +133,7 @@ class MainActivity : ComponentActivity() {
             pendingDialogUrl = null
             retreatAfterResume = false
             externalHandled = false
+            Diag.log("LinkRouter: about to launch dialog url=$dialogUrl cold=$coldExternal")
             val launched = runCatching {
                 startActivity(DownloadDialogActivity.intent(this, dialogUrl))
             }.isSuccess
@@ -180,6 +185,7 @@ class MainActivity : ComponentActivity() {
         installCrashLogger()
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
+        dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate intent: action=${intent.action} data=${intent.data}")
         AdBlock.init(this)
         CacheCleaner.runOnColdStart(this)
         // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化。

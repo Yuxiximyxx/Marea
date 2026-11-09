@@ -2256,7 +2256,12 @@ fun BrowserScreen(
             onOpenScripts = { pushPage(AppRoute.Extensions) },
             onOpenAdBlock = { pushPage(AppRoute.AdBlockPage) },
             onOpenDispatch = { pushPage(AppRoute.DispatchPage) },
-            onOpenPrivacy = { pushPage(AppRoute.PrivacyPage) },
+            onOpenPrivacy = {
+                // fork.7 步进日志：进入隐私页前先落盘一行——若此后闪退，证据止步于哪一步一眼可辨
+                Diag.log("Privacy: settings entry clicked, about to push PrivacyPage")
+                pushPage(AppRoute.PrivacyPage)
+                Diag.log("Privacy: pushPage(PrivacyPage) returned")
+            },
             onOpenFingerprint = { pushPage(AppRoute.FingerprintPage) },
             onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
             onOpenAbout = { pushPage(AppRoute.About) },
