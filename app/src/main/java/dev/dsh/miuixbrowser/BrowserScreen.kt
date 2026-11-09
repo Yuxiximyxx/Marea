@@ -2278,6 +2278,8 @@ fun BrowserScreen(
             onThreadsChange = { settings.updateDownloadThreads(it) },
             multiThreadMinMb = settings.downloadMultiThreadMinMb,
             onMultiThreadMinMbChange = { settings.updateDownloadMultiThreadMinMb(it) },
+            maxConcurrent = settings.downloadMaxConcurrent,
+            onMaxConcurrentChange = { settings.updateDownloadMaxConcurrent(it) },
         )
     }
     entry<AppRoute.AdBlockPage> {
@@ -3244,6 +3246,8 @@ private fun StartPage(
                                                 DownloadState.PAUSED -> "已暂停"
                                                 DownloadState.DONE -> "已完成"
                                                 DownloadState.FAILED -> "失败"
+                                                DownloadState.QUEUED -> "等待下载"
+                                                DownloadState.RETRYING -> "重试中"
                                             },
                                             onClick = guard(onOpenDownloads),
                                         )

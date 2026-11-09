@@ -98,8 +98,10 @@ object DownloadStore {
                     uri = str("uri")?.let { Uri.parse(it) },
                     bytes = o.optLong("bytes"),
                     total = o.optLong("total"),
-                    // 进程被杀时正在跑的任务恢复为已暂停，等用户手动继续
-                    state = if (state == DownloadState.RUNNING) DownloadState.PAUSED else state,
+                    // 进程被杀时正在跑 / 排队 / 自动重试中的任务统一恢复为已暂停，等用户手动继续
+                    state = if (state == DownloadState.RUNNING || state == DownloadState.QUEUED ||
+                        state == DownloadState.RETRYING
+                    ) DownloadState.PAUSED else state,
                     error = str("error"),
                     createdAt = o.optLong("createdAt", 0L),
                     etag = str("etag"),

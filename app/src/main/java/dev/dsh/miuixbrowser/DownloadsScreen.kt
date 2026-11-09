@@ -183,6 +183,8 @@ fun DownloadsScreen(
     onThreadsChange: (Int) -> Unit = {},
     multiThreadMinMb: Int = 10,
     onMultiThreadMinMbChange: (Int) -> Unit = {},
+    maxConcurrent: Int = 3,
+    onMaxConcurrentChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
     // 按空间过滤：隐私模式只看隐私任务，普通模式看不到隐私任务（fork.5 隐私模式）
@@ -234,6 +236,7 @@ fun DownloadsScreen(
                     item {
                         val threadOptions = DOWNLOAD_THREAD_OPTIONS
                         val minMbOptions = DOWNLOAD_MIN_MB_OPTIONS
+                        val concurrentOptions = DOWNLOAD_CONCURRENT_OPTIONS
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -255,6 +258,14 @@ fun DownloadsScreen(
                                 items = minMbOptions.map { downloadThresholdLabel(it) },
                                 selectedIndex = minMbOptions.indexOf(multiThreadMinMb).coerceAtLeast(0),
                                 onSelectedIndexChange = { onMultiThreadMinMbChange(minMbOptions[it]) },
+                            )
+                            AppDropdownPreference(
+                                backdrop = if (glass) backdrop else null,
+                                title = "同时下载数",
+                                summary = "超过上限的新任务排队等待，空出位置自动递补",
+                                items = concurrentOptions.map { it.toString() },
+                                selectedIndex = concurrentOptions.indexOf(maxConcurrent).coerceAtLeast(0),
+                                onSelectedIndexChange = { onMaxConcurrentChange(concurrentOptions[it]) },
                             )
                         }
                     }
@@ -315,9 +326,14 @@ fun DownloadsScreen(
                                                 DownloadState.DONE -> Downloader.sizeText(task.bytes) + " · 已保存"
                                                 DownloadState.PAUSED -> "已暂停 · ${Downloader.sizeText(task.bytes)}"
                                                 DownloadState.FAILED -> "失败 · ${task.error ?: "未知错误"}"
+                                                DownloadState.QUEUED -> "等待下载" +
+                                                    if (task.bytes > 0) " · ${Downloader.sizeText(task.bytes)}" else ""
+                                                DownloadState.RETRYING ->
+                                                    "重试中（第 ${task.retryRound} 次）· ${task.error ?: ""}"
                                                 DownloadState.RUNNING -> {
                                                     val percent = (Downloader.progressOf(task) * 100).toInt()
-                                                    "$percent% · ${Downloader.sizeText(task.bytes)}"
+                                                    "$percent% · ${Downloader.sizeText(task.bytes)}" +
+                                                        Downloader.speedEtaText(task)
                                                 }
                                             },
                                             fontSize = 12.sp,
@@ -330,9 +346,10 @@ fun DownloadsScreen(
                                     }
                                     }
                                     when (task.state) {
-                                        DownloadState.RUNNING -> IconButton(onClick = { Downloader.pause(task.id) }) {
-                                            Icon(imageVector = MiuixIcons.Glass.Pause, contentDescription = "暂停")
-                                        }
+                                        DownloadState.RUNNING, DownloadState.QUEUED, DownloadState.RETRYING ->
+                                            IconButton(onClick = { Downloader.pause(task.id) }) {
+                                                Icon(imageVector = MiuixIcons.Glass.Pause, contentDescription = "暂停")
+                                            }
                                         DownloadState.PAUSED -> IconButton(onClick = { Downloader.resume(context, task.id) }) {
                                             Icon(imageVector = MiuixIcons.Glass.Play, contentDescription = "继续")
                                         }
@@ -345,7 +362,9 @@ fun DownloadsScreen(
                                         Icon(imageVector = MiuixIcons.Glass.Close, contentDescription = "删除")
                                     }
                                 }
-                                if (task.state == DownloadState.RUNNING || task.state == DownloadState.PAUSED) {
+                                if (task.state == DownloadState.RUNNING || task.state == DownloadState.PAUSED ||
+                                    task.state == DownloadState.RETRYING
+                                ) {
                                     Spacer(Modifier.height(8.dp))
                                     LinearProgressIndicator(
                                         progress = Downloader.progressOf(task),

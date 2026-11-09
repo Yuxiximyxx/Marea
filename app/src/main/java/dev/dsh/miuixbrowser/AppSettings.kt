@@ -11,6 +11,9 @@ val DOWNLOAD_THREAD_OPTIONS = listOf(4, 8, 16, 32, 64)
 /** 下载页「多线程阈值」档位（MB）：10 / 50 / 100 / 200 / 500 / 1G */
 val DOWNLOAD_MIN_MB_OPTIONS = listOf(10, 50, 100, 200, 500, 1024)
 
+/** 下载队列可选的同时进行数（fork.14），默认 3 */
+val DOWNLOAD_CONCURRENT_OPTIONS = listOf(1, 2, 3, 4, 5)
+
 /** 阈值档位的显示文字 */
 fun downloadThresholdLabel(mb: Int): String = if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
 
@@ -146,10 +149,23 @@ class AppSettings(context: Context) {
         prefs.edit().putInt(KEY_DL_MIN_MB, downloadMultiThreadMinMb).apply()
     }
 
+    /** 同时进行的下载任务数：超过上限的新任务排队等待（fork.14 下载队列） */
+    var downloadMaxConcurrent by mutableStateOf(
+        prefs.getInt(KEY_DL_CONCURRENT, 3).let { if (it in DOWNLOAD_CONCURRENT_OPTIONS) it else 3 },
+    )
+        private set
+
+    fun updateDownloadMaxConcurrent(n: Int) {
+        downloadMaxConcurrent = if (n in DOWNLOAD_CONCURRENT_OPTIONS) n else 3
+        Downloader.applyMaxConcurrent(appContext, downloadMaxConcurrent)
+        prefs.edit().putInt(KEY_DL_CONCURRENT, downloadMaxConcurrent).apply()
+    }
+
     init {
         // 启动时把已保存的下载配置推给下载器
         Downloader.segments = downloadThreads
         Downloader.segmentMinBytes = downloadMultiThreadMinMb * 1024L * 1024L
+        Downloader.maxConcurrent = downloadMaxConcurrent
     }
 
     /** 应用图标：0=默认 1=多彩 2=立体 3=深色（对应 AppIconManager.ICONS） */
@@ -486,6 +502,7 @@ class AppSettings(context: Context) {
         const val KEY_UPDATE_CHANNEL = "update_channel"
         const val KEY_DL_THREADS = "download_threads"
         const val KEY_DL_MIN_MB = "download_multithread_min_mb"
+        const val KEY_DL_CONCURRENT = "download_max_concurrent"
         const val KEY_UA = "ua"
         const val KEY_THEME = "theme_mode"
         const val KEY_SEARCH = "search_index"

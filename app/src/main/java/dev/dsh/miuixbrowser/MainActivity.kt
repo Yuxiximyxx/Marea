@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_DOWNLOADS = "open_downloads"
+
+        /** 下载弹窗探测发现是网页后回主界面打开的标记：带标记的 VIEW 意图不再被外链下载判定重复拦截 */
+        const val EXTRA_OPEN_IN_BROWSER = "open_in_browser"
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -74,14 +77,28 @@ class MainActivity : ComponentActivity() {
             2 -> forwardToOtherBrowser(data)
             else -> {
                 // 分发规则仍走主界面这条原路径（见 LinkRouter）：命中送出则不进浏览器。
-                // fork.7 改案：原先在这里按 URL 形态「分诊转弹窗」的整条链已删除——下载弹窗
-                // 改由 DownloadDialogActivity 以 intent-filter 被系统直接唤起（ABDM 结构），
-                // 入口层不再预判是否文件；普通链接只进主界面，扩展名 / MIME 链接在系统
-                // 选择器里与主界面并列，由用户选「下载」入口（可设总是）。
                 val url = data.toString()
                 when (LinkRouter.routeExternal(this, url)) {
                     LinkRouter.Result.Dispatched -> externalHandled = true
-                    LinkRouter.Result.Unhandled -> incomingUrl.value = url
+                    LinkRouter.Result.Unhandled -> {
+                        // fork.14：规则没接的链接里，命中下载形态的由主界面显式拉起下载弹窗。
+                        // 背景（fork.7/8 实证）：Marea 是默认浏览器时，GitHub 签名直链这类意图被系统
+                        // 直接判给 MainActivity，弹窗的 intent-filter 没机会上场——改走应用内显式拉起，
+                        // 不再依赖系统分发。判定只认既有域名/扩展名清单（Downloader.looksLikeFileUrl），
+                        // 普通网页链接不命中；拉起失败落回浏览器打开。弹窗探测发现是网页时带
+                        // EXTRA_OPEN_IN_BROWSER 回来，这类意图不再重复拦截（防循环）。
+                        // 注意：命中弹窗时不设 externalHandled——主界面留在弹窗之下，不做退场收尾，
+                        // 关弹窗即回浏览器（与 fork.5/6 分诊转手时序吞启动的老问题无关）。
+                        if (!intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false) &&
+                            Downloader.looksLikeFileUrl(url)
+                        ) {
+                            Diag.log("MainActivity: file-like external url -> download dialog: ${url.take(100)}")
+                            runCatching { startActivity(DownloadDialogActivity.intent(this, url)) }
+                                .onFailure { incomingUrl.value = url }
+                        } else {
+                            incomingUrl.value = url
+                        }
+                    }
                 }
             }
         }

@@ -130,7 +130,8 @@ class DownloadDialogActivity : ComponentActivity() {
                                 runCatching {
                                     startActivity(
                                         Intent(Intent.ACTION_VIEW, android.net.Uri.parse(target))
-                                            .setClass(this@DownloadDialogActivity, MainActivity::class.java),
+                                            .setClass(this@DownloadDialogActivity, MainActivity::class.java)
+                                            .putExtra(MainActivity.EXTRA_OPEN_IN_BROWSER, true),
                                     )
                                 }
                                 finish()

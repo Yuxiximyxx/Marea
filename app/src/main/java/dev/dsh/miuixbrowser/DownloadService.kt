@@ -168,6 +168,16 @@ class DownloadService : Service() {
             instance?.refreshForeground()
         }
 
+        /** 排队等待（fork.14 下载队列）：任务已建、等空槽；通知保留暂停/取消动作，不申请实况推广 */
+        fun showQueued(context: Context, name: String, taskId: Long) {
+            val e = entries.getOrPut(taskId) { Entry(name, -1, name, paused = true) }
+            e.name = name
+            e.text = name
+            e.paused = true
+            postTask(context, taskId, title = "等待下载", percent = -1, text = name, paused = true)
+            instance?.refreshForeground()
+        }
+
         /** 暂停：通知保留（可继续/取消），但不再申请实况推广 */
         fun updatePaused(context: Context, name: String, progress: Float, taskId: Long) {
             val pct = (progress * 100).toInt().coerceIn(0, 100)
