@@ -25,6 +25,7 @@ import java.util.Locale
 object Diag {
 
     private var file: File? = null
+    private var mediaDir: File? = null
     private val lock = Any()
     private val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
@@ -35,6 +36,7 @@ object Diag {
             runCatching {
                 val dir = context.externalMediaDirs.firstOrNull() ?: context.filesDir
                 dir.mkdirs()
+                mediaDir = dir
                 val f = File(dir, "diag.txt")
                 if (f.exists() && f.length() > 1_000_000L) f.delete()
                 file = f
@@ -91,15 +93,12 @@ object Diag {
     }
 
     /**
-     * fork.8：把系统记录的最近一次原生崩溃（CRASH_NATIVE）的墓碑关键段转存进 diag。
-     *
-     * JVM 崩溃有 crash.txt 兜底，但 SIGSEGV 这类原生崩溃只有系统留的 tombstone——
-     * fork.7 已实证隐私页闪退是 CRASH_NATIVE + status 11(SIGSEGV)、且没有 crash.txt，
-     * 定点定位靠的正是这份墓碑里的 signal / fault addr / backtrace。
-     * [ApplicationExitInfo.getTraceInputStream] 是取它的官方入口。
-     *
-     * 只摘关键段并限制总量（最多扫 200K 字符、最多转存 48 行、backtrace 最多 24 帧），
-     * 避免把 diag 撑爆或拖住启动；流为空/读失败也留一行原因，不静默。
+     * fork.8 用正则摘关键段（signal / backtrace 等）在用户机型上两次都「读到了流但没摘到段」——
+     * 该机型墓碑格式与摘录模式对不上。fork.9 改为**原文转存**：把
+     * [ApplicationExitInfo.getTraceInputStream] 的内容不做任何解析、截断到约 64KB 后
+     * 整段写到同目录的 tombstone.txt（每次启动覆盖，只保留最近一次），diag 里只留
+     * 一行指针。万一隐私页原生崩溃再现，原文直接可读，不再依赖格式猜测。
+     * 流为空 / 读失败同样留一行原因，不静默。
      */
     private fun dumpLatestNativeTombstone(reasons: List<ApplicationExitInfo>) {
         val info = reasons.firstOrNull {
@@ -112,40 +111,31 @@ object Diag {
                 writeRaw("tombstone: latest CRASH_NATIVE at $stamp — trace stream is null（系统未留墓碑）")
                 return
             }
-            val picked = ArrayList<String>()
-            var inBacktrace = false
-            var frames = 0
-            var budget = 200_000
-            stream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                for (line in lines) {
-                    if (budget <= 0 || picked.size >= 48) break
-                    budget -= line.length + 1
-                    val t = line.trim()
-                    when {
-                        t.startsWith("Build fingerprint:") -> picked += line
-                        t.startsWith("pid:") -> picked += line
-                        t.startsWith("signal ") -> picked += line
-                        t.startsWith("Abort message:") -> picked += line
-                        t == "backtrace:" -> {
-                            inBacktrace = true
-                            picked += line
-                        }
-                        inBacktrace && t.startsWith("#") -> {
-                            if (frames < 24) {
-                                picked += line
-                                frames++
-                            }
-                        }
-                        inBacktrace && t.isNotEmpty() -> inBacktrace = false
+            val dir = mediaDir ?: file?.parentFile
+            if (dir == null) {
+                writeRaw("tombstone: latest CRASH_NATIVE at $stamp — media dir unknown, skip raw dump")
+                return
+            }
+            val out = File(dir, "tombstone.txt")
+            var total = 0
+            stream.use { input ->
+                FileOutputStream(out).use { fos ->
+                    val buf = ByteArray(8192)
+                    val limit = 64 * 1024
+                    while (total < limit) {
+                        val n = input.read(buf, 0, minOf(buf.size, limit - total))
+                        if (n < 0) break
+                        fos.write(buf, 0, n)
+                        total += n
                     }
+                    fos.flush()
+                    runCatching { fos.fd.sync() }
                 }
             }
-            if (picked.isEmpty()) {
-                writeRaw("tombstone: latest CRASH_NATIVE at $stamp — 墓碑读到了但没摘到关键段")
-            } else {
-                writeRaw("tombstone: latest CRASH_NATIVE at $stamp — 关键段转存（backtrace 前 $frames 帧）：")
-                picked.forEach { writeRaw("tombstone: $it") }
-            }
+            writeRaw(
+                "tombstone: latest CRASH_NATIVE at $stamp — 原始墓碑已整段转存 " +
+                    "tombstone.txt（$total 字节，上限 64KB）: ${out.absolutePath}",
+            )
         }.onFailure { e ->
             writeRaw(
                 "tombstone: read failed for CRASH_NATIVE at $stamp: " +

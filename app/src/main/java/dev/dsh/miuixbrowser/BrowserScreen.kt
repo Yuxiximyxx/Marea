@@ -2305,6 +2305,8 @@ fun BrowserScreen(
         PrivacySettingsScreen(
             onBack = { popPage() },
             blurEnabled = settings.blurEnabled,
+            // fork.9：只读缓存传入，页面内不触发 WebView/Profile 检测（缓存由启动预热填充）
+            profileSupported = PrivacyMode.profileSupportedCached(),
         )
     }
     entry<AppRoute.FingerprintPage> {

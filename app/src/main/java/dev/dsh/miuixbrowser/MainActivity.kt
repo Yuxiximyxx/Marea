@@ -164,6 +164,13 @@ class MainActivity : ComponentActivity() {
         // 冷启动 match() 因未初始化恒返回 null，规则判定与回退链在冷启动下全程静默失效。
         Downloader.restore(this)
         LinkDispatch.init(this)
+        // fork.9：WebView 多 Profile 支持检测在进程启动时、主线程上先算好并缓存——
+        // fork.5~8 里这个检测的进程内首次调用发生在隐私设置页组合阶段，其后约 1.5 秒
+        // 进程必以原生 SIGSEGV 死亡（页面本身零交互即死、JVM 无异常）。把首次触碰挪到
+        // 启动语境后，设置页只读缓存 Boolean、零原生接触；前后各留一行 Diag 便于复测对时。
+        dev.dsh.miuixbrowser.Diag.log("Privacy: profile support warm-up begin (startup, main thread)")
+        val profileWarm = dev.dsh.miuixbrowser.PrivacyMode.profileSupported()
+        dev.dsh.miuixbrowser.Diag.log("Privacy: profile support warm-up done: $profileWarm")
         // 系统重建 Activity（savedInstanceState != null）时 intent 还是当初那条，不能再重复打开一次链接
         if (savedInstanceState == null) {
             consumeOpenDownloads(intent)

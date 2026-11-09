@@ -2,6 +2,34 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-fork.9] - 2026-11-09
+
+### 隐私模式设置页闪退：定向审计 + 按构造修复（本版只修这一处）
+
+- **三次真机 diag 的一致模式**：设置页入口点击 → pushPage → 三个区块全部组成完成，之后
+  1.4~2.0 秒进程死亡（ApplicationExitInfo = CRASH_NATIVE / SIGSEGV），其间零交互日志
+  （输入框焦点、按钮点击、onDispose 都没触发），JVM 无异常、无 crash.txt。
+- **定向审计结论**：把本页能摸到的调用逐个列全并与不崩的兄弟页（指纹保护页 / 分发规则页 /
+  设置主页——三者与本页共用同一套 Scaffold、玻璃顶栏、双 backdrop、miuix TextField）
+  对照后，共享组件全部排除；本页**独有**的调用只剩：口令保险库的 SharedPreferences 读
+  （纯 Java）、`PrivacyMode.active` 状态读（纯 Compose），以及一个原生接触点——
+  `WebViewFeature.isFeatureSupported(MULTI_PROFILE)` 多 Profile 检测。且本进程里这个
+  检测的**首次调用恰好发生在本页组合阶段**（其余调用方都要等隐私空间真正切换后才走到，
+  而用户从未成功进入过）。该机型 WebView 供应商回 reported true。死亡延迟与组成时刻
+  挂钩、与会话年龄无关——**该检测列为头号根因嫌疑**（机制未完全实证，按构造消除）。
+- **按构造修复**：隐私设置页改为零原生接触的哑页面——
+  - 多 Profile 检测移到 `MainActivity.onCreate` 启动时、主线程上预热一次并缓存
+    （前后各留一行 Diag 便于复测对时）；设置页改为由调用方传入只读缓存的 Boolean 显示，
+    页面内不再调用任何 WebView / Profile API；
+  - 页面内本就没有 delay 型副作用与自动聚焦，本版亦未新增；口令的设置 / 校验 / 清除
+    保持纯 Java 实现（PrivacyVault）不动；空间切换时 applyPrivacySpace 的真实判定不变。
+- **墓碑兜底改原文转存**：fork.8 的正则摘录在该机型墓碑格式上两次没摘到段。本版改为把
+  `getTraceInputStream()` 内容**原文**（截断约 64KB）整段写到同目录 `tombstone.txt`，
+  diag 只留一行指针——万一再现，原文件直接可读。
+- fork.6~8 的全部加固与步进日志保留不回退；下载侧本版不动。
+- 真机验证点：装上后点设置 → 隐私与安全 → 隐私模式，页面应能停住并可设置口令、地址栏
+  输入口令可进入隐私模式；若仍崩，把 diag.txt 与同目录 tombstone.txt 一起回传。
+
 ## [1.8.28-fork.8] - 2026-11-09
 
 ### 下载：新增按域名接的过滤组（实修，依据 fork.7 真机 diag）

@@ -56,6 +56,10 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 fun PrivacySettingsScreen(
     onBack: () -> Unit,
     blurEnabled: Boolean = true,
+    // fork.9：由调用方传入（读 PrivacyMode 的进程级缓存），页面本身零 WebView/Profile
+    // 原生接触——fork.5~8 本页在组合时首次调用 WebViewFeature 多 Profile 检测后
+    // 约 1.5 秒必原生 SIGSEGV，该检测已移到 MainActivity 启动时主线程预热。
+    profileSupported: Boolean = false,
 ) {
     // fork.7 步进日志：本页组合的最早一步——排在任何 backdrop 创建 / 状态读取之前落盘
     remember { Diag.log("Privacy: screen composition entered"); true }
@@ -67,13 +71,11 @@ fun PrivacySettingsScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val topScrolled = rememberTopBarScrolled(scrollBehavior)
 
-    // fork.6 防御：初始状态读取全部消毒——口令是否已设走 runCatching（异常按未设置处理），
-    // 多 Profile 支持检测只在进入本页时算一次（结果在 PrivacyMode 内按进程缓存），
-    // 不在组合热路径上反复碰厂商 WebView 的特性检测 API。
+    // fork.6 防御：初始状态读取全部消毒——口令是否已设走 runCatching（异常按未设置处理）。
+    // fork.9：多 Profile 支持状态不再在本页调用检测 API，改为读传入的缓存值（见函数参数注释）。
     var passwordSet by remember {
         mutableStateOf(runCatching { PrivacyVault.isSet(context) }.getOrDefault(false))
     }
-    val profileSupported = remember { PrivacyMode.profileSupported() }
     remember { Diag.log("PrivacySettingsScreen composed, passwordSet=$passwordSet, profile=$profileSupported"); true }
     // fork.7 步进日志：首帧真正组合完成才打这一行，与「composition entered」之间夹着的步骤就是崩溃嫌疑区
     LaunchedEffect(Unit) { Diag.log("Privacy: screen first frame composed") }

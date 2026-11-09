@@ -85,6 +85,14 @@ object PrivacyMode {
     private var profileSupportedCache: Boolean? = null
 
     /**
+     * fork.9：只读缓存、绝不触发检测本身。隐私设置页改用这个值显示——页面里不再出现
+     * 任何 WebView/Profile 原生 API 的首次触碰；缓存由 MainActivity 启动时在主线程
+     * 预热（见 [profileSupported]），或由真正切换隐私空间的 applyPrivacySpace 顺带填充。
+     * 缓存未填充时按「不支持」显示（仅文案降级，真正的隔离判定在切换空间时仍会现算）。
+     */
+    fun profileSupportedCached(): Boolean = profileSupportedCache ?: false
+
+    /**
      * 设备 WebView 是否支持多 Profile（Cookie / 存储隔离的前提）。
      * fork.6：结果按进程缓存，只在首次调用时碰 WebViewFeature——设置页组合阶段不再反复裸调
      * 厂商 WebView 的特性检测，检测本身异常也只按「不支持」降级，绝不冒泡。
