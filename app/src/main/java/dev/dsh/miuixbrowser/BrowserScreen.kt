@@ -2659,6 +2659,9 @@ private fun AddressField(
                 text = "搜索或输入网址",
                 fontSize = 15.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
             )
         }
         BasicTextField(
