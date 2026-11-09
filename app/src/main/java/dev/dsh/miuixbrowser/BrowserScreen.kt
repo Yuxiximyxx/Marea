@@ -1092,6 +1092,7 @@ fun BrowserScreen(
                         onOpen = { state.openOrReuse(it, tab.incognito, fromStartPage = true) },
                         onToggleEdit = { favEditing = !favEditing },
                         onRemove = { favorites.remove(it) },
+                        onMoveFavorite = { from, to -> favorites.move(from, to) },
                         onEdit = { index ->
                             editingFavIndex = index
                             showFavEditor = true
@@ -2992,6 +2993,7 @@ private fun StartPage(
     onOpen: (String) -> Unit,
     onToggleEdit: () -> Unit,
     onRemove: (Int) -> Unit,
+    onMoveFavorite: (Int, Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
@@ -3097,6 +3099,7 @@ private fun StartPage(
                                 onOpen = onOpen,
                                 onToggleEdit = onToggleEdit,
                                 onRemove = onRemove,
+                                onMoveFavorite = onMoveFavorite,
                                 onEdit = onEdit,
                                 onAdd = onAdd,
                             )
@@ -3186,9 +3189,11 @@ private fun FavoritesBlock(
     onOpen: (String) -> Unit,
     onToggleEdit: () -> Unit,
     onRemove: (Int) -> Unit,
+    onMoveFavorite: (Int, Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
+    val homeFavorites = favorites.take(12)
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3221,34 +3226,39 @@ private fun FavoritesBlock(
 
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            favorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
+            homeFavorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     rowItems.forEachIndexed { colIndex, favorite ->
                         val index = rowIndex * 3 + colIndex
-                        FavoriteTile(
-                            favorite = favorite,
-                            wallpaper = wallpaper,
-                            wallpaperBackdrop = wallpaperBackdrop,
-                            liquidBackdrop = liquidBackdrop,
-                            blurEnabled = blurEnabled,
-                            editing = editing,
-                            modifier = Modifier.weight(1f),
-                            onClick = guard {
-                                if (editing) onEdit(index) else onOpen(favorite.url)
-                            },
-                            onLongPress = {
-                                if (!editing) onToggleEdit()
-                            },
-                            onRemove = { onRemove(index) },
-                        )
+                        key(favorite.url) {
+                            FavoriteTile(
+                                favorite = favorite,
+                                wallpaper = wallpaper,
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
+                                blurEnabled = blurEnabled,
+                                editing = editing,
+                                tileIndexForDrag = index,
+                                modifier = Modifier.weight(1f),
+                                onClick = guard {
+                                    if (editing) onEdit(index) else onOpen(favorite.url)
+                                },
+                                onLongPress = {
+                                    if (!editing) onToggleEdit()
+                                },
+                                onMove = onMoveFavorite,
+                                itemCount = homeFavorites.size,
+                                onRemove = { onRemove(index) },
+                            )
+                        }
                     }
                     repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-            if (editing) {
+            if (editing && favorites.size < 12) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Box(
                         modifier = Modifier
@@ -3568,23 +3578,80 @@ private fun FavoriteTile(
     liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     editing: Boolean,
+    tileIndexForDrag: Int,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    onMove: (Int, Int) -> Unit,
+    itemCount: Int,
     onRemove: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    var dragOffset by remember(favorite.url) { mutableStateOf(Offset.Zero) }
     Box(
         modifier = modifier
             .height(58.dp)
             .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop)
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+                if (dragOffset != Offset.Zero) {
+                    scaleX = 1.04f
+                    scaleY = 1.04f
+                }
+            }
+            .zIndex(if (dragOffset != Offset.Zero) 2f else 0f)
+            .then(
+                if (editing) {
+                    Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onClick,
+                        )
+                        .pointerInput(editing, itemCount, favorite.url) {
+                            var total = Offset.Zero
+                            var currentIndex = -1
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    total = Offset.Zero
+                                    currentIndex = -1
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    total += amount
+                                    dragOffset = total
+                                    if (currentIndex < 0) {
+                                        // 此指针输入绑定到当前列表位置，由父项传入的 onMove 首次移动时确定源位置。
+                                        currentIndex = tileIndexForDrag
+                                    }
+                                    val cellWidth = size.width + with(density) { 10.dp.toPx() }
+                                    val cellHeight = with(density) { 68.dp.toPx() }
+                                    val colDelta = (total.x / cellWidth).roundToInt()
+                                    val rowDelta = (total.y / cellHeight).roundToInt()
+                                    val target = (tileIndexForDrag + rowDelta * 3 + colDelta)
+                                        .coerceIn(0, itemCount - 1)
+                                    if (target != currentIndex) {
+                                        onMove(currentIndex, target)
+                                        currentIndex = target
+                                    }
+                                },
+                                onDragEnd = { dragOffset = Offset.Zero },
+                                onDragCancel = { dragOffset = Offset.Zero },
+                            )
+                        }
+                } else {
+                    Modifier.combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongPress()
+                        },
+                    )
                 },
             ),
         contentAlignment = Alignment.Center,

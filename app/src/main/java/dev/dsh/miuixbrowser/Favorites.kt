@@ -97,6 +97,14 @@ class FavoritesStore(context: Context) {
         }
     }
 
+    /** 将收藏从 from 移动到 to，并立即持久化顺序。 */
+    fun move(from: Int, to: Int) {
+        if (from !in items.indices || to !in items.indices || from == to) return
+        val item = items.removeAt(from)
+        items.add(to, item)
+        persist()
+    }
+
     fun removeAtUrl(url: String) {
         val i = items.indexOfFirst { it.url == url }
         if (i >= 0) remove(i)
