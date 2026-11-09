@@ -4,41 +4,33 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.blur.Backdrop
-import top.yukonga.miuix.kmp.glass.GlassBottomSheet
-import top.yukonga.miuix.kmp.glass.GlassDialogButton
-import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 启动时自动检查更新的进程级状态：同一进程只检查一次（旋转屏幕等重组不会重复请求）。 */
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+
+/**
+ * 更新链路专用调度器（fork.10）：
+ *
+ * fork.8 的崩溃墓碑实证，自动更新拉取（GitHubAccelerate 直连+镜像竞速）在共享线程池的
+ * 后台线程里做 TLS 握手时原生崩溃（conscrypt SEGV_ACCERR）、整进程陪葬。改版后更新检查
+ * 只在用户手动点击时查、只直连自仓，也不再与全 App 共享线程池：拉取统一走这台单线程
+ * 执行器，线程带 2MB 栈，给 TLS/JSON 解析留足余量；拉取代码本身全程 runCatching 兜底，
+ * 失败只回 null 提示用户，不存在把异常或原生问题扩散到主进程其他部分的路径。
+ */
+val UpdateFetchDispatcher: CoroutineDispatcher = Executors.newSingleThreadExecutor(
+    object : ThreadFactory {
+        override fun newThread(r: Runnable): Thread =
+            Thread(null, r, "marea-update-fetch", 2L * 1024 * 1024).apply { isDaemon = true }
+    },
+).asCoroutineDispatcher()
+
 object UpdateChecker {
-    @Volatile
-    var checkedThisProcess = false
-
-    /** 有可提示的新版本则返回，否则 null（网络失败、已是最新、已被用户忽略都返回 null）。 */
-    fun findPending(ignored: String, channel: Int): AppRelease? {
-        val rel = fetchLatestRelease(channel) ?: return null
-        if (!isNewerVersion(rel.version, BuildConfig.VERSION_NAME)) return null
-        if (rel.version.removePrefix("v") == ignored.removePrefix("v")) return null
-        return rel
-    }
-
+    /**
+     * 下载新版本安装包：fork.10 起只用 release 自带的 GitHub 官方直链，不再挑线路。
+     * （旧实现会先开一条裸线程跑 GitHubAccelerate.pickDownloadUrl 探测镜像，已删除。）
+     */
     fun download(context: Context, rel: AppRelease, openInApp: ((String) -> Unit)? = null) {
         val apk = rel.apkUrl
         if (apk.isNullOrBlank()) {
@@ -55,21 +47,14 @@ object UpdateChecker {
             }
             return
         }
-        Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()
-        // 直连 + GitHub 加速并发探测，连通者优先；探测在后台，回主线程再入下载队列
-        Thread {
-            val url = GitHubAccelerate.pickDownloadUrl(apk)
-            android.os.Handler(context.mainLooper).post {
-                Downloader.start(
-                    context = context,
-                    url = url,
-                    userAgent = null,
-                    fileName = "Marea-${rel.version.removePrefix("v")}.apk",
-                    mimeType = "application/vnd.android.package-archive",
-                )
-                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
-            }
-        }.start()
+        Downloader.start(
+            context = context,
+            url = apk,
+            userAgent = null,
+            fileName = "Marea-${rel.version.removePrefix("v")}.apk",
+            mimeType = "application/vnd.android.package-archive",
+        )
+        Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
     }
 }
 
@@ -90,69 +75,5 @@ fun isNewerVersion(remote: String, local: String): Boolean {
     return pre(local) && !pre(remote)
 }
 
-/** 发现新版本的底部弹窗：下载 / 忽略此版本。下滑关闭等同“稍后再说”，下次启动仍会提示。 */
-@Composable
-fun UpdateSheet(
-    show: Boolean,
-    release: AppRelease?,
-    backdrop: Backdrop?,
-    onDismiss: () -> Unit,
-    onIgnore: (AppRelease) -> Unit,
-    onDownload: (AppRelease) -> Unit,
-) {
-    AppBottomSheet(
-        show = show,
-        title = "发现新版本",
-        backdrop = backdrop,
-        onDismissRequest = onDismiss,
-    ) {
-        if (release == null) return@AppBottomSheet
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 16.dp),
-        ) {
-            Text(
-                text = "${BuildConfig.VERSION_NAME}  →  ${release.version}",
-                fontSize = 15.sp,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
-            if (release.notes.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 220.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Text(
-                        text = release.notes,
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                AppDialogButton(onClick = { onIgnore(release) }, modifier = Modifier.weight(1f)) {
-                    Text(text = "忽略此版本", style = MiuixTheme.textStyles.button)
-                }
-                AppDialogButton(
-                    onClick = { onDownload(release) },
-                    modifier = Modifier.weight(1f),
-                    role = GlassDialogButtonRole.Primary,
-                ) {
-                    Text(
-                        text = if (release.apkUrl.isNullOrBlank()) "查看更新" else "下载",
-                        style = MiuixTheme.textStyles.button,
-                    )
-                }
-            }
-        }
-    }
-}
+// fork.10：自动检查的「发现新版本」底部弹窗（UpdateSheet）已删除——不再有自动检查，
+// 新版本提示改走关于页手动检查后的弹窗（AboutScreen 内的 pendingUpdate 流）。

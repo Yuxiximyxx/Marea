@@ -380,23 +380,10 @@ fun BrowserScreen(
     var webPermPrompt by remember { mutableStateOf<WebPermPrompt?>(null) }
     var androidPermDone by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    // 启动自动检查更新：每个进程只查一次；有新版本且未被忽略时弹底部提示
-    var updateRelease by remember { mutableStateOf<AppRelease?>(null) }
-    var lastUpdateRelease by remember { mutableStateOf<AppRelease?>(null) }
-    LaunchedEffect(Unit) {
-        if (UpdateChecker.checkedThisProcess) return@LaunchedEffect
-        UpdateChecker.checkedThisProcess = true
-        // 稍等首屏稳定再请求，避免和启动渲染抢资源
-        kotlinx.coroutines.delay(1500)
-        val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            UpdateChecker.findPending(settings.ignoredUpdate, settings.updateChannel)
-        }
-        if (found != null) {
-            lastUpdateRelease = found
-            updateRelease = found
-        }
-    }
-
+    // fork.10：不再自动检查更新。旧逻辑在这里以 LaunchedEffect + delay(1500) 在每个进程
+    // 启动约 1.5 秒后用 Dispatchers.IO 拉一次 releases（直连+镜像竞速）——fork.8 墓碑实证
+    // 该竞速线程在 conscrypt TLS 握手时原生崩溃、整进程闪退，用户当时正好常停在设置/
+    // 隐私页，表象成了「进隐私页闪退」。更新检查现为纯手动：设置 → 关于 → 检查更新。
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
             pushPage(AppRoute.Downloads)
@@ -1860,20 +1847,7 @@ fun BrowserScreen(
         }
 
 
-        UpdateSheet(
-            show = updateRelease != null,
-            release = updateRelease ?: lastUpdateRelease,
-            backdrop = if (homeBlurAvailable && settings.blurEnabled) homeBackdrop else null,
-            onDismiss = { updateRelease = null },
-            onIgnore = {
-                settings.updateIgnoredUpdate(it.version)
-                updateRelease = null
-            },
-            onDownload = {
-                UpdateChecker.download(context, it, openInApp = { openInBrowser(it) })
-                updateRelease = null
-            },
-        )
+        // fork.10：UpdateSheet 已随自动检查一并删除（新版本提示改为关于页手动检查弹窗）
 
         val downloadRequest = pendingDownload
         AppGlassDialog(

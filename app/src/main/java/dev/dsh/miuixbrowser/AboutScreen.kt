@@ -197,7 +197,7 @@ fun AboutScreen(
                             if (checkingUpdate) return@AppDialogButton
                             checkingUpdate = true
                             scope.launch {
-                                val result = withContext(Dispatchers.IO) { fetchLatestRelease(updateChannel) }
+                                val result = withContext(UpdateFetchDispatcher) { fetchLatestRelease(updateChannel) }
                                 checkingUpdate = false
                                 if (result == null) {
                                     Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
@@ -308,11 +308,11 @@ fun AboutScreen(
             }
 
             // 应用内下载更新（不再跳浏览器）
-            val update = pendingUpdate
+            val pending = pendingUpdate
             AppGlassDialog(
-                show = update != null,
+                show = pending != null,
                 title = "发现新版本",
-                summary = update?.let { "${it.version} · 下载后可在下载页安装" },
+                summary = pending?.let { "${it.version} · 下载后可在下载页安装" },
                 backdrop = if (glass) pageBackdrop else null,
                 onDismissRequest = { pendingUpdate = null },
             ) {
@@ -328,23 +328,18 @@ fun AboutScreen(
                     }
                     AppDialogButton(
                         onClick = {
-                            val rel = update ?: return@AppDialogButton
+                            val rel = pending ?: return@AppDialogButton
                             val apk = rel.apkUrl
                             if (apk != null) {
-                                Toast.makeText(context, "正在选择下载线路…", Toast.LENGTH_SHORT).show()
-                                Thread {
-                                    val url = GitHubAccelerate.pickDownloadUrl(apk)
-                                    android.os.Handler(context.mainLooper).post {
-                                        Downloader.start(
-                                            context = context,
-                                            url = url,
-                                            userAgent = null,
-                                            fileName = "Marea-${rel.version.removePrefix("v")}.apk",
-                                            mimeType = "application/vnd.android.package-archive",
-                                        )
-                                        Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
-                                    }
-                                }.start()
+                                // fork.10：直连下载，不再跑 GitHubAccelerate 挑线路（见 CHANGELOG）
+                                Downloader.start(
+                                    context = context,
+                                    url = apk,
+                                    userAgent = null,
+                                    fileName = "Marea-${rel.version.removePrefix("v")}.apk",
+                                    mimeType = "application/vnd.android.package-archive",
+                                )
+                                Toast.makeText(context, "已开始下载，完成后可在下载页安装", Toast.LENGTH_LONG).show()
                             }
                             pendingUpdate = null
                         },
@@ -383,22 +378,19 @@ internal fun tagMatchesChannel(tag: String, channel: Int): Boolean {
 /**
  * 拉取指定分支（0=stable 1=dev）的最新 release：版本号、页面地址、APK 直链。
  * 取最近 30 个 release，只保留 tag 后缀匹配分支、非草稿的，再按版本号取最高者。
- * 直连 + 公共 GitHub 加速镜像并发探测，连通者优先。
+ *
+ * fork.10：只直连自仓 api.github.com，不再用 GitHub 公共镜像竞速。
+ * 旧实现是「直连 + 5 个公共镜像」在共享线程池并行拉取、先回者胜出——fork.8 的崩溃
+ * 墓碑实证其中一条后台线程在 conscrypt TLS 握手时原生崩溃（SIGSEGV）、整进程陪葬，
+ * 表象是「一进设置/隐私页就闪退」。现在只在关于页手动点击时查、只发这一次直连请求、
+ * 由 UpdateFetchDispatcher 专用线程执行（见 UpdateChecker.kt），失败返回 null 提示用户。
  */
-internal fun fetchLatestRelease(channel: Int): AppRelease? {
-    val fetchers: List<() -> AppRelease?> = GitHubAccelerate.MirrorPrefixes.map { prefix ->
-        {
-            val api = GitHubAccelerate.map(RELEASES_API, prefix)
-            fetchReleaseFrom(api, channel)
-        }
-    }
-    return GitHubAccelerate.raceFirst(8000, fetchers)
-}
+internal fun fetchLatestRelease(channel: Int): AppRelease? = fetchReleaseFrom(RELEASES_API, channel)
 
 private fun fetchReleaseFrom(apiUrl: String, channel: Int): AppRelease? = runCatching {
     val connection = (java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 6000
-        readTimeout = 6000
+        connectTimeout = 8000
+        readTimeout = 8000
         instanceFollowRedirects = true
         setRequestProperty("User-Agent", "mafari")
         setRequestProperty("Accept", "application/vnd.github+json")
