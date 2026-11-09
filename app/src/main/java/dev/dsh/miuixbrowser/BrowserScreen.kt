@@ -3612,30 +3612,39 @@ private fun FavoriteTile(
                         )
                         .pointerInput(editing, itemCount, favorite.url) {
                             var total = Offset.Zero
-                            var currentIndex = -1
+                            var targetIndex = tileIndexForDrag
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     total = Offset.Zero
-                                    currentIndex = tileIndexForDrag
+                                    targetIndex = tileIndexForDrag
                                 },
                                 onDrag = { change, amount ->
                                     change.consume()
                                     total += amount
                                     dragOffset = total
+
+                                    // 拖动期间只计算落点，不修改真实列表；避免卡片经过其他项时
+                                    // 立即重排，导致目标位置不断变化、出现“吸附/置换”的错觉。
                                     val cellWidth = size.width + with(density) { 10.dp.toPx() }
                                     val cellHeight = with(density) { 68.dp.toPx() }
                                     val colDelta = (total.x / cellWidth).roundToInt()
                                     val rowDelta = (total.y / cellHeight).roundToInt()
-                                    val target = (tileIndexForDrag + rowDelta * 3 + colDelta)
+                                    targetIndex = (tileIndexForDrag + rowDelta * 3 + colDelta)
                                         .coerceIn(0, itemCount - 1)
-                                    if (target != currentIndex) {
-                                        onMove(currentIndex, target)
-                                        currentIndex = target
-                                    }
                                 },
-                                onDragEnd = { dragOffset = Offset.Zero },
-                                onDragCancel = { dragOffset = Offset.Zero },
+                                onDragEnd = {
+                                    // 手指松开后一次性提交。FavoritesStore.move 使用 removeAt + add，
+                                    // 因此是插入式移动，原目标项及中间项顺次让位，而非互换。
+                                    if (targetIndex != tileIndexForDrag) {
+                                        onMove(tileIndexForDrag, targetIndex)
+                                    }
+                                    dragOffset = Offset.Zero
+                                },
+                                onDragCancel = {
+                                    // 取消手势不提交排序，恢复卡片原位。
+                                    dragOffset = Offset.Zero
+                                },
                             )
                         }
                 } else {
