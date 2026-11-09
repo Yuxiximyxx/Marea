@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.io.File
 
 /** 单个分段的持久化进度：[start, end] 是字节区间，[done] 是该段已写入的字节数 */
-data class SegProgress(val start: Long, val end: Long, var done: Long)
+data class SegProgress(val start: Long, var end: Long, var done: Long)
 
 /** 一个任务全部分段的进度表（分段下载续传的依据，与 .seg 临时文件配套保存） */
 data class SegTable(val total: Long, val segments: MutableList<SegProgress>) {
