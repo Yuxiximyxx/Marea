@@ -28,15 +28,8 @@ class MainActivity : ComponentActivity() {
     /** 点下载通知进来时要求打开下载页 */
     private val openDownloads = mutableStateOf(false)
 
-    /** 本次外部链接是否已被分诊处理（规则送出 / 下载弹窗），已处理则不进浏览器主界面 */
+    /** 本次外部链接是否已被规则送出处理，已处理则不进浏览器主界面 */
     private var externalHandled = false
-
-    /**
-     * 分诊判定要开下载弹窗的链接（fork.6）：不在 onCreate / onNewIntent 里当场拉起，
-     * 等 onResume（Activity 真正到前台）再启动，避免冷启动 finish 紧跟 startActivity
-     * 把弹窗启动吞掉（fork.5 的「点了没反应」）。
-     */
-    private var pendingDialogUrl: String? = null
 
     /** 本次外部链接已处理完，onResume 后收尾：冷启动 finish、已运行 moveTaskToBack */
     private var retreatAfterResume = false
@@ -57,8 +50,7 @@ class MainActivity : ComponentActivity() {
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
         if (externalHandled) {
-            // 收尾推迟到 onResume 统一做（见 onResume 注释）：先把弹窗真正拉起来再退后台，
-            // 顺序反过来弹窗会被一起退到后台、外部看就是没反应
+            // 收尾推迟到 onResume 统一做：规则送出后不在这里当场 finish / 退后台
             retreatAfterResume = true
         }
     }
@@ -81,13 +73,13 @@ class MainActivity : ComponentActivity() {
             1 -> openWithCustomTab(data)
             2 -> forwardToOtherBrowser(data)
             else -> {
-                // fork.5 分诊（fork.6 改为判定与启动分离）：规则送出 / 直链下载弹窗命中时不进浏览器（见 LinkRouter）
+                // 分发规则仍走主界面这条原路径（见 LinkRouter）：命中送出则不进浏览器。
+                // fork.7 改案：原先在这里按 URL 形态「分诊转弹窗」的整条链已删除——下载弹窗
+                // 改由 DownloadDialogActivity 以 intent-filter 被系统直接唤起（ABDM 结构），
+                // 入口层不再预判是否文件；普通链接只进主界面，扩展名 / MIME 链接在系统
+                // 选择器里与主界面并列，由用户选「下载」入口（可设总是）。
                 val url = data.toString()
-                when (val r = LinkRouter.routeExternal(this, url)) {
-                    is LinkRouter.Result.Dialog -> {
-                        pendingDialogUrl = r.url
-                        externalHandled = true
-                    }
+                when (LinkRouter.routeExternal(this, url)) {
                     LinkRouter.Result.Dispatched -> externalHandled = true
                     LinkRouter.Result.Unhandled -> incomingUrl.value = url
                 }
@@ -120,33 +112,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 外部链接分诊的收尾统一放在 onResume（fork.6）：此时 Activity 已真正到前台，
-     * 从这里 startActivity 拉下载弹窗不会被后台启动限制吞掉；fork.5 在 onCreate 里
-     * startActivity 后立即 finish、或在 onNewIntent 里启动后立即 moveTaskToBack，
-     * 冷启动 / 任务退后台的时序都会让弹窗无声消失且链接丢失。
-     * 弹窗拉起失败 → 回退成进浏览器打开该链接，保证任何路径都有可见结果。
+     * 规则送出的收尾统一放在 onResume：送出发生在 onCreate / onNewIntent，当场 finish /
+     * moveTaskToBack 的时序曾让外部表现异常，推迟到 Activity 真正到前台后再退场。
+     * （fork.7 改案后本方法只剩这一件事：下载弹窗已不经主界面转手。）
      */
     override fun onResume() {
         super.onResume()
-        val dialogUrl = pendingDialogUrl
-        if (dialogUrl != null) {
-            pendingDialogUrl = null
-            retreatAfterResume = false
-            externalHandled = false
-            Diag.log("LinkRouter: about to launch dialog url=$dialogUrl cold=$coldExternal")
-            val launched = runCatching {
-                startActivity(DownloadDialogActivity.intent(this, dialogUrl))
-            }.isSuccess
-            Diag.log("LinkRouter: dialog launch -> $launched url=${dialogUrl.take(80)}")
-            if (launched) {
-                if (coldExternal) finish() else moveTaskToBack(true)
-            } else {
-                // 弹窗没拉起来：不许静默吞掉，回退到浏览器里打开这条链接
-                incomingUrl.value = dialogUrl
-            }
-            coldExternal = false
-            return
-        }
         if (retreatAfterResume) {
             retreatAfterResume = false
             externalHandled = false

@@ -213,8 +213,11 @@ object Downloader {
         return ext in FILE_EXTENSIONS
     }
 
-    /** 探测结果：[size] < 0 表示未知；[fileName] 是 Content-Disposition 推导名（可空）。 */
-    data class ProbeResult(val size: Long, val fileName: String?, val mime: String?)
+    /**
+     * 探测结果：[size] < 0 表示未知；[fileName] 是 Content-Disposition 推导名（可空）；
+     * [finalUrl] 是跟随重定向后的最终地址（fork.7：弹窗据此回填，文件名与下载都以它为准）。
+     */
+    data class ProbeResult(val size: Long, val fileName: String?, val mime: String?, val finalUrl: String? = null)
 
     /**
      * 轻量探测（fork.5 新建下载弹窗）：先 HEAD（跟随重定向），拿不到长度或 HEAD 被拒时
@@ -229,6 +232,7 @@ object Downloader {
                 var size = head.contentLengthLong
                 var disposition = head.getHeaderField("Content-Disposition")
                 var mime = head.contentType?.substringBefore(';')
+                var finalUrl = runCatching { head.url?.toString() }.getOrNull()
                 head.disconnect()
                 if (size < 0 || headCode >= 400) {
                     val ranged = openProbe(url, userAgent, cookie, "GET", range = true)
@@ -238,12 +242,14 @@ object Downloader {
                         ?: ranged.contentLengthLong
                     if (disposition == null) disposition = ranged.getHeaderField("Content-Disposition")
                     if (mime == null) mime = ranged.contentType?.substringBefore(';')
+                    finalUrl = runCatching { ranged.url?.toString() }.getOrNull() ?: finalUrl
                     ranged.disconnect()
                 }
                 ProbeResult(
                     size = size,
-                    fileName = disposition?.let { fileNameFrom(url, it) },
+                    fileName = disposition?.let { fileNameFrom(finalUrl ?: url, it) },
                     mime = mime,
+                    finalUrl = finalUrl,
                 )
             }.getOrDefault(ProbeResult(-1L, null, null))
         }

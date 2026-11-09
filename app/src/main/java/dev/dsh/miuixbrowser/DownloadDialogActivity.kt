@@ -49,9 +49,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 
 /**
- * 新建下载悬浮弹窗（fork.5）：独立的透明 Activity 承载，背景透出当前 App，
- * 关掉直接回原 App，全程不出现浏览器主界面、不建标签页（照 ABDM 的形态）。
- * MainActivity 分诊命中直链下载 / DOWNLOAD 规则送出失败时拉起。
+ * 新建下载悬浮弹窗（fork.5 引入；fork.7 按 ABDM 结构改成「接收口 + 弹窗」二合一）：
+ * 本 Activity exported=true、透明主题、standard 启动模式，由系统按 intent-filter
+ * 直接唤起——SEND 分享、VIEW 按 MIME、VIEW 按文件扩展名（pathPattern 家族）三组入口；
+ * 普通网页链接仍只进 MainActivity，两个入口靠 filter 形态在系统选择器里并列共存。
+ * fork.5/6 的「MainActivity 分诊转弹窗」链（连同 taskAffinity / singleInstance /
+ * excludeFromRecents 那套）已整体删除——那正是 ABDM 没用的做法。
+ * 背景透出当前 App，关掉直接回原 App，不建标签页。
  */
 class DownloadDialogActivity : ComponentActivity() {
 
@@ -63,12 +67,13 @@ class DownloadDialogActivity : ComponentActivity() {
         // （主界面不在场），它内部的 Diag.log 会因 file 未初始化被静默丢弃。补上初始化
         // （追加模式 + 进程内只初始化一次，重复调用无副作用）。
         Diag.init(this)
-        Diag.log("DownloadDialogActivity.onCreate: url=${intent?.getStringExtra(EXTRA_URL) ?: intent?.data}")
+        Diag.log("DownloadDialogActivity.onCreate: action=${intent?.action} type=${intent?.type}")
         // 冷进程直达：先恢复落盘任务再建任务，否则 persistNow 会整表覆盖旧任务
         // fork.6 防御：恢复 / 初始化异常不许把弹窗 Activity 直接带崩（外部看就是「点了没反应」）
         runCatching { Downloader.restore(this) }
         runCatching { LinkDispatch.init(this) }
-        urlState.value = intent?.getStringExtra(EXTRA_URL) ?: intent?.data?.toString() ?: ""
+        urlState.value = resolveUrl(intent)
+        Diag.log("DownloadDialogActivity: resolved url=${urlState.value.take(120)}")
         if (urlState.value.isBlank()) {
             Diag.log("DownloadDialogActivity: blank url, finish")
             finish()
@@ -112,6 +117,24 @@ class DownloadDialogActivity : ComponentActivity() {
                         NewDownloadSheet(
                             url = url,
                             onDismiss = { finish() },
+                            onUrlResolved = { resolved ->
+                                // 探测回填的重定向后最终地址：与当前不同才换，避免反复重组
+                                if (resolved.isNotBlank() && resolved != urlState.value) {
+                                    Diag.log("DownloadDialogActivity: finalUrl backfill -> ${resolved.take(100)}")
+                                    urlState.value = resolved
+                                }
+                            },
+                            onOpenInBrowser = { target ->
+                                // 逃生口：下到的是网页不是文件，交回主界面打开（显式组件，不再绕选择器）
+                                Diag.log("DownloadDialogActivity: escape to browser url=${target.take(100)}")
+                                runCatching {
+                                    startActivity(
+                                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(target))
+                                            .setClass(this@DownloadDialogActivity, MainActivity::class.java),
+                                    )
+                                }
+                                finish()
+                            },
                             onConfirm = { fileName, startNow ->
                                 val cookie = PrivacyMode.cookieFor(url, privacy = false)
                                 if (startNow) {
@@ -147,11 +170,30 @@ class DownloadDialogActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        urlState.value = intent.getStringExtra(EXTRA_URL) ?: intent.data?.toString() ?: urlState.value
+        val resolved = resolveUrl(intent)
+        Diag.log("DownloadDialogActivity.onNewIntent: action=${intent.action} resolved=${resolved.take(120)}")
+        if (resolved.isNotBlank()) urlState.value = resolved
+    }
+
+    /**
+     * 取链：内部分发走 [EXTRA_URL]；系统入口——ACTION_SEND 读 EXTRA_TEXT 并抽出
+     * 第一个 http(s) 链接（分享文本常带标题等杂质），其余读 intent.data。
+     * 入口层不预判是否文件（判定归系统 intent-filter 与弹窗内探测）。
+     */
+    private fun resolveUrl(intent: Intent?): String {
+        if (intent == null) return ""
+        intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() }?.let { return it }
+        if (intent.action == Intent.ACTION_SEND) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return ""
+            return URL_IN_TEXT.find(text)?.value ?: text.trim()
+        }
+        return intent.data?.toString() ?: ""
     }
 
     companion object {
         const val EXTRA_URL = "marea_download_url"
+
+        private val URL_IN_TEXT = Regex("""https?://[^\s<>"']+""")
 
         fun intent(context: Context, url: String): Intent =
             Intent(context, DownloadDialogActivity::class.java).putExtra(EXTRA_URL, url)
@@ -168,18 +210,28 @@ fun NewDownloadSheet(
     url: String,
     onDismiss: () -> Unit,
     onConfirm: (fileName: String, startNow: Boolean) -> Unit,
+    onUrlResolved: (String) -> Unit = {},
+    onOpenInBrowser: (String) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     var fileName by remember(url) { mutableStateOf(Downloader.fileNameFrom(url, null)) }
     var nameEdited by remember(url) { mutableStateOf(false) }
     var probing by remember(url) { mutableStateOf(true) }
     var size by remember(url) { mutableStateOf(-1L) }
+    var probeMime by remember(url) { mutableStateOf<String?>(null) }
+    var resolvedUrl by remember(url) { mutableStateOf(url) }
     var probeTick by remember(url) { mutableIntStateOf(0) }
 
     LaunchedEffect(url, probeTick) {
         probing = true
         val result = Downloader.probe(url, null, PrivacyMode.cookieFor(url, privacy = false))
         size = result.size
+        probeMime = result.mime
+        // 重定向后的最终地址回填：文件名与实际下载都以它为准
+        if (!result.finalUrl.isNullOrBlank()) {
+            resolvedUrl = result.finalUrl
+            if (result.finalUrl != url) onUrlResolved(result.finalUrl)
+        }
         // 探测带回的 Content-Disposition 文件名只在用户还没手改时覆盖
         if (!nameEdited && !result.fileName.isNullOrBlank()) fileName = result.fileName
         probing = false
@@ -264,6 +316,17 @@ fun NewDownloadSheet(
                         MiuixTheme.colorScheme.primary
                     },
                 )
+            }
+        }
+        // 逃生口（fork.7）：探测发现下到的其实是网页（text/html）——多半是中转页 / 假直链，
+        // 给一条回主界面的路，而不是把网页当文件硬下
+        if (!probing && probeMime?.startsWith("text/html") == true) {
+            Spacer(Modifier.height(14.dp))
+            AppDialogButton(
+                onClick = { onOpenInBrowser(resolvedUrl) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = "在浏览器打开", style = MiuixTheme.textStyles.button)
             }
         }
         Spacer(Modifier.height(18.dp))
