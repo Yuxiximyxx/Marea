@@ -98,14 +98,13 @@ jobs:
           echo "source apk: [$SRC]"
           if [ -z "$SRC" ]; then echo "没有可签名的 APK"; exit 0; fi
           cp "$SRC" dist/mafari-release-raw.apk
-          cp "$SRC" dist/app-release.apk
           if [ -n "$STORE_PASSWORD" ] && [ -f mafari-release.jks ]; then
             "$SDK/zipalign" -f 4 dist/mafari-release-raw.apk dist/mafari-aligned.apk
             "$SDK/apksigner" sign --ks mafari-release.jks \
               --ks-pass "pass:$STORE_PASSWORD" \
               --key-pass "pass:$KEY_PASSWORD" \
               --ks-key-alias "$KEY_ALIAS" \
-              --out dist/mafari-release-signed.apk dist/mafari-aligned.apk
+              --out dist/Marea-release-signed.apk dist/mafari-aligned.apk
           fi
           rm -f dist/mafari-release-raw.apk dist/mafari-aligned.apk
           ls -lh dist
