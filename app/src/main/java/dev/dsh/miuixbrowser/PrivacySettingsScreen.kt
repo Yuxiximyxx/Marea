@@ -19,12 +19,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,6 +77,10 @@ fun PrivacySettingsScreen(
     remember { Diag.log("PrivacySettingsScreen composed, passwordSet=$passwordSet, profile=$profileSupported"); true }
     // fork.7 步进日志：首帧真正组合完成才打这一行，与「composition entered」之间夹着的步骤就是崩溃嫌疑区
     LaunchedEffect(Unit) { Diag.log("Privacy: screen first frame composed") }
+    // fork.8 步进日志：页面销毁留一行——闪退前若没它而直接换 pid，死点在页面存活期间
+    DisposableEffect(Unit) {
+        onDispose { Diag.log("Privacy: screen disposed") }
+    }
     var oldPw by remember { mutableStateOf("") }
     var newPw by remember { mutableStateOf("") }
     var newPw2 by remember { mutableStateOf("") }
@@ -108,7 +114,11 @@ fun PrivacySettingsScreen(
                     scrollBehavior = scrollBehavior,
                     onBack = onBack,
                     backButton = {
-                        LiquidGlassBackButton(backdrop = liquid, surfaceVisible = topScrolled, onClick = onBack)
+                        LiquidGlassBackButton(
+                            backdrop = liquid,
+                            surfaceVisible = topScrolled,
+                            onClick = { Diag.log("Privacy: click back"); onBack() },
+                        )
                     },
                 )
             },
@@ -137,6 +147,8 @@ fun PrivacySettingsScreen(
                                     .padding(horizontal = 12.dp),
                                 insideMargin = PaddingValues(16.dp),
                             ) {
+                                // fork.8 步进日志：状态卡区块组合完成
+                                remember { Diag.log("Privacy: block composed: status, passwordSet=$passwordSet"); true }
                                 val status = when {
                                     !passwordSet -> "未设置口令"
                                     PrivacyMode.active -> "已开启 · 当前处于隐私模式"
@@ -164,13 +176,14 @@ fun PrivacySettingsScreen(
                                     if (PrivacyMode.active) {
                                         AppTextButton(
                                             text = "退出隐私模式",
-                                            onClick = { PrivacyMode.exit() },
+                                            onClick = { Diag.log("Privacy: click exit"); PrivacyMode.exit() },
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     } else {
                                         AppTextButton(
                                             text = "进入隐私模式",
                                             onClick = {
+                                                Diag.log("Privacy: click enter")
                                                 PrivacyMode.enter()
                                                 onBack()
                                             },
@@ -189,12 +202,18 @@ fun PrivacySettingsScreen(
                                     .padding(horizontal = 12.dp),
                                 insideMargin = PaddingValues(16.dp),
                             ) {
+                                // fork.8 步进日志：口令输入区区块组合完成
+                                remember { Diag.log("Privacy: block composed: password"); true }
                                 if (passwordSet) {
                                     TextField(
                                         value = oldPw,
                                         onValueChange = { oldPw = it },
                                         label = "当前口令",
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .onFocusChanged {
+                                                if (it.hasFocus) Diag.log("Privacy: field focused: oldPw")
+                                            },
                                         singleLine = true,
                                         visualTransformation = PasswordVisualTransformation(),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -205,7 +224,11 @@ fun PrivacySettingsScreen(
                                     value = newPw,
                                     onValueChange = { newPw = it },
                                     label = if (passwordSet) "新口令" else "设置口令",
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged {
+                                            if (it.hasFocus) Diag.log("Privacy: field focused: newPw")
+                                        },
                                     singleLine = true,
                                     visualTransformation = PasswordVisualTransformation(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -215,7 +238,11 @@ fun PrivacySettingsScreen(
                                     value = newPw2,
                                     onValueChange = { newPw2 = it },
                                     label = "再输入一次",
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged {
+                                            if (it.hasFocus) Diag.log("Privacy: field focused: newPw2")
+                                        },
                                     singleLine = true,
                                     visualTransformation = PasswordVisualTransformation(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -224,6 +251,7 @@ fun PrivacySettingsScreen(
                                 AppTextButton(
                                     text = if (passwordSet) "修改口令" else "保存口令",
                                     onClick = {
+                                        Diag.log("Privacy: click save password, passwordSet=$passwordSet")
                                         if (passwordSet && !PrivacyVault.verify(context, oldPw)) {
                                             toast("当前口令不正确")
                                         } else if (validateNew()) {
@@ -243,7 +271,10 @@ fun PrivacySettingsScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable { showClearConfirm = true }
+                                            .clickable {
+                                                Diag.log("Privacy: click clear (open confirm)")
+                                                showClearConfirm = true
+                                            }
                                             .padding(vertical = 10.dp),
                                     ) {
                                         Text(
@@ -263,6 +294,8 @@ fun PrivacySettingsScreen(
                                     .padding(horizontal = 12.dp),
                                 insideMargin = PaddingValues(16.dp),
                             ) {
+                                // fork.8 步进日志：隔离范围区块组合完成
+                                remember { Diag.log("Privacy: block composed: scope"); true }
                                 Text(
                                     text = "隐私模式有自己独立的一套书签、历史和下载列表，与普通模式互不可见；" +
                                         "隐私下载的文件保存在 Download/Marea/Private。切到后台或锁屏会自动退出隐私模式，" +
@@ -287,7 +320,7 @@ fun PrivacySettingsScreen(
             ) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     AppDialogButton(
-                        onClick = { showClearConfirm = false },
+                        onClick = { Diag.log("Privacy: click clear cancel"); showClearConfirm = false },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(text = "取消", style = MiuixTheme.textStyles.button)
@@ -295,6 +328,7 @@ fun PrivacySettingsScreen(
                     Spacer(Modifier.width(12.dp))
                     AppDialogButton(
                         onClick = {
+                            Diag.log("Privacy: click clear confirm")
                             showClearConfirm = false
                             PrivacyVault.clear(context)
                             PrivacyMode.exit()

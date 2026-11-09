@@ -306,6 +306,20 @@
                 <data android:pathPattern=".*\\..*\\..*\\.rpm.*" />
                 <data android:pathPattern=".*\\..*\\..*\\..*\\.rpm.*" />
             </intent-filter>
+
+            <!-- 按域名入口（fork.8）：GitHub 签名直链的文件名只在查询参数里、路径无扩展名，
+                 且意图不带 MIME——fork.7 的 pathPattern 组与 MIME 组都接不住，真机实证链接
+                 直达主界面进了浏览器。以下域名只分发下载文件，按主机全路径接收（不带 pathPattern） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="release-assets.githubusercontent.com" />
+                <data android:host="objects.githubusercontent.com" />
+                <data android:host="codeload.github.com" />
+            </intent-filter>
         </activity>
 
         <!-- 应用图标：同一时间只启用一个 alias，见 AppIconManager -->

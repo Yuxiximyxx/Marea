@@ -2,6 +2,35 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-fork.8] - 2026-11-09
+
+### 下载：新增按域名接的过滤组（实修，依据 fork.7 真机 diag）
+- fork.7 真机证据：GitHub 点 APK 后链接以 VIEW 意图直达浏览器主界面，实际 URL 是
+  `release-assets.githubusercontent.com/github-production-release-asset/...` 的签名直链——
+  **文件名只在查询参数里（rscd=attachment; filename=…），路径里没有 .apk 扩展名，意图也不带 MIME**，
+  所以 fork.7 的 pathPattern 组与 MIME 组都匹配不到，只剩主界面一个候选，没有选择器、直接进浏览器。
+- 给 DownloadDialogActivity 新增第四组 intent-filter：VIEW + DEFAULT + BROWSABLE + http/https +
+  按主机接收（`release-assets.githubusercontent.com`、`objects.githubusercontent.com`、
+  `codeload.github.com`），不带 pathPattern。这三个域名只分发下载文件，全路径接收安全。
+  GitHub 类签名直链今后靠这组域名规则命中；原三组（SEND / MIME / 扩展名）保留不动。
+- 真机验证点：在 GitHub 点 release 资产，应出现系统选择器（两个 Marea 入口选「下载」并设总是）
+  或直达下载弹窗。
+
+### 隐私闪退：提取原生崩溃墓碑（本版只取证 + 埋点，不猜修）
+- fork.7 步进日志实证：隐私设置页入口点击 → pushPage → 页面组合完成全部正常，约 1.6 秒后进程死亡；
+  ApplicationExitInfo 回溯为 **CRASH_NATIVE + status 11 (SIGSEGV)**、前台进程。也就是说不是
+  JVM 异常（这同时解释了为什么一直没有 crash.txt），是原生层段错误，死点在页面组成之后。
+- **墓碑转存**：启动时若系统记录里有 CRASH_NATIVE，除原有退出原因回溯外，再用
+  `ApplicationExitInfo.getTraceInputStream()` 读系统留的 tombstone，把 Build fingerprint、
+  进程行、signal/fault addr 行、Abort message 与 backtrace 前 24 帧转存进 diag.txt
+  （扫描与转存都限量；读不到/流为空也会在 diag 里留一行原因）。
+- **交互步进日志加密**：隐私设置页三个区块（状态卡 / 口令输入区 / 隔离范围）各有组合完成一行；
+  口令输入框获得焦点、每个按钮（进入 / 退出 / 保存 / 清除入口 / 取消 / 确认清除 / 返回）点击、
+  页面 onDispose 各一行——下次复测就能把死点夹在最后两个动作之间。
+- fork.6/7 的全部防御加固（PrivacyVault 读写兜底、profileSupported 进程级缓存、
+  applyPrivacySpace 去重、Diag 追加 + 同步落盘 + 退出回溯）保留不回退。
+- 下一步：等本版真机复测回传新 diag（里面应有墓碑关键段），再定点修 fork.9。
+
 ## [1.8.28-fork.7] - 2026-11-09
 
 诊断加固版：fork.6 后真机复测，隐私设置页一点仍闪退、外部下载弹窗仍不出现，且回传的 diag.txt
