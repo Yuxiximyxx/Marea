@@ -2954,7 +2954,6 @@ private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
 
 /* ------------------------------ 弹层行 ------------------------------ */
 
-@Composable
 /**
  * 长按菜单命中分发规则后的送出（fork.20）：规则带短链预解析时先展开再定最终链接，
  * 其余同步送出；送出走 matchAsync 统一入口，未命中 / 送出失败都给 Toast，不吞链接。
@@ -2972,6 +2971,7 @@ private fun dispatchLongPressHit(context: android.content.Context, url: String) 
     }
 }
 
+@Composable
 private fun SheetRow(
     title: String,
     subtitle: String? = null,
