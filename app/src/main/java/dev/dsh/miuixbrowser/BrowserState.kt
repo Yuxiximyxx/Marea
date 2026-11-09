@@ -1314,8 +1314,8 @@ class BrowserTab(private val appContext: Context) {
     /**
      * 直链下载拦截（fork.15）：目标 URL 命中文件形态（[Downloader.looksLikeFileUrl]：
      * 已知下载域名 / 路径扩展名 / 查询参数里的文件名）时，取消本次站内加载，显式拉起
-     * 独立任务的下载确认框（DownloadDialogActivity，与外部分诊同一个弹窗、fork.17 起
-     * 恒带 NEW_TASK + 独立 taskAffinity），
+     * 下载确认框（DownloadDialogActivity，与外部分诊同一个弹窗；fork.19 起与主界面
+     * 同任务叠放，本处用 appContext 拉起、由 intent 工厂按非 Activity 上下文补 NEW_TASK），
      * 返回 true 表示已接管。只认 http(s)，判定不发网络请求。
      * 调用点共三处：标签内点击（shouldOverrideUrlLoading，分发规则之后）、顶层加载
      * （performLoad）、新窗口目标（handlePopupTarget）——把进 WebView 的路都堵上，

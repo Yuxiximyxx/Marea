@@ -60,15 +60,15 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MiuixBrowser" />
 
-        <!-- 新建下载悬浮弹窗（fork.5）：独立任务、透明主题，不进最近任务 -->
+        <!-- 新建下载悬浮弹窗（fork.5）：透明主题 -->
         <!-- 下载弹窗：接收口 + 弹窗二合一（fork.7 按 ABDM 结构）——系统按 intent-filter 直接唤起。
-             fork.17：加独立 taskAffinity——Marea 是默认浏览器时系统把直链判给 MainActivity，
-             主界面以跳板方式转交本弹窗（不组合浏览器界面、转交后退场），弹窗必须落在自己的
-             任务里压在来源应用之上，而不是叠进主界面的任务 -->
+             fork.19：与主界面合回同一任务（回到默认亲和，不再设独立 taskAffinity）——
+             fork.17 拆独立任务是怀疑任务归属让弹窗不可见，后经 fork.18 证明真凶是 miuix
+             覆盖层组件、已换普通内联面板；同任务后跳板转交只发生一次窗口切换、无中间黑闪，
+             与 ABDM 的跳板+弹窗同任务一跳到位同款 -->
         <activity
             android:name=".DownloadDialogActivity"
             android:exported="true"
-            android:taskAffinity="io.github.yuxiximyxx.marea.download"
             android:label="下载"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
             android:windowSoftInputMode="adjustResize"

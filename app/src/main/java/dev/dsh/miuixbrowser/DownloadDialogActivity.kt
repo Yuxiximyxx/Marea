@@ -1,5 +1,6 @@
 package dev.dsh.miuixbrowser
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -61,11 +62,13 @@ import top.yukonga.miuix.kmp.theme.ThemeController
  * 本 Activity exported=true、透明主题、standard 启动模式，由系统按 intent-filter
  * 直接唤起——SEND 分享、VIEW 按 MIME、VIEW 按文件扩展名（pathPattern 家族）三组入口；
  * 普通网页链接仍只进 MainActivity，两个入口靠 filter 形态在系统选择器里并列共存。
- * fork.17：本 Activity 在 Manifest 里有独立 taskAffinity、拉起恒带 NEW_TASK，落在
- * 自己的任务里压在来源应用之上。Marea 是默认浏览器时系统把直链判给 MainActivity 的
- * 那条路，改由 MainActivity 当跳板转交（分诊在 setContent 之前、转交后主界面不组合
- * 浏览器界面并退场）——fork.14~16 的「主界面组合完再把弹窗叠进同一任务」三版真机
- * 都没让用户见到弹窗，本版从结构上消除。呈现判据看 Diag 的 `dialog window focused`。
+ * fork.17：Marea 是默认浏览器时系统把直链判给 MainActivity 的那条路，改由
+ * MainActivity 当跳板转交（分诊在 setContent 之前、转交后主界面不组合浏览器界面
+ * 并退场）。呈现判据看 Diag 的 `dialog window focused`。
+ * fork.19：与主界面合回同一任务——去掉 fork.17 的独立 taskAffinity 与拉起恒带
+ * NEW_TASK。当时拆任务是怀疑任务归属让弹窗不可见，fork.18 已证明真凶是 miuix
+ * 覆盖层 sheet（已换普通内联面板）；同任务后外部点直链只发生一次窗口切换、
+ * 无中间黑闪（ABDM 跳板+弹窗本就同任务）。
  * 背景透出当前 App，关掉直接回原 App，不建标签页。
  */
 class DownloadDialogActivity : ComponentActivity() {
@@ -224,14 +227,17 @@ class DownloadDialogActivity : ComponentActivity() {
 
         private val URL_IN_TEXT = Regex("""https?://[^\s<>"']+""")
 
-        fun intent(context: Context, url: String): Intent =
-            Intent(context, DownloadDialogActivity::class.java)
+        fun intent(context: Context, url: String): Intent {
+            val intent = Intent(context, DownloadDialogActivity::class.java)
                 .putExtra(EXTRA_URL, url)
-                // fork.17：恒带 NEW_TASK——本 Activity 在 Manifest 里有独立 taskAffinity，
-                // 无论从 Activity 还是 appContext 拉起都落进自己的任务、压在来源应用之上，
-                // 不叠进主界面的任务（fork.14~16 无 NEW_TASK + 同任务正是弹窗没露面的结构）。
-                // 非 Activity 上下文没有这个标记系统会直接抛异常，更必须带。
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // fork.19：与主界面合回同一任务——从 Activity 拉起就是同任务普通压栈，
+            // 不再恒带 NEW_TASK；仅非 Activity 上下文（BrowserState 的 appContext）
+            // 系统硬性要求 NEW_TASK 才补（无此标记从应用上下文 startActivity 直接抛异常）。
+            if (context !is Activity) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return intent
+        }
     }
 }
 

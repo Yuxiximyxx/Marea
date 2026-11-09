@@ -31,15 +31,25 @@ class MainActivity : ComponentActivity() {
     /** 本次外部链接是否已被规则送出处理，已处理则不进浏览器主界面 */
     private var externalHandled = false
 
-    /** 本次外部链接已处理完，onResume 后收尾：冷启动 finish、已运行 moveTaskToBack */
+    /** 本次外部链接已处理完，onResume 后收尾：冷启动 finish、已运行 moveTaskToBack（下载跳板转交的已运行收尾例外，见 [retreatViaTrampoline]） */
     private var retreatAfterResume = false
 
     /**
-     * fork.17：本次外部直链命中下载形态、已由跳板转交独立任务的下载弹窗。
+     * fork.17：本次外部直链命中下载形态、已由跳板转交下载弹窗。
      * 冷启时置位后 onCreate 不再 setContent（BrowserScreen 不组合、主页不加载），
-     * 退场收尾复用 [externalHandled] 的 onResume 通道。
+     * 退场收尾复用 [externalHandled] 的 onResume 通道。每次 consumeViewIntent 开头
+     * 先清零，只反映「当前正在消费的这条意图」。
      */
     private var downloadTrampoline = false
+
+    /**
+     * fork.19：本次 onResume 收尾是否源于下载跳板转交（在置 [retreatAfterResume]
+     * 的同一处快照）。弹窗与主界面同任务后，已运行实例的跳板收尾不能再
+     * moveTaskToBack——那会连刚拉起的弹窗一起把整个任务沉底；改为不退场，
+     * 弹窗叠在本 Activity 之上、关掉正好回到转交前的浏览器状态。
+     * 规则送出（LinkRouter.Dispatched）的收尾不受影响，仍走 moveTaskToBack。
+     */
+    private var retreatViaTrampoline = false
 
     /** 本次处理发生在冷启动（onCreate）路径，收尾用 finish 而不是 moveTaskToBack */
     private var coldExternal = false
@@ -61,6 +71,7 @@ class MainActivity : ComponentActivity() {
         consumeViewIntent(intent)
         if (externalHandled) {
             // 收尾推迟到 onResume 统一做：规则送出后不在这里当场 finish / 退后台
+            retreatViaTrampoline = downloadTrampoline
             retreatAfterResume = true
         }
     }
@@ -73,6 +84,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun consumeViewIntent(intent: Intent?) {
+        // 跳板标志只反映当前这条意图：先清零，命中下载形态时在分诊里重新置位，
+        // 避免上一条意图的残留让 onResume 收尾误判来源
+        downloadTrampoline = false
         if (intent?.action != Intent.ACTION_VIEW) return
         val data = intent.data ?: return
         val scheme = data.scheme?.lowercase() ?: return
@@ -92,12 +106,13 @@ class MainActivity : ComponentActivity() {
                         // 背景（fork.7/8 实证）：Marea 是默认浏览器时，GitHub 签名直链这类意图被系统
                         // 直接判给 MainActivity，弹窗的 intent-filter 没机会上场——仍走应用内显式拉起，
                         // 判定只认既有域名/扩展名清单（Downloader.looksLikeFileUrl），普通网页链接不命中。
-                        // fork.14~16 的老做法是「主界面留在弹窗之下」：分诊后照常组合 BrowserScreen、
-                        // 弹窗叠进主界面同一个任务，真机三版用户都只见浏览器界面、没见到弹窗。
-                        // 本版改 ABDM 式：弹窗有独立 taskAffinity、拉起带 NEW_TASK 落在自己的任务里
-                        // 压在来源应用之上；主界面转交成功即置 externalHandled 走既有退场收尾
-                        // （冷启 onResume 后 finish、已运行 moveTaskToBack 不带自己到前台），且冷启
-                        // 时不再 setContent——浏览器界面全程不出现。拉起失败才落回浏览器打开。
+                        // fork.19：弹窗已与主界面合回同一任务（去掉 fork.17 的独立 taskAffinity 与
+                        // 恒 NEW_TASK）——拆任务当时是怀疑任务归属让弹窗不可见，fork.18 已证明真凶
+                        // 是 miuix 覆盖层组件并换成普通内联面板、真机确认可见。同任务后转交只发生
+                        // 一次窗口切换、无中间黑闪。退场语义按路径分：冷启收尾 finish（任务里只剩
+                        // 弹窗，关掉即回来源应用，ABDM 跳板同款）；已运行实例不退场，弹窗叠在现有
+                        // 主界面之上、关掉回原浏览器状态（见 onResume 的 retreatViaTrampoline 分支），
+                        // 且冷启时不再 setContent——浏览器界面全程不出现。拉起失败才落回浏览器打开。
                         // 弹窗探测发现是网页时带 EXTRA_OPEN_IN_BROWSER 回来，这类意图不再重复
                         // 拦截（防循环）。
                         val fromDialogEscape = intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false)
@@ -151,19 +166,26 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 规则送出的收尾统一放在 onResume：送出发生在 onCreate / onNewIntent，当场 finish /
-     * moveTaskToBack 的时序曾让外部表现异常，推迟到 Activity 真正到前台后再退场。
-     * （fork.17 起下载跳板转交也走同一收尾：弹窗在独立任务里，finish / moveTaskToBack
-     * 只作用于主界面自己的任务，碰不到弹窗。）
+     * 规则送出 / 下载跳板的收尾统一放在 onResume：送出发生在 onCreate / onNewIntent，当场
+     * finish / moveTaskToBack 的时序曾让外部表现异常，推迟到 Activity 真正到前台后再退场。
+     * （fork.19：下载弹窗已同任务——冷启跳板仍 finish，已运行跳板改为不退场，
+     * 见 [retreatViaTrampoline]；规则送出的冷启 finish / 已运行 moveTaskToBack 不变。）
      */
     override fun onResume() {
         super.onResume()
         if (retreatAfterResume) {
             retreatAfterResume = false
             externalHandled = false
+            val viaTrampoline = retreatViaTrampoline
+            retreatViaTrampoline = false
             if (coldExternal) {
                 coldExternal = false
                 finish()
+            } else if (viaTrampoline) {
+                // fork.19：已运行实例的下载跳板不退场——弹窗与主界面同任务，弹窗正叠在
+                // 本 Activity 之上，moveTaskToBack 会连弹窗一起把整个任务沉底；
+                // 留在这里，弹窗关闭后正好回到转交前的浏览器状态。
+                Diag.log("MainActivity: download trampoline on running instance, dialog stacked in same task, stay (no retreat)")
             } else {
                 moveTaskToBack(true)
             }
@@ -219,6 +241,7 @@ class MainActivity : ComponentActivity() {
                 // 冷启动被分诊处理：不在 onCreate 里 finish（弹窗还没拉起就 finish 会把启动连带吞掉），
                 // 只登记，等 onResume 拉起弹窗 / 确认送出后再收尾（见 onResume）
                 coldExternal = true
+                retreatViaTrampoline = downloadTrampoline
                 retreatAfterResume = true
             }
         }
@@ -241,9 +264,9 @@ class MainActivity : ComponentActivity() {
         }
 
         if (downloadTrampoline) {
-            // fork.17 跳板冷启：直链已转交独立任务的下载弹窗，主界面到此为止——不请求
+            // fork.17 跳板冷启：直链已转交同一任务的下载弹窗，主界面到此为止——不请求
             // 通知权限、不 setContent（BrowserScreen 不组合、主页与标签都不加载），
-            // onResume 收尾时 finish，屏幕上只留下载弹窗压在来源应用之上。
+            // onResume 收尾时 finish，本 Activity 退出后任务里只剩下载弹窗压在来源应用之上。
             Diag.log("MainActivity: download trampoline launch, skip browser UI")
         } else {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
