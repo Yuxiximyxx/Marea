@@ -53,8 +53,11 @@ import top.yukonga.miuix.kmp.theme.ThemeController
  * 本 Activity exported=true、透明主题、standard 启动模式，由系统按 intent-filter
  * 直接唤起——SEND 分享、VIEW 按 MIME、VIEW 按文件扩展名（pathPattern 家族）三组入口；
  * 普通网页链接仍只进 MainActivity，两个入口靠 filter 形态在系统选择器里并列共存。
- * fork.5/6 的「MainActivity 分诊转弹窗」链（连同 taskAffinity / singleInstance /
- * excludeFromRecents 那套）已整体删除——那正是 ABDM 没用的做法。
+ * fork.17：本 Activity 在 Manifest 里有独立 taskAffinity、拉起恒带 NEW_TASK，落在
+ * 自己的任务里压在来源应用之上。Marea 是默认浏览器时系统把直链判给 MainActivity 的
+ * 那条路，改由 MainActivity 当跳板转交（分诊在 setContent 之前、转交后主界面不组合
+ * 浏览器界面并退场）——fork.14~16 的「主界面组合完再把弹窗叠进同一任务」三版真机
+ * 都没让用户见到弹窗，本版从结构上消除。呈现判据看 Diag 的 `dialog window focused`。
  * 背景透出当前 App，关掉直接回原 App，不建标签页。
  */
 class DownloadDialogActivity : ComponentActivity() {
@@ -178,6 +181,21 @@ class DownloadDialogActivity : ComponentActivity() {
         if (resolved.isNotBlank()) urlState.value = resolved
     }
 
+    // fork.17 呈现证据：fork.14~16 的日志只证明本 Activity「组成了」，证明不了窗口真到了
+    // 用户眼前。onResume 与窗口焦点各留一行带同一判据串的 Diag——真机 diag 里出现
+    // `dialog window focused` 才算弹窗真正露面，缺失即窗口没成为可见顶层。
+    override fun onResume() {
+        super.onResume()
+        Diag.log("DownloadDialogActivity: dialog window focused (onResume)")
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            Diag.log("DownloadDialogActivity: dialog window focused (onWindowFocusChanged)")
+        }
+    }
+
     /**
      * 取链：内部分发走 [EXTRA_URL]；系统入口——ACTION_SEND 读 EXTRA_TEXT 并抽出
      * 第一个 http(s) 链接（分享文本常带标题等杂质），其余读 intent.data。
@@ -201,11 +219,11 @@ class DownloadDialogActivity : ComponentActivity() {
         fun intent(context: Context, url: String): Intent =
             Intent(context, DownloadDialogActivity::class.java)
                 .putExtra(EXTRA_URL, url)
-                .apply {
-                    // 非 Activity 上下文（如标签持有的 appContext，fork.15 的站内拦截）拉起
-                    // 必须带 NEW_TASK，否则系统直接抛异常、弹窗出不来
-                    if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                // fork.17：恒带 NEW_TASK——本 Activity 在 Manifest 里有独立 taskAffinity，
+                // 无论从 Activity 还是 appContext 拉起都落进自己的任务、压在来源应用之上，
+                // 不叠进主界面的任务（fork.14~16 无 NEW_TASK + 同任务正是弹窗没露面的结构）。
+                // 非 Activity 上下文没有这个标记系统会直接抛异常，更必须带。
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }
 

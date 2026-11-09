@@ -61,10 +61,14 @@
             android:theme="@style/Theme.MiuixBrowser" />
 
         <!-- 新建下载悬浮弹窗（fork.5）：独立任务、透明主题，不进最近任务 -->
-        <!-- 下载弹窗：接收口 + 弹窗二合一（fork.7 按 ABDM 结构）——系统按 intent-filter 直接唤起，不再经主界面分诊转手 -->
+        <!-- 下载弹窗：接收口 + 弹窗二合一（fork.7 按 ABDM 结构）——系统按 intent-filter 直接唤起。
+             fork.17：加独立 taskAffinity——Marea 是默认浏览器时系统把直链判给 MainActivity，
+             主界面以跳板方式转交本弹窗（不组合浏览器界面、转交后退场），弹窗必须落在自己的
+             任务里压在来源应用之上，而不是叠进主界面的任务 -->
         <activity
             android:name=".DownloadDialogActivity"
             android:exported="true"
+            android:taskAffinity="io.github.yuxiximyxx.marea.download"
             android:label="下载"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
             android:windowSoftInputMode="adjustResize"

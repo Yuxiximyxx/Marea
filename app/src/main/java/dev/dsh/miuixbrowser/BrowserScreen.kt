@@ -798,6 +798,14 @@ fun BrowserScreen(
         tab.onDownload = { url, ua, disposition, mime ->
             // blob/data 由 BrowserState 抽取后走 onBlobReady
             if (!url.startsWith("blob:", ignoreCase = true) && !url.startsWith("data:", ignoreCase = true)) {
+                // fork.17：DownloadListener 命中的站内下载改走悬浮下载框（DownloadDialogActivity
+                // 独立任务），不在浏览器界面里弹确认——与外部直链、站内点击拦截同一条路径；
+                // 拉起失败才回退下面的浏览器内确认框。文件名/大小由弹窗自己探测（probeShared）。
+                val dialogLaunched = runCatching {
+                    context.startActivity(DownloadDialogActivity.intent(context, url))
+                }.isSuccess
+                Diag.log("BrowserScreen: download hit -> floating dialog launched=$dialogLaunched url=${url.take(100)}")
+                if (!dialogLaunched) {
                 pendingDownload = DownloadRequest(
                     url = url,
                     userAgent = ua,
@@ -806,6 +814,7 @@ fun BrowserScreen(
                     cookie = PrivacyMode.cookieFor(url, tab.privacySpace),
                     referer = tab.url.ifBlank { null },
                 )
+                }
             }
         }
         tab.onBlobStart = {
