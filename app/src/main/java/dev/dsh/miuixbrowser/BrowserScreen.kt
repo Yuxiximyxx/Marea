@@ -3194,6 +3194,10 @@ private fun FavoritesBlock(
     onAdd: () -> Unit,
 ) {
     val homeFavorites = favorites.take(12)
+    // 拖动期间仅更新本地预览顺序；松手后才通过 onMoveFavorite 写入持久化数据。
+    var previewFavorites by remember { mutableStateOf<List<Favorite>?>(null) }
+    var draggingFavoriteUrl by remember { mutableStateOf<String?>(null) }
+    val displayedFavorites = previewFavorites ?: homeFavorites
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3226,9 +3230,13 @@ private fun FavoritesBlock(
 
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            homeFavorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
+            displayedFavorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // zIndex 必须提升整行，而不只是卡片本身；否则跨行向下拖动时，
+                        // 后绘制的下一行仍会盖住被拖动卡片。
+                        .zIndex(if (rowItems.any { it.url == draggingFavoriteUrl }) 1000f else 0f),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     rowItems.forEachIndexed { colIndex, favorite ->
@@ -3249,7 +3257,24 @@ private fun FavoritesBlock(
                                 onLongPress = {
                                     if (!editing) onToggleEdit()
                                 },
-                                onMove = onMoveFavorite,
+                                onMove = { from, to ->
+                                    onMoveFavorite(from, to)
+                                    previewFavorites = null
+                                    draggingFavoriteUrl = null
+                                },
+                                onPreviewMove = { from, to ->
+                                    if (from in homeFavorites.indices && to in homeFavorites.indices) {
+                                        val reordered = homeFavorites.toMutableList()
+                                        val moving = reordered.removeAt(from)
+                                        reordered.add(to, moving)
+                                        previewFavorites = reordered
+                                    }
+                                },
+                                onPreviewCancel = {
+                                    previewFavorites = null
+                                    draggingFavoriteUrl = null
+                                },
+                                onDraggingChanged = { draggingFavoriteUrl = it },
                                 itemCount = homeFavorites.size,
                                 onRemove = { onRemove(index) },
                             )
@@ -3583,12 +3608,16 @@ private fun FavoriteTile(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     onMove: (Int, Int) -> Unit,
+    onPreviewMove: (Int, Int) -> Unit,
+    onPreviewCancel: () -> Unit,
+    onDraggingChanged: (String?) -> Unit,
     itemCount: Int,
     onRemove: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     var dragOffset by remember(favorite.url) { mutableStateOf(Offset.Zero) }
+    var isDragging by remember(favorite.url) { mutableStateOf(false) }
     Box(
         modifier = modifier
             .height(58.dp)
@@ -3601,7 +3630,7 @@ private fun FavoriteTile(
                     scaleY = 1.04f
                 }
             }
-            .zIndex(if (dragOffset != Offset.Zero) 2f else 0f)
+            .zIndex(if (isDragging) 1000f else 0f)
             .then(
                 if (editing) {
                     Modifier
@@ -3612,38 +3641,57 @@ private fun FavoriteTile(
                         )
                         .pointerInput(editing, itemCount, favorite.url) {
                             var total = Offset.Zero
+                            var startIndex = tileIndexForDrag
                             var targetIndex = tileIndexForDrag
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     total = Offset.Zero
-                                    targetIndex = tileIndexForDrag
+                                    startIndex = tileIndexForDrag
+                                    targetIndex = startIndex
+                                    isDragging = true
+                                    onDraggingChanged(favorite.url)
                                 },
                                 onDrag = { change, amount ->
                                     change.consume()
                                     total += amount
-                                    dragOffset = total
-
-                                    // 拖动期间只计算落点，不修改真实列表；避免卡片经过其他项时
-                                    // 立即重排，导致目标位置不断变化、出现“吸附/置换”的错觉。
                                     val cellWidth = size.width + with(density) { 10.dp.toPx() }
                                     val cellHeight = with(density) { 68.dp.toPx() }
                                     val colDelta = (total.x / cellWidth).roundToInt()
                                     val rowDelta = (total.y / cellHeight).roundToInt()
-                                    targetIndex = (tileIndexForDrag + rowDelta * 3 + colDelta)
+                                    val nextTarget = (startIndex + rowDelta * 3 + colDelta)
                                         .coerceIn(0, itemCount - 1)
+
+                                    // 实时重排的是占位顺序：原位置让空位，目标位置插入空位，
+                                    // 其余卡片依次避让。真实收藏数据仍保持不变，直到手指松开。
+                                    if (nextTarget != targetIndex) {
+                                        targetIndex = nextTarget
+                                        onPreviewMove(startIndex, targetIndex)
+                                    }
+
+                                    // 网格已把拖动项的布局位置移动到目标槽位，因此抵消槽位位移，
+                                    // 让卡片本体仍严格跟随手指；并由 isDragging + 高 zIndex 保持置顶。
+                                    val startRow = startIndex / 3
+                                    val startCol = startIndex % 3
+                                    val targetRow = targetIndex / 3
+                                    val targetCol = targetIndex % 3
+                                    dragOffset = Offset(
+                                        total.x - (targetCol - startCol) * cellWidth,
+                                        total.y - (targetRow - startRow) * cellHeight,
+                                    )
                                 },
                                 onDragEnd = {
-                                    // 手指松开后一次性提交。FavoritesStore.move 使用 removeAt + add，
-                                    // 因此是插入式移动，原目标项及中间项顺次让位，而非互换。
-                                    if (targetIndex != tileIndexForDrag) {
-                                        onMove(tileIndexForDrag, targetIndex)
-                                    }
+                                    if (targetIndex != startIndex) onMove(startIndex, targetIndex)
+                                    else onPreviewCancel()
                                     dragOffset = Offset.Zero
+                                    isDragging = false
+                                    onDraggingChanged(null)
                                 },
                                 onDragCancel = {
-                                    // 取消手势不提交排序，恢复卡片原位。
+                                    onPreviewCancel()
                                     dragOffset = Offset.Zero
+                                    isDragging = false
+                                    onDraggingChanged(null)
                                 },
                             )
                         }
