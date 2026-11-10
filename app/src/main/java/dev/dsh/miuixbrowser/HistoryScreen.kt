@@ -10,6 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
@@ -47,6 +51,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,6 +83,7 @@ import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -138,6 +144,8 @@ fun LibraryScreen(
     var showMenu by remember { mutableStateOf(false) }
     var editingFav by remember { mutableStateOf<Favorite?>(null) }
     var creatingFav by remember { mutableStateOf(false) }
+    var deletingGroup by remember { mutableStateOf<String?>(null) }
+    var renamingGroup by remember { mutableStateOf<String?>(null) }
     var showClearMenu by remember { mutableStateOf(false) }
     var clearAnchor by remember { mutableStateOf(Rect.Zero) }
     var clearRange by remember { mutableStateOf(ClearRange.All) }
@@ -150,15 +158,15 @@ fun LibraryScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
-            val html = context.contentResolver.openInputStream(uri)?.use {
-                it.readBytes().decodeToString()
-            } ?: return@rememberLauncherForActivityResult
-            val n = favorites.importNetscapeHtml(html)
-            Toast.makeText(
-                context,
-                if (n > 0) "已导入 $n 条书签" else "未识别到书签（支持 Chrome/Firefox 导出的 HTML）",
-                Toast.LENGTH_SHORT,
-            ).show()
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("无法读取所选文件")
+            val result = favorites.importBookmarks(decodeBookmarkText(bytes))
+            val msg = when {
+                result.added > 0 -> "已导入 ${result.added} 条书签"
+                result.found > 0 -> "识别到 ${result.found} 条书签，均已存在，无需重复导入"
+                else -> "未识别到书签（文件 ${bytes.size} 字节；支持 Chrome / Edge / Firefox 导出的 HTML 或 JSON）"
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }.onFailure {
             Toast.makeText(context, "导入失败：${it.message}", Toast.LENGTH_SHORT).show()
         }
@@ -245,6 +253,7 @@ fun LibraryScreen(
                             scrollBehavior = scrollBehavior,
                             onOpen = onOpen,
                             onEdit = { editingFav = it },
+                            onGroupLongClick = { renamingGroup = it },
                             query = query,
                         )
 
@@ -299,10 +308,10 @@ fun LibraryScreen(
                     )
                     GlassPopupItem(
                         text = "导入",
-                        summary = "Chrome / Firefox 书签 HTML",
+                        summary = "Chrome / Edge / Firefox 书签（HTML / JSON）",
                         onClick = {
                             showMenu = false
-                            importLauncher.launch(arrayOf("text/html", "text/plain", "*/*"))
+                            importLauncher.launch(arrayOf("*/*"))
                         },
                         icon = MiuixIcons.Glass.Download,
                     )
@@ -365,24 +374,19 @@ fun LibraryScreen(
             }
         }
 
-        // 底部弹窗确认
+        // 清除历史确认：居中对话框
         val confirmCount = if (showClearConfirm) {
             clearRange.millis?.let { store.countWithin(it) } ?: store.items.size
         } else {
             0
         }
-        AppBottomSheet(
+        AppGlassDialog(
             show = showClearConfirm,
             title = "清除历史记录",
             backdrop = backdrop,
             onDismissRequest = { showClearConfirm = false },
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(bottom = 24.dp),
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = if (confirmCount > 0) {
                         "将删除${clearRange.label.removePrefix("清除")}共 $confirmCount 条历史记录，此操作无法撤销。"
@@ -391,7 +395,6 @@ fun LibraryScreen(
                     },
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(horizontal = 6.dp),
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(
@@ -420,9 +423,102 @@ fun LibraryScreen(
             }
         }
 
+        // 分组管理（长按收起的分组行）：重命名；左下删除（再弹确认），右下保存
+        val groupToRename = renamingGroup
+        var renameText by remember(groupToRename) { mutableStateOf(groupToRename.orEmpty()) }
+        AppGlassDialog(
+            show = groupToRename != null,
+            title = "编辑分组",
+            backdrop = backdrop,
+            onDismissRequest = { renamingGroup = null },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                top.yukonga.miuix.kmp.basic.TextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "分组名",
+                    useLabelAsPlaceholder = true,
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    LiquidGlassPillButton(
+                        text = "删除",
+                        onClick = {
+                            deletingGroup = groupToRename
+                            renamingGroup = null
+                        },
+                        backdrop = liquid,
+                        modifier = Modifier.weight(1f),
+                        role = LiquidRole.Destructive,
+                    )
+                    LiquidGlassPillButton(
+                        text = "保存",
+                        onClick = {
+                            val old = groupToRename
+                            if (old != null) {
+                                if (renameText.isBlank()) {
+                                    Toast.makeText(context, "分组名不能为空", Toast.LENGTH_SHORT).show()
+                                    return@LiquidGlassPillButton
+                                }
+                                favorites.renameGroup(old, renameText)
+                            }
+                            renamingGroup = null
+                        },
+                        backdrop = liquid,
+                        modifier = Modifier.weight(1f),
+                        role = LiquidRole.Primary,
+                    )
+                }
+            }
+        }
+
+        val groupToDelete = deletingGroup
+        AppGlassDialog(
+            show = groupToDelete != null && !favorites.isProtectedGroup(groupToDelete),
+            title = "删除分组",
+            backdrop = backdrop,
+            onDismissRequest = { deletingGroup = null },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "将删除分组「${groupToDelete.orEmpty()}」及其中的 ${groupToDelete?.let { favorites.itemsIn(it).size } ?: 0} 个书签，此操作无法撤销。",
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    LiquidGlassPillButton(
+                        text = "取消",
+                        onClick = { deletingGroup = null },
+                        backdrop = liquid,
+                        modifier = Modifier.weight(1f),
+                    )
+                    LiquidGlassPillButton(
+                        text = "删除",
+                        onClick = {
+                            groupToDelete?.let { favorites.removeGroup(it) }
+                            deletingGroup = null
+                        },
+                        backdrop = liquid,
+                        modifier = Modifier.weight(1f),
+                        role = LiquidRole.Destructive,
+                    )
+                }
+            }
+        }
+
         FavoriteEditorDialog(
             show = creatingFav || editingFav != null,
             initial = editingFav,
+            groups = favorites.groups(),
             backdrop = backdrop,
             liquidBackdrop = liquid,
             onDismiss = {
@@ -439,18 +535,18 @@ fun LibraryScreen(
                     editingFav = null
                 }
             },
-            onConfirm = { name, url ->
+            onConfirm = { name, url, group ->
                 if (editingFav != null) {
                     val idx = favorites.items.indexOfFirst {
                         it.url == editingFav!!.url && it.name == editingFav!!.name
                     }
                     if (idx >= 0) {
-                        favorites.update(idx, name, url, editingFav!!.group)
+                        favorites.update(idx, name, url, group)
                     } else {
-                        favorites.add(name, url, editingFav!!.group)
+                        favorites.add(name, url, group)
                     }
                 } else {
-                    favorites.add(name, url)
+                    favorites.add(name, url, group)
                 }
                 creatingFav = false
                 editingFav = null
@@ -467,10 +563,14 @@ private fun BookmarksPage(
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     onOpen: (String) -> Unit,
     onEdit: (Favorite) -> Unit,
+    onGroupLongClick: (String) -> Unit,
     query: String = "",
 ) {
     val groups = favorites.groups()
     val q = query.trim()
+    // 分组默认折叠（只有一个分组时默认展开）；搜索时自动展开有匹配的分组
+    val expanded = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+    val onlyOneGroup = groups.count { favorites.itemsIn(it).isNotEmpty() } <= 1
     val noMatch = q.isNotEmpty() && favorites.items.none {
         it.name.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
     }
@@ -505,10 +605,20 @@ private fun BookmarksPage(
             val list = favorites.itemsIn(group).filter {
                 q.isEmpty() || it.name.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
             }
-            if (list.isEmpty()) return@forEach
+            // 「个人收藏」即使为空也保留标题（不能删除的保留分组）；其它空分组 / 搜索无匹配时不显示
+            if (list.isEmpty() && (q.isNotEmpty() || !favorites.isProtectedGroup(group))) return@forEach
+            val open = q.isNotEmpty() || (expanded[group] ?: onlyOneGroup)
             item(key = "g-$group") {
-                SmallTitle(text = group)
+                BookmarkGroupHeader(
+                    name = group,
+                    count = list.size,
+                    open = open,
+                    onClick = { expanded[group] = !open },
+                    // 仅收起状态下长按分组行可重命名 / 删除；「个人收藏」是保留分组，不可操作
+                    onLongClick = if (!open && !favorites.isProtectedGroup(group)) ({ onGroupLongClick(group) }) else null,
+                )
             }
+            if (!open) return@forEach
             items(list.size, key = { i -> "$group-${list[i].url}-$i" }) { i ->
                 val fav = list[i]
                 Card(
@@ -584,6 +694,56 @@ private fun BookmarksPage(
     }
 }
 
+/** 书签分组标题：左侧分组名 + 数量，右侧按钮点一下展开 / 收起（整行也可点击；收起时可长按管理分组）。 */
+@Composable
+private fun BookmarkGroupHeader(
+    name: String,
+    count: Int,
+    open: Boolean,
+    onClick: () -> Unit,
+    /** null = 不响应长按 */
+    onLongClick: (() -> Unit)? = null,
+) {
+    // ChevronBackward 默认朝左：收起时转 180° 朝右（›），展开时转 270° 朝下
+    val angle by androidx.compose.animation.core.animateFloatAsState(if (open) 270f else 180f, label = "groupArrow")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(start = 24.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = name,
+                fontSize = 17.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "$count",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        AppSmallButton(onClick = onClick, size = 36.dp, inPage = true) {
+            Icon(
+                imageVector = MiuixIcons.Glass.ChevronBackward,
+                contentDescription = if (open) "收起" else "展开",
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = angle },
+            )
+        }
+    }
+}
+
 @Composable
 private fun HistoryPage(
     store: HistoryStore,
@@ -598,12 +758,20 @@ private fun HistoryPage(
         q.isEmpty() || it.title.contains(q, ignoreCase = true) || it.url.contains(q, ignoreCase = true)
     }
     if (entries.isEmpty()) {
-        Text(
-            text = if (store.items.isEmpty()) "还没有浏览记录" else "没有匹配的历史记录",
-            fontSize = 13.sp,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(24.dp),
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (store.items.isEmpty()) "还没有浏览记录" else "没有匹配的历史记录",
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(24.dp),
+            )
+        }
         return
     }
     LazyColumn(
@@ -685,6 +853,15 @@ private fun formatHistoryTime(time: Long): String {
 }
 
 /** 写入系统 Download/mafari 并提示路径。 */
+/** 书签文件解码：处理 UTF-8 / UTF-16 的 BOM，避免 UTF-16 文件被当 UTF-8 读成乱码而识别不到。 */
+private fun decodeBookmarkText(b: ByteArray): String = when {
+    b.size >= 2 && b[0] == 0xFF.toByte() && b[1] == 0xFE.toByte() -> String(b, 2, b.size - 2, Charsets.UTF_16LE)
+    b.size >= 2 && b[0] == 0xFE.toByte() && b[1] == 0xFF.toByte() -> String(b, 2, b.size - 2, Charsets.UTF_16BE)
+    b.size >= 3 && b[0] == 0xEF.toByte() && b[1] == 0xBB.toByte() && b[2] == 0xBF.toByte() ->
+        String(b, 3, b.size - 3, Charsets.UTF_8)
+    else -> b.decodeToString()
+}
+
 private fun exportBookmarks(context: android.content.Context, html: String) {
     runCatching {
         val name = "mafari-bookmarks-" +
@@ -712,14 +889,17 @@ private fun exportBookmarks(context: android.content.Context, html: String) {
 private fun FavoriteEditorDialog(
     show: Boolean,
     initial: Favorite?,
+    groups: List<String>,
     backdrop: top.yukonga.miuix.kmp.blur.Backdrop?,
     liquidBackdrop: com.kyant.backdrop.Backdrop?,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, url: String) -> Unit,
+    onConfirm: (name: String, url: String, group: String) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
     var name by remember(initial, show) { mutableStateOf(initial?.name ?: "") }
     var url by remember(initial, show) { mutableStateOf(initial?.url ?: "") }
+    // 分组默认选中已有的：编辑时是它当前的组，新建时是「个人收藏」；也可以在下面输入框里写新名字
+    var group by remember(initial, show) { mutableStateOf(initial?.group ?: Favorite.GROUP_PERSONAL) }
     AppGlassDialog(
         show = show,
         title = if (initial == null) "新建书签" else "编辑书签",
@@ -741,6 +921,48 @@ private fun FavoriteEditorDialog(
                 onValueChange = { url = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = "网址",
+                useLabelAsPlaceholder = true,
+                singleLine = true,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "分组",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(6.dp))
+            // 已有分组一点即选，免输入
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                groups.forEach { g ->
+                    val selected = g == group.trim().ifBlank { Favorite.GROUP_PERSONAL }
+                    Text(
+                        text = g,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                if (selected) MiuixTheme.colorScheme.primary
+                                else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                            )
+                            .clickable { group = g }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            top.yukonga.miuix.kmp.basic.TextField(
+                value = if (group in groups) "" else group,
+                onValueChange = { group = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = "或输入新分组名",
                 useLabelAsPlaceholder = true,
                 singleLine = true,
             )
@@ -767,7 +989,7 @@ private fun FavoriteEditorDialog(
                 }
                 LiquidGlassPillButton(
                     text = "保存",
-                    onClick = { if (url.isNotBlank()) onConfirm(name, url) },
+                    onClick = { if (url.isNotBlank()) onConfirm(name, url, group.trim()) },
                     backdrop = liquidBackdrop,
                     modifier = Modifier.weight(1f),
                     role = LiquidRole.Primary,
