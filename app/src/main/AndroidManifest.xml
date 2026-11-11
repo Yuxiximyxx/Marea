@@ -38,7 +38,23 @@
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.MiuixBrowser">
+            android:theme="@style/Theme.MiuixBrowser" />
+
+        <!-- fork.25：外部链接覆盖式入口。系统 VIEW http(s) 意图改落这里（过滤器自
+             MainActivity 移入，包级解析与默认浏览器候选资格不变）：半透明主题 +
+             独立 taskAffinity + 不进最近任务，本 Activity 只同步分诊——下载形态
+             同任务转交 DownloadDialogActivity（面板以覆盖层浮在来源应用上），其余
+             原样转交 MainActivity。fork.24 时意图直落不透明全屏的 MainActivity，
+             系统任务切换动画会闪 1~2 帧（来源应用滑走 + 黑底），此入口全程只有
+             半透明窗口、不触发该动画 -->
+        <activity
+            android:name=".ExternalLinkActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="dev.dsh.miuixbrowser.external"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
+            android:theme="@style/Theme.Marea.Trampoline">
             <!-- 响应系统里的 http(s) 链接 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -65,10 +81,15 @@
              fork.19：与主界面合回同一任务（回到默认亲和，不再设独立 taskAffinity）——
              fork.17 拆独立任务是怀疑任务归属让弹窗不可见，后经 fork.18 证明真凶是 miuix
              覆盖层组件、已换普通内联面板；同任务后跳板转交只发生一次窗口切换、无中间黑闪，
-             与 ABDM 的跳板+弹窗同任务一跳到位同款 -->
+             与 ABDM 的跳板+弹窗同任务一跳到位同款。
+             fork.25：外部下载链改走 ExternalLinkActivity 的独立任务呈现——弹窗经它拉起时
+             落在该独立任务里以覆盖层浮现（来源应用钉在原地、无任务切换闪帧）；站内拉起
+             仍是主任务普通压栈、行为不变。excludeFromRecents 只对任务根生效：外部任务里
+             弹窗是根故不进最近任务，主任务里根是 MainActivity 故站内呈现不受影响 -->
         <activity
             android:name=".DownloadDialogActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:label="下载"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
             android:windowSoftInputMode="adjustResize"

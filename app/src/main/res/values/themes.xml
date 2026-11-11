@@ -22,4 +22,9 @@
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+
+    <!-- fork.25 外部链接覆盖式入口：与弹窗同款半透明规格——入口窗口从不绘制内容，
+         只同步分诊后转交弹窗 / 主界面并立即 finish；windowDisablePreview 保证冷启动
+         的 starting window 也是透明的，整条链不触发不透明任务的切换动画 -->
+    <style name="Theme.Marea.Trampoline" parent="@style/Theme.Marea.Translucent" />
 </resources>
