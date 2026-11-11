@@ -1123,6 +1123,7 @@ fun BrowserScreen(
                         onOpen = { state.openOrReuse(it, tab.incognito, fromStartPage = true) },
                         onToggleEdit = { favEditing = !favEditing },
                         onRemove = { favorites.remove(it) },
+                        onMoveFavorite = { from, to -> favorites.move(from, to) },
                         onEdit = { index ->
                             editingFavIndex = index
                             showFavEditor = true
@@ -2837,6 +2838,9 @@ private fun AddressField(
                 text = "搜索或输入网址",
                 fontSize = 15.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
             )
         }
         BasicTextField(
@@ -3184,6 +3188,7 @@ private fun StartPage(
     onOpen: (String) -> Unit,
     onToggleEdit: () -> Unit,
     onRemove: (Int) -> Unit,
+    onMoveFavorite: (Int, Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
@@ -3289,6 +3294,7 @@ private fun StartPage(
                                 onOpen = onOpen,
                                 onToggleEdit = onToggleEdit,
                                 onRemove = onRemove,
+                                onMoveFavorite = onMoveFavorite,
                                 onEdit = onEdit,
                                 onAdd = onAdd,
                             )
@@ -3381,9 +3387,15 @@ private fun FavoritesBlock(
     onOpen: (String) -> Unit,
     onToggleEdit: () -> Unit,
     onRemove: (Int) -> Unit,
+    onMoveFavorite: (Int, Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
+    val homeFavorites = favorites.take(12)
+    // 拖动期间仅更新本地预览顺序；松手后才通过 onMoveFavorite 写入持久化数据。
+    var previewFavorites by remember { mutableStateOf<List<Favorite>?>(null) }
+    var draggingFavoriteUrl by remember { mutableStateOf<String?>(null) }
+    val displayedFavorites = previewFavorites ?: homeFavorites
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -3416,34 +3428,60 @@ private fun FavoritesBlock(
 
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            favorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
+            displayedFavorites.chunked(3).forEachIndexed { rowIndex, rowItems ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // zIndex 必须提升整行，而不只是卡片本身；否则跨行向下拖动时，
+                        // 后绘制的下一行仍会盖住被拖动卡片。
+                        .zIndex(if (rowItems.any { it.url == draggingFavoriteUrl }) 1000f else 0f),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     rowItems.forEachIndexed { colIndex, favorite ->
                         val index = rowIndex * 3 + colIndex
-                        FavoriteTile(
-                            favorite = favorite,
-                            wallpaper = wallpaper,
-                            wallpaperBackdrop = wallpaperBackdrop,
-                            liquidBackdrop = liquidBackdrop,
-                            blurEnabled = blurEnabled,
-                            editing = editing,
-                            modifier = Modifier.weight(1f),
-                            onClick = guard {
-                                if (editing) onEdit(index) else onOpen(favorite.url)
-                            },
-                            onLongPress = {
-                                if (!editing) onToggleEdit()
-                            },
-                            onRemove = { onRemove(index) },
-                        )
+                        key(favorite.url) {
+                            FavoriteTile(
+                                favorite = favorite,
+                                wallpaper = wallpaper,
+                                wallpaperBackdrop = wallpaperBackdrop,
+                                liquidBackdrop = liquidBackdrop,
+                                blurEnabled = blurEnabled,
+                                editing = editing,
+                                tileIndexForDrag = index,
+                                modifier = Modifier.weight(1f),
+                                onClick = guard {
+                                    if (editing) onEdit(index) else onOpen(favorite.url)
+                                },
+                                onLongPress = {
+                                    if (!editing) onToggleEdit()
+                                },
+                                onMove = { from, to ->
+                                    onMoveFavorite(from, to)
+                                    previewFavorites = null
+                                    draggingFavoriteUrl = null
+                                },
+                                onPreviewMove = { from, to ->
+                                    if (from in homeFavorites.indices && to in homeFavorites.indices) {
+                                        val reordered = homeFavorites.toMutableList()
+                                        val moving = reordered.removeAt(from)
+                                        reordered.add(to, moving)
+                                        previewFavorites = reordered
+                                    }
+                                },
+                                onPreviewCancel = {
+                                    previewFavorites = null
+                                    draggingFavoriteUrl = null
+                                },
+                                onDraggingChanged = { draggingFavoriteUrl = it },
+                                itemCount = homeFavorites.size,
+                                onRemove = { onRemove(index) },
+                            )
+                        }
                     }
                     repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-            if (editing) {
+            if (editing && favorites.size < 12) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Box(
                         modifier = Modifier
@@ -3763,27 +3801,118 @@ private fun FavoriteTile(
     liquidBackdrop: com.kyant.backdrop.Backdrop?,
     blurEnabled: Boolean,
     editing: Boolean,
+    tileIndexForDrag: Int,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onPreviewMove: (Int, Int) -> Unit,
+    onPreviewCancel: () -> Unit,
+    onDraggingChanged: (String?) -> Unit,
+    itemCount: Int,
     onRemove: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    var dragOffset by remember(favorite.url) { mutableStateOf(Offset.Zero) }
+    var isDragging by remember(favorite.url) { mutableStateOf(false) }
     Box(
         modifier = modifier
             .height(58.dp)
-            .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop)
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
+            // 将位移层放在整个卡片容器最外侧：玻璃底板、标题、图标、删除按钮和描边一起移动。
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+                if (dragOffset != Offset.Zero) {
+                    scaleX = 1.04f
+                    scaleY = 1.04f
+                }
+            }
+            .zIndex(if (isDragging) 1000f else 0f)
+            .then(
+                if (editing) {
+                    Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onClick,
+                        )
+                        .pointerInput(editing, itemCount, favorite.url) {
+                            var total = Offset.Zero
+                            var startIndex = tileIndexForDrag
+                            var targetIndex = tileIndexForDrag
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    total = Offset.Zero
+                                    startIndex = tileIndexForDrag
+                                    targetIndex = startIndex
+                                    isDragging = true
+                                    onDraggingChanged(favorite.url)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    total += amount
+                                    val cellWidth = size.width + with(density) { 10.dp.toPx() }
+                                    val cellHeight = with(density) { 68.dp.toPx() }
+                                    val colDelta = (total.x / cellWidth).roundToInt()
+                                    val rowDelta = (total.y / cellHeight).roundToInt()
+                                    val nextTarget = (startIndex + rowDelta * 3 + colDelta)
+                                        .coerceIn(0, itemCount - 1)
+
+                                    // 实时重排的是占位顺序：原位置让空位，目标位置插入空位，
+                                    // 其余卡片依次避让。真实收藏数据仍保持不变，直到手指松开。
+                                    if (nextTarget != targetIndex) {
+                                        targetIndex = nextTarget
+                                        onPreviewMove(startIndex, targetIndex)
+                                    }
+
+                                    // 网格已把拖动项的布局位置移动到目标槽位，因此抵消槽位位移，
+                                    // 让卡片本体仍严格跟随手指；并由 isDragging + 高 zIndex 保持置顶。
+                                    val startRow = startIndex / 3
+                                    val startCol = startIndex % 3
+                                    val targetRow = targetIndex / 3
+                                    val targetCol = targetIndex % 3
+                                    dragOffset = Offset(
+                                        total.x - (targetCol - startCol) * cellWidth,
+                                        total.y - (targetRow - startRow) * cellHeight,
+                                    )
+                                },
+                                onDragEnd = {
+                                    if (targetIndex != startIndex) onMove(startIndex, targetIndex)
+                                    else onPreviewCancel()
+                                    dragOffset = Offset.Zero
+                                    isDragging = false
+                                    onDraggingChanged(null)
+                                },
+                                onDragCancel = {
+                                    onPreviewCancel()
+                                    dragOffset = Offset.Zero
+                                    isDragging = false
+                                    onDraggingChanged(null)
+                                },
+                            )
+                        }
+                } else {
+                    Modifier.combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongPress()
+                        },
+                    )
                 },
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // 玻璃背景作为卡片内容绘制在同一个外层图层内，避免只移动前景文字。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .homeGlass(wallpaperBackdrop, blurEnabled, wallpaper != null, liquidBackdrop),
+        )
         Row(
             modifier = Modifier.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

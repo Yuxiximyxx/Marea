@@ -635,7 +635,7 @@ fun SettingsScreen(
                         )
                     }
                     Text(
-                        text = "在首页长按「隐私报告」「最近浏览」「下载项」卡片可上下拖动排序（个人收藏作为整体，长按「收藏」标题行拖动）；长按后卡片右上角会出现 ×，点击可从首页移除；无痕标签页的首页不显示最近浏览。",
+                        text = "首页最多展示 12 个收藏；进入收藏编辑态后，长按小卡片可拖动调整顺序，长按「收藏」标题行可移动整个收藏区块。长按首页其他内容卡片可上下拖动排序，编辑态下卡片右上角 × 可从首页移除；无痕标签页的首页不显示最近浏览。",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
