@@ -231,6 +231,9 @@ internal fun MenuGrid(
     longPressActions: Set<MenuAction> = emptySet(),
     incognitoActive: Boolean = false,
     badgeFor: (MenuAction) -> Int = { 0 },
+    /** fork：收藏项的已收藏态（图标换实心 + 主色调）；上游 2.0.0 拆分菜单面板时无此参数，合并时补回 */
+    favoriteActive: Boolean = false,
+    iconFor: (MenuAction) -> ImageVector = { it.icon },
 ) {
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
@@ -292,11 +295,16 @@ internal fun MenuGrid(
                         MenuCell(
                             modifier = Modifier.weight(1f),
                             action = action,
+                            icon = iconFor(action),
                             label = labelFor(action),
                             badge = badgeFor(action),
                             cellHeight = cellHeight,
-                            tint = if (action == MenuAction.Incognito && incognitoActive) purple
-                            else MiuixTheme.colorScheme.onSurface,
+                            tint = when {
+                                action == MenuAction.Incognito && incognitoActive -> purple
+                                action == MenuAction.Favorite && favoriteActive ->
+                                    MiuixTheme.colorScheme.primary
+                                else -> MiuixTheme.colorScheme.onSurface
+                            },
                             dragged = dragAction == action,
                             dragOffset = { dragOffset },
                             dimmed = (dragAction != null && dragAction != action) || (inHidden && dragAction == null),
@@ -417,6 +425,7 @@ internal fun MenuGrid(
 internal fun MenuCell(
     modifier: Modifier,
     action: MenuAction,
+    icon: ImageVector = action.icon,
     label: String,
     badge: Int,
     cellHeight: androidx.compose.ui.unit.Dp,
@@ -465,7 +474,7 @@ internal fun MenuCell(
             // 统一 32dp 的图标槽，各格子文字基线一致；脚本图标本身线条偏细偏小，单独放大
             Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = action.icon,
+                    imageVector = icon,
                     contentDescription = label,
                     tint = tint,
                     modifier = Modifier.size(if (action == MenuAction.ScriptMenu) 31.dp else 26.dp),

@@ -145,6 +145,12 @@ class FavoritesStore(context: Context, private val storageKey: String = KEY) {
         persist()
     }
 
+    /** 按 URL 删除第一条匹配（fork 的菜单「已收藏」状态切换在用；上游 2.0.0 分组重构时删了此 API，合并时补回） */
+    fun removeAtUrl(url: String) {
+        val i = items.indexOfFirst { it.url == url }
+        if (i >= 0) remove(i)
+    }
+
     fun remove(index: Int) {
         if (index in items.indices) {
             items.removeAt(index)

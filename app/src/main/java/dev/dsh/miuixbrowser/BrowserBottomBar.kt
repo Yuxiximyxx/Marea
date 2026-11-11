@@ -293,6 +293,8 @@ internal fun BottomBar(
     onAddressTap: () -> Unit = {},
     onFocusLost: () -> Unit = {},
     editing: Boolean = false,
+    /** fork：隐私模式标记（地址栏内「隐私」小药丸），上游 2.0.0 拆分底栏时无此参数，合并时补回 */
+    privacyActive: Boolean = false,
 ) {
     val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(29.dp)
@@ -359,6 +361,18 @@ internal fun BottomBar(
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (privacyActive) {
+                    // 隐私模式标记：地址栏内的小药丸（低调但一眼可辨，身在哪个空间不靠猜）
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(MiuixTheme.colorScheme.primary)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    ) {
+                        Text(text = "隐私", fontSize = 11.sp, color = MiuixTheme.colorScheme.onPrimary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 if (loading) {
                     LoadingDot()
                     Spacer(Modifier.width(8.dp))
