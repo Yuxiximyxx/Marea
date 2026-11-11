@@ -111,10 +111,25 @@ class MainActivity : ComponentActivity() {
             1 -> openWithCustomTab(data)
             2 -> forwardToOtherBrowser(data)
             else -> {
+                val url = data.toString()
+                // fork.24：外部下载形态链接先分诊、后规则。旧顺序是先过 LinkRouter：
+                // 带短链预解析的规则（如他启用的「GitHub 下载」）会在分诊之前先发
+                // 网络解析、再把解析后的直链送去外部应用，主界面在这段等待期以
+                // 不透明主题底色（夜间 #111）全屏盖住来源应用（2026-11-12 真机录屏：
+                // 黑屏约 2~3 秒后才出 ABDM 面板）。外部下载本就该由 Marea 自有面板
+                // 接管：looksLikeFileUrl 是纯 URL 形态的同步判定（无网络），命中即
+                // 在 onCreate 内同步转交下载弹窗，「发送到其他应用」类规则在这条
+                // 路径上不再抢跑（规则数据不动；站内导航、长按菜单等其它分发路径
+                // 不受影响）。弹窗逃生口回来的意图不重复拦截（防循环，与分诊内同判）。
+                val fromDialogEscape = intent.getBooleanExtra(EXTRA_OPEN_IN_BROWSER, false)
+                if (!fromDialogEscape && Downloader.looksLikeFileUrl(url)) {
+                    Diag.log("MainActivity: file-like external url triaged before rules (fork.24): ${url.take(100)}")
+                    handleExternalUnhandled(intent, url)
+                    return
+                }
                 // 分发规则仍走主界面这条原路径（见 LinkRouter）：命中送出则不进浏览器。
                 // fork.20：带短链预解析的规则改走异步判定——同步完成的链接行为与旧版
                 // 完全一致；异步的在回调里补收尾登记（见 externalResolvePending）。
-                val url = data.toString()
                 if (LinkRouter.needsResolve(url)) externalResolvePending = true
                 LinkRouter.routeExternalAsync(this, url) { result ->
                     when (result) {
