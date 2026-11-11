@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
         // 在任何过滤 / 分诊之前，先确认 GitHub 等外部 App 到底发来了什么形态的意图
         Diag.log("MainActivity.onNewIntent: action=${intent.action} data=${intent.data}")
         setIntent(intent)
+        GmNotifications.consumeClick(intent)
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
         if (externalHandled) {
@@ -280,8 +281,11 @@ class MainActivity : ComponentActivity() {
         // 下载任务落盘恢复（杀进程/重启后未完成任务可真续传）+ 链接分发引擎初始化。
         // fork.6：必须赶在下面 consumeViewIntent 分诊之前——fork.5 时 init 在分诊之后，
         // 冷启动 match() 因未初始化恒返回 null，规则判定与回退链在冷启动下全程静默失效。
-        Downloader.restore(this)
+        // 上游 2.0.0 起 restore 改名为 init（从磁盘恢复下载任务列表，语义不变）
+        Downloader.init(this)
         LinkDispatch.init(this)
+        // 上游 2.0.0 新增：Cookie 管控冷启动清理
+        CookieControl.runOnColdStart(this, AppSettings(this))
         // fork.9：WebView 多 Profile 支持检测在进程启动时、主线程上先算好并缓存——
         // fork.5~8 里这个检测的进程内首次调用发生在隐私设置页组合阶段，其后约 1.5 秒
         // 进程必以原生 SIGSEGV 死亡（页面本身零交互即死、JVM 无异常）。把首次触碰挪到

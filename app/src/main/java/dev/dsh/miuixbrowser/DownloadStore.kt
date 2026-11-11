@@ -46,6 +46,7 @@ object DownloadStore {
                 o.put("userAgent", t.userAgent ?: JSONObject.NULL)
                 o.put("mime", t.mime ?: JSONObject.NULL)
                 o.put("cookie", t.cookie ?: JSONObject.NULL)
+                o.put("withCookies", t.withCookies)
                 o.put("referer", t.referer ?: JSONObject.NULL)
                 o.put("uri", t.uri?.toString() ?: JSONObject.NULL)
                 o.put("bytes", t.bytes)
@@ -94,6 +95,7 @@ object DownloadStore {
                     userAgent = str("userAgent"),
                     mime = str("mime"),
                     cookie = str("cookie"),
+                    withCookies = o.optBoolean("withCookies", false),
                     referer = str("referer"),
                     uri = str("uri")?.let { Uri.parse(it) },
                     bytes = o.optLong("bytes"),

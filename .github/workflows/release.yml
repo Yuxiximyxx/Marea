@@ -17,7 +17,8 @@ jobs:
       STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-      # tag 且有签名密钥 → 只出 release；否则只出 debug，避免双倍编译
+      TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      # tag → 正式 release；其余只出 debug
       IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v7
@@ -28,18 +29,16 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # 使用仓库 wrapper + 缓存发行版/依赖，不另装 Gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          # v6 起可选缓存实现；basic 为开源实现，与 v4 行为一致
           cache-provider: basic
 
       - name: Cache Android SDK packages
         uses: actions/cache@v5
         with:
           path: |
-            ${{ env.ANDROID_HOME }}/platforms/android-37.0
+            ${{ env.ANDROID_HOME }}/platforms/android-37.2
             ${{ env.ANDROID_HOME }}/build-tools/36.0.0
             ${{ env.ANDROID_HOME }}/platform-tools
           key: android-sdk-${{ runner.os }}-37.0-36.0.0
@@ -47,7 +46,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -x
-          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
+          if [ -d "$ANDROID_HOME/platforms/android-37.2" ] && [ -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
             echo "Android SDK packages cached, skip install"
             ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
             exit 0
@@ -55,7 +54,7 @@ jobs:
           SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
           echo "sdkmanager=$SDKMANAGER ANDROID_HOME=$ANDROID_HOME"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          yes | "$SDKMANAGER" "platform-tools" "platforms;android-37.0" "build-tools;36.0.0" 2>&1 | tail -5 || true
+          yes | "$SDKMANAGER" "platform-tools" "platforms;android-37.2" "build-tools;36.0.0" 2>&1 | tail -5 || true
           ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Prepare keystore
@@ -63,12 +62,12 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > mafari-release.jks
 
-      # 非 tag：只打 debug（含 miuix includeBuild）
+      # main 或 无 keystore 的 tag：编 debug
       - name: Build debug
         if: env.IS_RELEASE_TAG != 'true' || env.KEYSTORE_BASE64 == ''
         run: bash ./gradlew :app:assembleDebug --stacktrace
 
-      # tag 且有签名：只打 release，跳过 debug 双编
+      # tag 且有签名：编 release
       - name: Build release
         if: env.IS_RELEASE_TAG == 'true' && env.KEYSTORE_BASE64 != ''
         env:
@@ -122,34 +121,131 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
-      # 优先用 CHANGELOG.md 中该 tag 对应小节作为 Release 正文；没有则退回自动 notes
-      - name: Prepare release notes from CHANGELOG
-        if: startsWith(github.ref, 'refs/tags/')
+      # 用 CHANGELOG 对应小节作为发布说明
+      - name: Prepare release notes
+        if: env.IS_RELEASE_TAG == 'true'
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VER="${TAG#v}"
           python3 - <<'PY'
           import os, re, pathlib
-          tag = os.environ.get("GITHUB_REF_NAME", "")
-          ver = tag[1:] if tag.startswith("v") else tag
-          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8") if pathlib.Path("CHANGELOG.md").exists() else ""
-          # 匹配 ## [1.5.8-dev] 或 ## 1.5.8-dev 或 ## [v1.5.8-dev]
+
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+
+          text = ""
+          p = pathlib.Path("CHANGELOG.md")
+          if p.exists():
+              text = p.read_text(encoding="utf-8")
+
+          ver = ref_name[1:] if ref_name.startswith("v") else ref_name
           pat = re.compile(
               rf"^##\s*\[?v?{re.escape(ver)}\]?[^\n]*\n(.*?)(?=^##\s|\Z)",
               re.M | re.S,
           )
           m = pat.search(text)
           body = (m.group(1).strip() if m else "").strip()
-          header = f"## {tag}\n\n"
-          out = header + (body if body else "见 CHANGELOG.md 与提交历史。")
+          header = f"## {ref_name}\n\n"
+          if not body:
+              body = "见 CHANGELOG.md 与提交历史。"
+
+          out = header + body
           pathlib.Path("dist/RELEASE_NOTES.md").write_text(out + "\n", encoding="utf-8")
           print(out)
           PY
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.IS_RELEASE_TAG == 'true'
+        id: release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*.apk
           body_path: dist/RELEASE_NOTES.md
           generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+
+      # 同步推送到 Telegram 频道（正式版）。
+      # 需要 Secrets：TELEGRAM_BOT_TOKEN（机器人需是频道管理员）；TELEGRAM_CHAT_ID 可选，默认 @mafari_a。
+      # 没配 token 就跳过；推送失败不影响发布（continue-on-error）。
+      - name: Notify Telegram
+        if: env.IS_RELEASE_TAG == 'true' && env.TG_TOKEN != ''
+        continue-on-error: true
+        env:
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID || '@mafari_a' }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import glob, html, json, os, pathlib, re, subprocess
+
+          token = os.environ["TG_TOKEN"]
+          chat = os.environ["TG_CHAT"]
+          tag = os.environ["TAG_NAME"]
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          url = os.environ.get("RELEASE_URL") or f"https://github.com/{repo}/releases/tag/{tag}"
+          api = f"https://api.telegram.org/bot{token}"
+          LIMIT = 49 * 1024 * 1024  # Bot API 上传上限 50 MB，留一点余量
+
+          def call(method, fields, files=None):
+              """用 curl 调 Bot API（不把 token 打进日志）；返回解析后的 JSON"""
+              cmd = ["curl", "-sS", "--max-time", "600", f"{api}/{method}"]
+              for k, v in fields.items():
+                  cmd += ["--form-string", f"{k}={v}"]
+              for k, path in (files or {}).items():
+                  cmd += ["-F", f"{k}=@{path}"]
+              r = subprocess.run(cmd, capture_output=True, text=True)
+              try:
+                  return json.loads(r.stdout)
+              except Exception:
+                  return {"ok": False, "description": (r.stderr or r.stdout)[:200]}
+
+          # 正文：取 RELEASE_NOTES.md，去掉标题行，简单转成 Telegram 支持的 HTML
+          notes = ""
+          p = pathlib.Path("dist/RELEASE_NOTES.md")
+          if p.exists():
+              lines = p.read_text(encoding="utf-8").splitlines()
+              notes = "\n".join(l for l in lines if not l.startswith("## ")).strip()
+
+          def to_html(md):
+              out = html.escape(md)
+              out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
+              out = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", out)
+              return out
+
+          def clip(text, n):
+              if len(text) <= n:
+                  return text
+              cut = text[:n].rsplit("\n", 1)[0]
+              return cut + "\n…"
+
+          title = f"🚀 Mafari {tag}"
+          apks = sorted(glob.glob("dist/*.apk"))
+          pick = next((a for a in apks if a.endswith("mafari-release-signed.apk")), None) \
+              or next((a for a in apks if a.endswith("app-release.apk")), None) \
+              or (apks[0] if apks else None)
+          too_big = bool(pick) and os.path.getsize(pick) > LIMIT
+
+          raw_tail = f"\n\n下载 / Download: {url}"
+          if too_big:
+              raw_tail += "\n（安装包超过 Telegram 50MB 限制，请到上面的链接下载）"
+          body = clip(notes, 3200)
+          html_text = f"<b>{html.escape(title)}</b>\n\n{to_html(body)}" if body else f"<b>{html.escape(title)}</b>"
+          html_text += f'\n\n<a href="{html.escape(url)}">下载 / Download</a>'
+          if too_big:
+              html_text += "\n（安装包超过 Telegram 50MB 限制，请到上面的链接下载）"
+
+          res = call("sendMessage", {
+              "chat_id": chat, "text": html_text, "parse_mode": "HTML",
+              "disable_web_page_preview": "true",
+          })
+          if not res.get("ok"):
+              print("HTML 消息失败，改发纯文本：", res.get("description"))
+              res = call("sendMessage", {
+                  "chat_id": chat, "text": f"{title}\n\n{body}{raw_tail}".strip(),
+                  "disable_web_page_preview": "true",
+              })
+          print("sendMessage:", res.get("ok"), res.get("description", ""))
+
+          if pick and not too_big:
+              res = call("sendDocument", {"chat_id": chat, "caption": title}, {"document": pick})
+              print("sendDocument:", os.path.basename(pick), res.get("ok"), res.get("description", ""))
+          if not res.get("ok"):
+              raise SystemExit(1)
+          PY

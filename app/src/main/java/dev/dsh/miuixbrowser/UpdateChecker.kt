@@ -30,6 +30,8 @@ object UpdateChecker {
     /**
      * 下载新版本安装包：fork.10 起只用 release 自带的 GitHub 官方直链，不再挑线路。
      * （旧实现会先开一条裸线程跑 GitHubAccelerate.pickDownloadUrl 探测镜像，已删除。）
+     * 上游 2.0.0 的 findPending / checkedThisProcess（启动自动检查）不合入：
+     * fork 口径为自动更新已删除、只保留关于页手动检查（见文件尾注）。
      */
     fun download(context: Context, rel: AppRelease, openInApp: ((String) -> Unit)? = null) {
         val apk = rel.apkUrl
@@ -58,6 +60,12 @@ object UpdateChecker {
     }
 }
 
+/** 是否有可更新的版本（启动自动检查与「检查更新」按钮共用）：按版本号逐段比较 */
+fun isUpdateAvailable(rel: AppRelease): Boolean = isNewerVersion(rel.version, BuildConfig.VERSION_NAME)
+
+/** 「已是最新版本」提示里显示的当前版本 */
+fun currentVersionLabel(): String = BuildConfig.VERSION_NAME.removePrefix("v")
+
 /**
  * 版本比较：按数字段逐段比较（v1.3.10 > v1.3.9）。
  * 数字完全相同时，本地若是 dev/alpha/beta/rc 预览版而远端是正式版，视为远端更新。
@@ -77,3 +85,4 @@ fun isNewerVersion(remote: String, local: String): Boolean {
 
 // fork.10：自动检查的「发现新版本」底部弹窗（UpdateSheet）已删除——不再有自动检查，
 // 新版本提示改走关于页手动检查后的弹窗（AboutScreen 内的 pendingUpdate 流）。
+// 上游 2.0.0 曾恢复 UpdateSheet 与启动自动检查，合并时按 fork 口径继续不合入。

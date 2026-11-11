@@ -39,7 +39,7 @@ android {
     namespace = "dev.dsh.miuixbrowser"
     compileSdk {
         version = release(37) {
-            minorApiLevel = 0
+            minorApiLevel = 2
         }
     }
     buildToolsVersion = "36.0.0"
@@ -48,8 +48,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 264
-        versionName = "v1.8.28-fork.22"
+        versionCode = 265
+        versionName = "v1.8.28-fork.23"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
@@ -120,3 +120,4 @@ dependencies {
     implementation("androidx.browser:browser:$browserVersion")
     implementation("androidx.navigationevent:navigationevent-compose:$navigationEventVersion")
 }
+

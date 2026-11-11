@@ -25,8 +25,13 @@ sealed interface AppRoute : NavKey {
     /** 设置 → 隐私与安全 → 隐私模式 */
     data object PrivacyPage : AppRoute
 
-    /** 设置 → 隐私与安全 → 指纹保护 */
-    data object FingerprintPage : AppRoute
+    // 指纹保护页已随上游改名并入 PrivacyEnhancePage（原 FingerprintPage 路由废弃，功能无损）
+
+    /** 设置 → 隐私与安全 → Cookie 管理 */
+    data object CookiePage : AppRoute
+
+    /** 设置 → 隐私与安全 → 隐私增强保护（WebView：DNT / WebRTC / 指纹） */
+    data object PrivacyEnhancePage : AppRoute
 
     /** 书签 / 历史库。[tab] 0 = 书签，1 = 历史。 */
     data class Library(val tab: Int) : AppRoute

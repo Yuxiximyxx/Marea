@@ -282,8 +282,8 @@ class WebAppActivity : ComponentActivity() {
             }
         }
         CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(webView, settings.thirdPartyCookie == 0)
+            setAcceptCookie(settings.cookieMode != 3)
+            setAcceptThirdPartyCookies(webView, settings.cookieMode == 0)
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -457,6 +457,7 @@ class WebAppActivity : ComponentActivity() {
                 } else {
                     handleHit(LinkDispatch.match(link, DispatchScope.DOWNLOAD))
                 }
+
             } else {
                 Toast.makeText(this, "这类下载请在 Marea 浏览器中打开该网站再试", Toast.LENGTH_LONG).show()
             }
@@ -514,16 +515,26 @@ class WebAppActivity : ComponentActivity() {
                 GmBridge(
                     applicationContext,
                     { webView },
-                    { target ->
+                    // 轻应用把链接交给外部浏览器：没有可追踪的标签，id 用不上（close 为空操作）
+                    { _, target, _ ->
                         val uri = runCatching { Uri.parse(target) }.getOrNull()
                         val scheme = uri?.scheme?.lowercase()
                         if (uri != null && (scheme == "http" || scheme == "https")) openInBrowser(uri)
                     },
-                    { link, name ->
+                    { link, name, onResult ->
                         if (link.startsWith("http", ignoreCase = true)) {
                             val fileName = name.ifBlank { Downloader.fileNameFrom(link, null) }
-                            Downloader.start(this, link, null, fileName, null)
+                            Downloader.start(
+                                this, link,
+                                runCatching { webView.settings.userAgentString }.getOrNull(),
+                                fileName, null,
+                                referer = webView.url,
+                                withCookies = true,
+                                onComplete = onResult,
+                            )
                             Toast.makeText(this, "已开始下载，可在 Marea「下载」中查看", Toast.LENGTH_SHORT).show()
+                        } else {
+                            onResult?.invoke(false, "unsupported url")
                         }
                     },
                 ),

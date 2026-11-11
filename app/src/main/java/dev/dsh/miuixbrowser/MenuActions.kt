@@ -17,12 +17,17 @@ import top.yukonga.miuix.kmp.icon.glass.GridView
 import top.yukonga.miuix.kmp.icon.glass.Favorites
 import top.yukonga.miuix.kmp.icon.glass.Folder
 import top.yukonga.miuix.kmp.icon.glass.File
+
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Copy
 import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Add
 
-enum class MenuAction(val id: String, val label: String, val icon: ImageVector) {
+enum class MenuAction(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+) {
     NewTab("new_tab", "新建标签", MiuixIcons.Glass.Add),
     Incognito("incognito", "无痕浏览", MiuixIcons.Glass.Hide),
     Desktop("desktop", "桌面版", MiuixIcons.Glass.GridView),
@@ -38,8 +43,7 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     Settings("settings", "设置", MiuixIcons.Glass.Settings),
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
-    Extensions("extensions", "脚本", AppIcons.Script),
-    ScriptMenu("script_menu", "脚本菜单", MiuixIcons.Glass.File),
+    ScriptMenu("script_menu", "脚本", AppIcons.Script),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),
 }
@@ -70,6 +74,7 @@ class MenuOrderStore(context: Context) {
             } else {
                 order.add(action)
             }
+
         }
     }
 

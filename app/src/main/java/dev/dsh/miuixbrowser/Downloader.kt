@@ -32,6 +32,8 @@ data class DownloadTask(
     val mime: String? = null,
     /** 下载时透传的 Cookie（来自 WebView CookieManager，登录态 / 防盗链站点必需），只存本机不打日志 */
     val cookie: String? = null,
+    /** 上游 2.0.0 接口：未显式给 Cookie 时，每次请求从 CookieManager 现取（不落盘）。fork 的空间隔离路径仍走显式 cookie，本项只作上游调用方的兜底 */
+    val withCookies: Boolean = false,
     /** 下载时透传的来源页 Referer */
     val referer: String? = null,
     val uri: Uri? = null,
@@ -55,6 +57,14 @@ data class DownloadTask(
 object Downloader {
 
     val tasks = mutableStateListOf<DownloadTask>()
+
+    /** 上游 2.0.0 的 start() 完成回调表（GM_download 等调用方要等结果）：任务到终态（完成 / 最终失败 / 被删）时一次性触发 */
+    private val completions = java.util.concurrent.ConcurrentHashMap<Long, (Boolean, String?) -> Unit>()
+
+    private fun settle(id: Long, ok: Boolean, error: String? = null) {
+        val cb = completions.remove(id) ?: return
+        runCatching { cb(ok, error) }
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<Long, Job>()
@@ -230,6 +240,9 @@ object Downloader {
      * 启动时恢复落盘的任务（MainActivity / WebAppActivity 各调一次，幂等）。
      * 进程被杀时处于 RUNNING 的任务在落盘读取时已转成 PAUSED，用户手动继续即可续传。
      */
+    /** 上游 2.0.0 起的入口名（语义与 restore 相同：从磁盘恢复任务列表，进程内只做一次） */
+    fun init(context: Context) = restore(context)
+
     fun restore(context: Context) {
         if (restored) return
         restored = true
@@ -304,6 +317,9 @@ object Downloader {
         cookie: String? = null,
         referer: String? = null,
         space: Int = 0,
+        // 上游 2.0.0 调用方接口：完成回调 + 「请求时从 CookieManager 现取 Cookie」标记
+        onComplete: ((ok: Boolean, error: String?) -> Unit)? = null,
+        withCookies: Boolean = false,
     ) {
         bindContext(context)
         val task = DownloadTask(
@@ -314,7 +330,9 @@ object Downloader {
             cookie = cookie,
             referer = referer,
             space = space,
+            withCookies = withCookies,
         )
+        if (onComplete != null) completions[task.id] = onComplete
         tasks.add(0, task)
         persistNow()
         requestStart(context, task.id, freshRound = true)
@@ -572,6 +590,7 @@ object Downloader {
         tasks.removeAll { it.id == id }
         bindContext(context)
         persistNow()
+        settle(id, false, "cancelled")
         DownloadService.dismiss(context, id)
     }
 
@@ -623,6 +642,7 @@ object Downloader {
                 segTables.remove(id)
                 update(id) { it.copy(state = DownloadState.DONE, retryRound = 0, speedBps = 0) }
                 persistNow()
+                settle(id, true)
                 DownloadService.finish(context, finished?.name ?: "文件", id)
                 toast(context, "下载完成：${finished?.name ?: "文件"}")
                 return
@@ -636,6 +656,7 @@ object Downloader {
                 if (!retryable || round >= MAX_AUTO_ROUNDS) {
                     update(id) { it.copy(state = DownloadState.FAILED, error = message) }
                     persistNow()
+                    settle(id, false, message)
                     DownloadService.fail(context, "下载失败：$message", id)
                     return
                 }
@@ -656,7 +677,12 @@ object Downloader {
         setRequestProperty("User-Agent", task.userAgent ?: "Mozilla/5.0 mafari")
         setRequestProperty("Accept", "*/*")
         setRequestProperty("Accept-Encoding", "identity")
-        if (!task.cookie.isNullOrBlank()) setRequestProperty("Cookie", task.cookie)
+        // fork：显式 cookie（按空间取）优先；上游 2.0.0 的 withCookies 任务没给显式值时才从 CookieManager 现取
+        val cookie = task.cookie?.takeIf { it.isNotBlank() }
+            ?: if (task.withCookies) runCatching {
+                android.webkit.CookieManager.getInstance().getCookie(task.url)
+            }.getOrNull()?.takeIf { it.isNotBlank() } else null
+        if (cookie != null) setRequestProperty("Cookie", cookie)
         if (!task.referer.isNullOrBlank()) setRequestProperty("Referer", task.referer)
     }
 
@@ -713,8 +739,8 @@ object Downloader {
             }
             // 本次连接应下满的总量（0 = 长度未知，不做完整性判定）
             val knownTotal = if (append) existing + length else length
-            // 多线程分段下载（服务器支持 Range 且文件 > 1MB 时）
-            if (existing == 0L && append.not() && length > segmentMinBytes) {
+            // 多线程分段下载（服务器支持 Range 且文件大于阈值时；上游 2.0.0 的「多线程下载」开关关闭时一律单线程）
+            if (multiThreadEnabled && existing == 0L && append.not() && length > segmentMinBytes) {
                 // 先放掉这条整文件连接，再探测 Range，避免对镜像同时开 N+2 条连接被限流
                 connection.disconnect()
                 val probe = probeRange(liveTask)
@@ -1219,4 +1245,8 @@ object Downloader {
     /** 文件超过该字节数才使用多线程分段下载 */
     @Volatile
     var segmentMinBytes = 1024L * 1024
+
+    /** 多线程分段下载总开关（上游 2.0.0 新增设置，默认开；关闭后一律单线程） */
+    @Volatile
+    var multiThreadEnabled = true
 }
