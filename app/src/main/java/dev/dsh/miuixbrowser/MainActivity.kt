@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        GmNotifications.consumeClick(intent)
         consumeOpenDownloads(intent)
         consumeViewIntent(intent)
     }
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
         AdBlock.init(this)
         CacheCleaner.runOnColdStart(this)
+        CookieControl.runOnColdStart(this, AppSettings(this))
 
         // 全屏沉浸：内容画到状态栏和手势小白条下面，小白条保留可见。
         WindowCompat.setDecorFitsSystemWindows(window, false)

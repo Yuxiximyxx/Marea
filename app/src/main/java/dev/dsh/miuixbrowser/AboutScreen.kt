@@ -79,6 +79,18 @@ fun AboutScreen(
     onUpdateChannelChange: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 优先交给已安装的 Telegram 客户端（不能用无包名的 ACTION_VIEW：本应用自己可能就是默认浏览器），都没有再用应用内标签打开
+    val openTelegram: (String) -> Unit = { url ->
+        val opened = listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus")
+            .any { pkg ->
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).setPackage(pkg),
+                    )
+                }.isSuccess
+            }
+        if (!opened) onOpenUrl(url)
+    }
     val scope = rememberCoroutineScope()
     val kernel = webViewVersion() ?: "未知"
     val ua = remember { runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault("未知") }
@@ -202,9 +214,9 @@ fun AboutScreen(
                                 if (result == null) {
                                     Toast.makeText(context, "检查失败，请稍后再试", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val current = BuildConfig.VERSION_NAME.removePrefix("v")
+                                    val current = currentVersionLabel()
                                     val latest = result.version.removePrefix("v")
-                                    if (!isNewerVersion(result.version, BuildConfig.VERSION_NAME)) {
+                                    if (!isUpdateAvailable(result)) {
                                         Toast.makeText(context, "已是最新版本 $current", Toast.LENGTH_SHORT).show()
                                     } else if (result.apkUrl.isNullOrBlank()) {
                                         // 无 APK 资产时在应用内浏览页打开发布页
@@ -241,7 +253,7 @@ fun AboutScreen(
                         selectedIndex = updateChannel.coerceIn(0, 1),
                         onSelectedIndexChange = onUpdateChannelChange,
                     )
-                    AboutRow("内核版本", kernel)
+                    AboutRow("WebView 内核版本", kernel)
                 }
 
                 SmallTitle(text = "依赖版本")
@@ -283,6 +295,45 @@ fun AboutScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                }
+
+                SmallTitle(text = "交流与反馈")
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    listOf(
+                        Triple("Telegram 频道", TG_CHANNEL_URL, "更新公告与新版本推送"),
+                        Triple("Telegram 交流群", TG_GROUP_URL, "使用交流与问题反馈"),
+                    ).forEachIndexed { index, (title, url, hint) ->
+                        if (index > 0) {
+                            Spacer(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(0.5.dp)
+                                    .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.15f)),
+                            )
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { openTelegram(url) }
+                                .padding(16.dp),
+                        ) {
+                            Text(title, fontSize = 16.sp, color = MiuixTheme.colorScheme.onSurface)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "$hint · $url",
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
 
@@ -365,24 +416,36 @@ data class AppRelease(
     val pageUrl: String,
     val apkUrl: String?,
     val notes: String = "",
+    /** GitHub 发布时间（毫秒）；未知为 0 */
+    val publishedAt: Long = 0L,
 )
 
 private const val PROJECT_URL = "https://github.com/rosenii/mafari"
+private const val TG_CHANNEL_URL = "https://t.me/mafari_a"
+private const val TG_GROUP_URL = "https://t.me/Mafari_discuss"
 private const val COPYRIGHT = "Copyright © 2026 rosenii. All rights reserved."
-private const val RELEASES_API = "https://api.github.com/repos/rosenii/mafari/releases?per_page=30"
+private const val RELEASES_API = "https://api.github.com/repos/rosenii/mafari/releases?per_page=100"
+
+/** 最多翻几页：CI 预发布会刷屏，stable / dev 的 release 可能被挤到靠后的页里 */
+private const val RELEASES_MAX_PAGES = 6
+
+/** 同仓库里的 CI 预发布 tag（gecko-<构建号>）不是版本号，不参与 stable / dev 的更新检查 */
+private val CI_BUILD_TAG = Regex("^gecko-\\d+$")
 
 /** 预览类后缀；带这些后缀的 tag 归入 dev 分支（-dev 为主，其余预览后缀一并算 dev） */
 private val PRE_TAG = Regex("(dev|alpha|beta|rc|snapshot)", RegexOption.IGNORE_CASE)
 
 /** tag 是否属于指定分支：0=stable（-stable 或无预览后缀） 1=dev（带预览后缀） */
 internal fun tagMatchesChannel(tag: String, channel: Int): Boolean {
+    if (CI_BUILD_TAG.matches(tag)) return false
     val isPre = PRE_TAG.containsMatchIn(tag)
     return if (channel == 1) isPre else !isPre
 }
 
 /**
  * 拉取指定分支（0=stable 1=dev）的最新 release：版本号、页面地址、APK 直链。
- * 取最近 30 个 release，只保留 tag 后缀匹配分支、非草稿的，再按版本号取最高者。
+ * 按页（每页 100 条、最多 6 页）从新到旧找，只保留 tag 后缀匹配分支、非草稿的，再按版本号取最高者；
+ * 找到匹配分支的 release 就不再往后翻（预发布刷屏时，stable 的 release 可能在第 2 页以后）。
  * 直连 + 公共 GitHub 加速镜像并发探测，连通者优先。
  */
 internal fun fetchLatestRelease(channel: Int): AppRelease? {
@@ -392,11 +455,34 @@ internal fun fetchLatestRelease(channel: Int): AppRelease? {
             fetchReleaseFrom(api, channel)
         }
     }
-    return GitHubAccelerate.raceFirst(8000, fetchers)
+    return GitHubAccelerate.raceFirst(15000, fetchers)
 }
 
-private fun fetchReleaseFrom(apiUrl: String, channel: Int): AppRelease? = runCatching {
-    val connection = (java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
+private fun fetchReleaseFrom(apiUrl: String, channel: Int): AppRelease? {
+    var best: AppRelease? = null
+    for (page in 1..RELEASES_MAX_PAGES) {
+        val pageUrl = if (page == 1) apiUrl else apiUrl + (if (apiUrl.contains('?')) "&" else "?") + "page=$page"
+        val array = fetchReleasePage(pageUrl)
+        if (array == null) {
+            // 第一页就失败 = 这条线路不通；后面的页失败就用已找到的
+            return best
+        }
+        var matchedInPage = false
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            val candidate = parseRelease(o, channel) ?: continue
+            matchedInPage = true
+            val current = best
+            if (current == null || isNewerVersion(candidate.version, current.version)) best = candidate
+        }
+        // 已找到本分支的 release，或者已经是最后一页（不足一整页）
+        if (matchedInPage || array.length() < 100) break
+    }
+    return best
+}
+
+private fun fetchReleasePage(url: String): org.json.JSONArray? = runCatching {
+    val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
         connectTimeout = 6000
         readTimeout = 6000
         instanceFollowRedirects = true
@@ -405,39 +491,38 @@ private fun fetchReleaseFrom(apiUrl: String, channel: Int): AppRelease? = runCat
     }
     try {
         if (connection.responseCode !in 200..299) return@runCatching null
-        val array = org.json.JSONArray(connection.inputStream.bufferedReader().readText())
-        var best: AppRelease? = null
-        for (i in 0 until array.length()) {
-            val o = array.optJSONObject(i) ?: continue
-            if (o.optBoolean("draft", false)) continue
-            val tag = o.optString("tag_name", "")
-            if (tag.isBlank() || !tagMatchesChannel(tag, channel)) continue
-            val pageUrl = o.optString("html_url", "").ifBlank { PROJECT_URL + "/releases" }
-            var apkUrl: String? = null
-            val assets = o.optJSONArray("assets")
-            if (assets != null) {
-                for (j in 0 until assets.length()) {
-                    val link = assets.optJSONObject(j)?.optString("browser_download_url", "").orEmpty()
-                    if (link.endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = link
-                        break
-                    }
-                }
-            }
-            val candidate = AppRelease(
-                version = tag,
-                pageUrl = pageUrl,
-                apkUrl = apkUrl,
-                notes = o.optString("body", "").trim(),
-            )
-            val current = best
-            if (current == null || isNewerVersion(candidate.version, current.version)) best = candidate
-        }
-        best
+        org.json.JSONArray(connection.inputStream.bufferedReader().readText())
     } finally {
         connection.disconnect()
     }
 }.getOrNull()
+
+/** 一条 release → AppRelease；草稿 / 不属于该分支的返回 null */
+private fun parseRelease(o: org.json.JSONObject, channel: Int): AppRelease? {
+    if (o.optBoolean("draft", false)) return null
+    val tag = o.optString("tag_name", "")
+    if (tag.isBlank() || !tagMatchesChannel(tag, channel)) return null
+    val pageUrl = o.optString("html_url", "").ifBlank { PROJECT_URL + "/releases" }
+    var apkUrl: String? = null
+    val assets = o.optJSONArray("assets")
+    if (assets != null) {
+        for (j in 0 until assets.length()) {
+            val link = assets.optJSONObject(j)?.optString("browser_download_url", "").orEmpty()
+            if (link.endsWith(".apk", ignoreCase = true)) {
+                apkUrl = link
+                break
+            }
+        }
+    }
+    return AppRelease(
+        version = tag,
+        pageUrl = pageUrl,
+        apkUrl = apkUrl,
+        notes = o.optString("body", "").trim(),
+        publishedAt = runCatching { java.time.Instant.parse(o.optString("published_at", "")).toEpochMilli() }
+            .getOrDefault(0L),
+    )
+}
 
 @Composable
 private fun AboutRow(title: String, value: String) {

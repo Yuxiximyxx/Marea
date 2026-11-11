@@ -80,9 +80,12 @@ import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 设置 → 隐私与安全 → 指纹保护：独立二级页面（原先是底部 sheet），与脚本 / 去广告 / 下载页同一套布局。 */
+/**
+ * 设置 → 隐私与安全 → 隐私增强保护（仅 WebView 内核）：
+ * 把「发送禁止跟踪请求」「禁用 WebRTC」「指纹保护」合并在同一页。
+ */
 @Composable
-fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
+fun PrivacyEnhanceScreen(settings: AppSettings, onBack: () -> Unit, blurEnabled: Boolean = true) {
     var showFpExempt by remember { mutableStateOf(false) }
     var fpPending by remember { mutableStateOf<Int?>(null) } // 等待用户确认开启的指纹保护项
 
@@ -98,7 +101,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             PageGlassTopBar(
-                title = "指纹保护",
+                title = "隐私增强保护",
                 backdrop = backdrop,
                 glass = glass,
                 scrollBehavior = scrollBehavior,
@@ -126,7 +129,26 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                     .padding(top = topInset)
                     .padding(bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
-                Spacer(Modifier.height(8.dp))
+                SmallTitle(text = "请求与连接")
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    AppSwitchPreference(
+                        title = "发送禁止跟踪请求",
+                        summary = "地址栏与链接导航附带 DNT / Sec-GPC 头，并设置 navigator.doNotTrack",
+                        checked = settings.sendDnt,
+                        onCheckedChange = { settings.updateSendDnt(it) },
+                    )
+                    AppSwitchPreference(
+                        title = "禁用 WebRTC",
+                        summary = "移除 RTCPeerConnection 等接口，防止泄露真实 IP（刷新页面后生效）",
+                        checked = settings.webrtcDisabled,
+                        onCheckedChange = { settings.updateWebrtcDisabled(it) },
+                    )
+                }
+
+                SmallTitle(text = "指纹保护")
                 // ① 隐私报告
                 val fpOn = AdBlock.fpMaster
                 val fpCount = listOf(AdBlock.fpCanvas, AdBlock.fpWebgl, AdBlock.fpAudio, AdBlock.fpFonts).count { it }
@@ -186,7 +208,7 @@ fun FingerprintScreen(onBack: () -> Unit, blurEnabled: Boolean = true) {
                 }
 
                 // ② 总开关 + 展开的四项
-                SmallTitle(text = "保护项")
+                SmallTitle(text = "保护项目")
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),

@@ -88,7 +88,8 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenAdBlock: () -> Unit,
-    onOpenFingerprint: () -> Unit,
+    onOpenPrivacyEnhance: () -> Unit,
+    onOpenCookies: () -> Unit = {},
     onOpenBookmarks: () -> Unit,
     onOpenAbout: () -> Unit,
     onPageEnhancementsChange: (Boolean) -> Unit = {},
@@ -100,6 +101,7 @@ fun SettingsScreen(
     var showWallpaper by remember { mutableStateOf(false) }
     var showPermSheet by remember { mutableStateOf(false) }
     var showHomeSheet by remember { mutableStateOf(false) }
+    var showHomeUrlDialog by remember { mutableStateOf(false) }
     var showProxyDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var reclaimable by remember { mutableStateOf(0L) }
@@ -189,8 +191,8 @@ fun SettingsScreen(
                     AppDropdownPreference(
                         backdrop = if (glass) backdrop else null,
                         title = "高级材质",
-                        summary = "开启后提供精美组件效果",
-                        items = listOf("miuix-glass", "liquid glass", "关闭模糊"),
+                        summary = "柔光玻璃 / 液态玻璃 / 纯色",
+                        items = listOf("柔光玻璃", "液态玻璃", "纯色"),
                         selectedIndex = settings.blurMode.coerceIn(0, 2),
                         onSelectedIndexChange = { settings.updateBlurMode(it) },
                     )
@@ -218,7 +220,7 @@ fun SettingsScreen(
                         onSelectedIndexChange = { settings.updateTabsStyle(it) },
                     )
                     SettingsRow(
-                        title = "首页内容显示",
+                        title = "定制主页",
                         summary = homeContentSummary(settings),
                         onClick = { showHomeSheet = true },
                     )
@@ -245,24 +247,24 @@ fun SettingsScreen(
                         onSelectedIndexChange = { settings.updateLinkOpenMode(it) },
                     )
                     SettingsRow(
-                        title = "搜索引擎",
-                        summary = SEARCH_ENGINES.getOrNull(settings.searchIndex)?.name ?: "自定义",
-                        onClick = { showSearch = true },
-                    )
-                    SettingsRow(
                         title = "书签与历史",
                         summary = "书签分组、浏览记录",
                         onClick = onOpenBookmarks,
                     )
                     SettingsRow(
-                        title = "UA 标识管理",
-                        summary = uaSummary(settings.userAgent),
-                        onClick = { showUa = true },
-                    )
-                    SettingsRow(
                         title = "下载",
                         summary = "查看已下载的文件",
                         onClick = onOpenDownloads,
+                    )
+                    SettingsRow(
+                        title = "搜索引擎",
+                        summary = SEARCH_ENGINES.getOrNull(settings.searchIndex)?.name ?: "自定义",
+                        onClick = { showSearch = true },
+                    )
+                    SettingsRow(
+                        title = "UA 标识管理",
+                        summary = uaSummary(settings.userAgent),
+                        onClick = { showUa = true },
                     )
                 }
 
@@ -273,13 +275,12 @@ fun SettingsScreen(
                         .padding(horizontal = 12.dp),
                     insideMargin = PaddingValues(0.dp),
                 ) {
-                    // Cookie 直接外部 dropdown，不再进 sheet
-                    AppDropdownPreference(
-                        backdrop = if (glass) backdrop else null,
+                    SettingsRow(
                         title = "Cookie 管理",
-                        items = listOf("允许第三方 Cookie", "拒绝第三方 Cookie"),
-                        selectedIndex = settings.thirdPartyCookie.coerceIn(0, 1),
-                        onSelectedIndexChange = { settings.updateThirdPartyCookie(it) },
+                        summary = COOKIE_MODE_NAMES[settings.cookieMode.coerceIn(0, 3)] +
+                            (if (settings.cookieClearOnLaunch > 0) " · 启动时清理" else "") +
+                            " · 接受策略 · 自动清理 · 清除数据",
+                        onClick = onOpenCookies,
                     )
                     SettingsRow(
                         title = "网站权限管理",
@@ -287,24 +288,9 @@ fun SettingsScreen(
                         onClick = { showPermSheet = true },
                     )
                     SettingsRow(
-                        title = "指纹保护",
-                        summary = AdBlock.let { ab ->
-                            val n = listOf(ab.fpCanvas, ab.fpWebgl, ab.fpAudio, ab.fpFonts).count { it }
-                            if (n == 0) "已关闭 · Canvas · WebGL · Audio · Fonts" else "已开启 $n / 4 项 · Canvas · WebGL · Audio · Fonts"
-                        },
-                        onClick = onOpenFingerprint,
-                    )
-                    AppSwitchPreference(
-                        title = "发送禁止跟踪请求",
-                        summary = "地址栏与链接导航附带 DNT / Sec-GPC 头，并设置 navigator.doNotTrack",
-                        checked = settings.sendDnt,
-                        onCheckedChange = { settings.updateSendDnt(it) },
-                    )
-                    AppSwitchPreference(
-                        title = "禁用 WebRTC",
-                        summary = "移除 RTCPeerConnection 等接口，防止泄露真实 IP（刷新页面后生效）",
-                        checked = settings.webrtcDisabled,
-                        onCheckedChange = { settings.updateWebrtcDisabled(it) },
+                        title = "隐私增强保护",
+                        summary = privacyEnhanceSummary(settings),
+                        onClick = onOpenPrivacyEnhance,
                     )
                 }
 
@@ -597,13 +583,40 @@ fun SettingsScreen(
 
             AppBottomSheet(
                 show = showHomeSheet,
-                title = "首页内容显示",
+                title = "定制主页",
                 backdrop = if (glass) backdrop else null,
                 onDismissRequest = { showHomeSheet = false },
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
+                    AppDropdownPreference(
+                        title = "自定义主页",
+                        items = listOf("默认主页", "新建标签页", "指定页面"),
+                        selectedIndex = settings.homeMode.coerceIn(0, 2),
+                        onSelectedIndexChange = {
+                            // 指定页面要先填网址，确认后才切换模式；其它两项立即生效
+                            if (it == HOME_MODE_CUSTOM) showHomeUrlDialog = true else settings.updateHomeMode(it)
+                        },
+                        backdrop = if (glass) backdrop else null,
+                        visuals = popupVisuals,
+                        insideMargin = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    )
+                    if (settings.homeMode == HOME_MODE_CUSTOM) {
+                        SettingsRow(
+                            title = "指定页面地址",
+                            summary = settings.homeCustomUrl.ifBlank { "未设置" },
+                            onClick = { showHomeUrlDialog = true },
+                        )
+                    }
+                    AppDropdownPreference(
+                        title = "个人收藏",
+                        items = (1..HOME_FAV_ROWS_MAX).map { "显示${it}行" } + "不显示",
+                        selectedIndex = if (settings.homeFavRows == 0) HOME_FAV_ROWS_MAX else settings.homeFavRows - 1,
+                        onSelectedIndexChange = { settings.updateHomeFavRows(if (it >= HOME_FAV_ROWS_MAX) 0 else it + 1) },
+                        backdrop = if (glass) backdrop else null,
+                        visuals = popupVisuals,
+                        insideMargin = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    )
                     listOf(
-                        HOME_FAVORITES to "个人收藏",
                         HOME_PRIVACY to "隐私报告",
                         HOME_RECENT to "最近浏览",
                         HOME_DOWNLOADS to "下载项",
@@ -619,11 +632,63 @@ fun SettingsScreen(
                         )
                     }
                     Text(
-                        text = "首页最多展示 12 个收藏；进入收藏编辑态后，长按小卡片可拖动调整顺序，长按「收藏」标题行可移动整个收藏区块。长按首页其他内容卡片可上下拖动排序，编辑态下卡片右上角 × 可从首页移除；无痕标签页的首页不显示最近浏览。",
+                        text = "在首页长按「隐私报告」「最近浏览」「下载项」卡片可上下拖动排序（个人收藏作为整体，长按「收藏」标题行拖动；收藏超出所选行数时，最后一格显示「更多」，点击进入书签页）；长按后卡片右上角会出现 ×，点击可从首页移除；无痕标签页的首页不显示最近浏览。",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                     )
+                }
+            }
+
+            // 自定义主页 → 指定页面：输入网址
+            var homeUrlText by remember(showHomeUrlDialog) { mutableStateOf(settings.homeCustomUrl) }
+            AppGlassDialog(
+                show = showHomeUrlDialog,
+                title = "指定页面",
+                backdrop = if (glass) backdrop else null,
+                onDismissRequest = { showHomeUrlDialog = false },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "启动应用、点击主页按钮、新建标签页时都会打开这个页面（无痕标签页除外）。请输入完整网址，例如 https://www.baidu.com",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
+                    TextField(
+                        value = homeUrlText,
+                        onValueChange = { homeUrlText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "网址",
+                        singleLine = true,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        AppDialogButton(
+                            onClick = { showHomeUrlDialog = false },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(text = "取消", style = MiuixTheme.textStyles.button)
+                        }
+                        AppDialogButton(
+                            onClick = {
+                                val text = homeUrlText.trim()
+                                if (text.isEmpty() || !looksLikeUrl(text)) {
+                                    Toast.makeText(context, "请输入有效的网址", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    settings.updateHomeCustomUrl(text)
+                                    settings.updateHomeMode(HOME_MODE_CUSTOM)
+                                    showHomeUrlDialog = false
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            role = top.yukonga.miuix.kmp.glass.GlassDialogButtonRole.Primary,
+                        ) {
+                            Text(text = "保存", style = MiuixTheme.textStyles.button)
+                        }
+                    }
                 }
             }
 
@@ -767,6 +832,12 @@ private fun AppIconPicker(selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+private fun privacyEnhanceSummary(settings: AppSettings): String {
+    val fp = AdBlock.let { listOf(it.fpCanvas, it.fpWebgl, it.fpAudio, it.fpFonts).count { on -> on } }
+    val n = (if (settings.sendDnt) 1 else 0) + (if (settings.webrtcDisabled) 1 else 0) + (if (fp > 0) 1 else 0)
+    return if (n == 0) "禁止跟踪请求 · 指纹保护 · 禁用 WebRTC" else "已开启 $n / 3 项 · 禁止跟踪请求 · 指纹保护 · 禁用 WebRTC"
+}
+
 @Composable
 private fun SettingsRow(title: String, summary: String, onClick: () -> Unit) {
     ArrowPreference(
@@ -874,10 +945,15 @@ private fun SearchSheet(
 
 private fun homeContentSummary(settings: AppSettings): String {
     val shown = buildList {
-        if (settings.homeShowFavorites) add("收藏")
+        if (settings.homeShowFavorites) add("收藏${settings.homeFavRows}行")
         if (settings.homeShowPrivacy) add("隐私报告")
         if (settings.homeShowRecent) add("最近浏览")
         if (settings.homeShowDownloads) add("下载项")
     }
-    return if (shown.isEmpty()) "首页只显示标志" else shown.joinToString(" · ")
+    val mode = when (settings.homeMode) {
+        HOME_MODE_NEW_TAB -> "主页按钮：新建标签页 · "
+        HOME_MODE_CUSTOM -> "指定页面 · "
+        else -> ""
+    }
+    return mode + if (shown.isEmpty()) "首页只显示标志" else shown.joinToString(" · ")
 }

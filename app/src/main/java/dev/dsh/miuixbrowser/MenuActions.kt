@@ -15,13 +15,16 @@ import top.yukonga.miuix.kmp.icon.glass.Link
 import top.yukonga.miuix.kmp.icon.glass.Hide
 import top.yukonga.miuix.kmp.icon.glass.GridView
 import top.yukonga.miuix.kmp.icon.glass.Favorites
-import top.yukonga.miuix.kmp.icon.glass.File
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Copy
 import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.icon.glass.Add
 
-enum class MenuAction(val id: String, val label: String, val icon: ImageVector) {
+enum class MenuAction(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+) {
     NewTab("new_tab", "新建标签", MiuixIcons.Glass.Add),
     Incognito("incognito", "无痕浏览", MiuixIcons.Glass.Hide),
     Desktop("desktop", "桌面版", MiuixIcons.Glass.GridView),
@@ -36,8 +39,7 @@ enum class MenuAction(val id: String, val label: String, val icon: ImageVector) 
     Settings("settings", "设置", MiuixIcons.Glass.Settings),
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
-    Extensions("extensions", "脚本", AppIcons.Script),
-    ScriptMenu("script_menu", "脚本菜单", MiuixIcons.Glass.File),
+    ScriptMenu("script_menu", "脚本", AppIcons.Script),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),
 }
@@ -59,7 +61,10 @@ class MenuOrderStore(context: Context) {
                 .mapNotNull { id -> MenuAction.entries.firstOrNull { it.id == id } }
         hidden.addAll(read(KEY_HIDDEN).filter { it != MenuAction.Settings }.distinct())
         order.addAll(read(KEY).filter { it !in hidden }.distinct())
-        MenuAction.entries.forEach { if (it !in order && it !in hidden) order.add(it) }
+        // 新增的项补到末尾
+        MenuAction.entries.forEach {
+            if (it !in order && it !in hidden) order.add(it)
+        }
     }
 
     /** 把 [action] 放到显示区 / 隐藏区的第 [toIndex] 位；「设置」不允许隐藏，避免找不到入口 */
