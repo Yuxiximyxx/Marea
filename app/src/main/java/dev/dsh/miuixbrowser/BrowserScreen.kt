@@ -224,6 +224,9 @@ internal data class DownloadRequest(
     val userAgent: String?,
     val fileName: String,
     val mime: String?,
+    /** 来源页（Referer）与是否带 WebView 的 Cookie：登录态 / 防盗链站点 */
+    val referer: String? = null,
+    val withCookies: Boolean = false,
     /** blob / data URL 已抽成 data URI，确认后直接落盘，不再走 HTTP 下载器 */
     val dataUri: String? = null,
     /** 大 blob 分片写入的缓存临时文件路径，确认后拷到 Download/mafari */
@@ -801,6 +804,9 @@ fun BrowserScreen(
                     userAgent = ua,
                     fileName = Downloader.fileNameFrom(url, disposition),
                     mime = mime,
+                    referer = tab.url,
+                    // 无痕标签不带 Cookie（WebView 共用 CookieManager，带了就是串号）
+                    withCookies = !tab.incognito,
                 )
             }
         }
@@ -808,9 +814,11 @@ fun BrowserScreen(
             pendingDownload?.onResult?.invoke(false, "superseded")
             pendingDownload = DownloadRequest(
                 url = url,
-                userAgent = null,
+                userAgent = runCatching { tab.webView.settings.userAgentString }.getOrNull(),
                 fileName = Downloader.fileNameFrom(url, if (name.isBlank()) null else "attachment; filename=\"$name\""),
                 mime = null,
+                referer = tab.url,
+                withCookies = !tab.incognito,
                 onResult = onResult,
             )
         }
@@ -1096,6 +1104,7 @@ fun BrowserScreen(
                         wallpaperBackdrop = wallpaperBackdrop,
                         blurEnabled = settings.blurEnabled,
                         favorites = homeFavEntries.map { it.second },
+                        showLogo = settings.homeShowLogo,
                         showFavorites = settings.homeShowFavorites,
                         favRows = settings.homeFavRows,
                         onOpenBookmarks = { pushPage(AppRoute.Library(0)) },
@@ -1780,9 +1789,11 @@ fun BrowserScreen(
                         blobImage -> tab.extractBlob(imageUrl, null, null, "image/*")
                         else -> pendingDownload = DownloadRequest(
                             url = imageUrl,
-                            userAgent = null,
+                            userAgent = runCatching { tab.webView.settings.userAgentString }.getOrNull(),
                             fileName = Downloader.fileNameFrom(imageUrl, null),
                             mime = null,
+                            referer = tab.url,
+                            withCookies = !tab.incognito,
                         )
                     }
                 }
@@ -1817,9 +1828,11 @@ fun BrowserScreen(
                             sheet = Sheet.None
                             pendingDownload = DownloadRequest(
                                 url = hit.imageUrl,
-                                userAgent = null,
+                                userAgent = runCatching { tab.webView.settings.userAgentString }.getOrNull(),
                                 fileName = Downloader.fileNameFrom(hit.imageUrl, null),
                                 mime = null,
+                                referer = tab.url,
+                                withCookies = !tab.incognito,
                             )
                         }
                     }
@@ -1925,6 +1938,8 @@ fun BrowserScreen(
                                                     fileName = req.fileName,
                                                     mimeType = req.mime,
                                                     onComplete = req.onResult,
+                                                    referer = req.referer,
+                                                    withCookies = req.withCookies,
                                                 )
                                                 true
                                             }

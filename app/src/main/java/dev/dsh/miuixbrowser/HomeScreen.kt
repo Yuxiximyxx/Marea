@@ -382,6 +382,8 @@ internal fun StartPage(
     onMove: (Int, Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAdd: () -> Unit,
+    /** 首页顶部的 LOGO 标识 */
+    showLogo: Boolean = true,
 ) {
     val density = LocalDensity.current
     val gapPx = with(density) { 14.dp.toPx() }
@@ -452,14 +454,16 @@ internal fun StartPage(
                 .padding(horizontal = 20.dp)
                 .padding(top = 44.dp, bottom = 150.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                GlassLogoText("Mafari", fontSize = 58, wallpaper = wallpaper)
+            if (showLogo) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GlassLogoText("Mafari", fontSize = 58, wallpaper = wallpaper)
+                }
+                Spacer(Modifier.height(30.dp))
             }
-            Spacer(Modifier.height(30.dp))
 
             Column(
                 modifier = Modifier
