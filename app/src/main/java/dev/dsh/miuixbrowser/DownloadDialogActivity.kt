@@ -75,6 +75,11 @@ class DownloadDialogActivity : ComponentActivity() {
 
     private val urlState = mutableStateOf("")
 
+    // fork.21：任务所属空间（0 普通 / 1 隐私）。此前本 Activity 完全不带空间——站内
+    // 隐私标签的下载经这里建任务时被写死普通空间，隐私下载混进普通列表、文件落到
+    // 普通目录。由拉起方经 EXTRA_SPACE 传入（外部系统入口不传 = 普通空间）。
+    private var downloadSpace: Int = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // fork.7 顺手修复：本 Activity 此前从不调用 Diag.init——进程若被系统直接拉进弹窗
@@ -87,7 +92,8 @@ class DownloadDialogActivity : ComponentActivity() {
         runCatching { Downloader.restore(this) }
         runCatching { LinkDispatch.init(this) }
         urlState.value = resolveUrl(intent)
-        Diag.log("DownloadDialogActivity: resolved url=${urlState.value.take(120)}")
+        downloadSpace = if (intent?.getIntExtra(EXTRA_SPACE, 0) == 1) 1 else 0
+        Diag.log("DownloadDialogActivity: resolved url=${urlState.value.take(120)} space=$downloadSpace")
         if (urlState.value.isBlank()) {
             Diag.log("DownloadDialogActivity: blank url, finish")
             finish()
@@ -151,8 +157,9 @@ class DownloadDialogActivity : ComponentActivity() {
                                 finish()
                             },
                             onConfirm = { fileName, startNow ->
-                                Diag.log("DownloadDialogActivity: confirm clicked startNow=$startNow fileName=$fileName")
-                                val cookie = PrivacyMode.cookieFor(url, privacy = false)
+                                Diag.log("DownloadDialogActivity: confirm clicked startNow=$startNow fileName=$fileName space=$downloadSpace")
+                                // fork.21：Cookie 按任务空间取（隐私走隐私 Profile），任务也落对应空间
+                                val cookie = PrivacyMode.cookieFor(url, privacy = downloadSpace == 1)
                                 if (startNow) {
                                     Downloader.start(
                                         context = this@DownloadDialogActivity,
@@ -161,6 +168,7 @@ class DownloadDialogActivity : ComponentActivity() {
                                         fileName = fileName,
                                         mimeType = null,
                                         cookie = cookie,
+                                        space = downloadSpace,
                                     )
                                     Toast.makeText(this@DownloadDialogActivity, "已开始下载", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -171,6 +179,7 @@ class DownloadDialogActivity : ComponentActivity() {
                                         fileName = fileName,
                                         mimeType = null,
                                         cookie = cookie,
+                                        space = downloadSpace,
                                     )
                                     Toast.makeText(this@DownloadDialogActivity, "已添加到下载列表", Toast.LENGTH_SHORT).show()
                                 }
@@ -188,7 +197,9 @@ class DownloadDialogActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val resolved = resolveUrl(intent)
-        Diag.log("DownloadDialogActivity.onNewIntent: action=${intent.action} resolved=${resolved.take(120)}")
+        // fork.21：空间跟随新 intent 同步更新，别沿用上一次拉起的空间
+        downloadSpace = if (intent.getIntExtra(EXTRA_SPACE, 0) == 1) 1 else 0
+        Diag.log("DownloadDialogActivity.onNewIntent: action=${intent.action} resolved=${resolved.take(120)} space=$downloadSpace")
         if (resolved.isNotBlank()) urlState.value = resolved
     }
 
@@ -224,12 +235,16 @@ class DownloadDialogActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_URL = "marea_download_url"
+        const val EXTRA_SPACE = "marea_download_space"
 
         private val URL_IN_TEXT = Regex("""https?://[^\s<>"']+""")
 
-        fun intent(context: Context, url: String): Intent {
+        // fork.21：space 默认 0——外部系统入口与 MainActivity 跳板不传即普通空间，
+        // 站内拉起方须按当前标签的隐私空间显式传（true → 1）。
+        fun intent(context: Context, url: String, space: Int = 0): Intent {
             val intent = Intent(context, DownloadDialogActivity::class.java)
                 .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_SPACE, space)
             // fork.19：与主界面合回同一任务——从 Activity 拉起就是同任务普通压栈，
             // 不再恒带 NEW_TASK；仅非 Activity 上下文（BrowserState 的 appContext）
             // 系统硬性要求 NEW_TASK 才补（无此标记从应用上下文 startActivity 直接抛异常）。

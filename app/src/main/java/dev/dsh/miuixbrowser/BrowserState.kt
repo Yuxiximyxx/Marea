@@ -1341,7 +1341,8 @@ class BrowserTab(private val appContext: Context) {
         Diag.log("FileDownloadCheck[$source]: host=${uri.host} hit=$hit url=${target.take(100)}")
         if (!hit) return false
         val launched = runCatching {
-            appContext.startActivity(DownloadDialogActivity.intent(appContext, target))
+            // fork.21：带上本标签（即当前活动标签）的空间，隐私标签的直链下载进隐私空间
+            appContext.startActivity(DownloadDialogActivity.intent(appContext, target, space = if (privacySpace) 1 else 0))
         }.isSuccess
         Diag.log("FileDownloadCheck[$source]: dialog launched=$launched url=${target.take(100)}")
         return launched

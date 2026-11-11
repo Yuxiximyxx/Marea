@@ -805,7 +805,8 @@ fun BrowserScreen(
                 // 站内点击拦截同一条路径；
                 // 拉起失败才回退下面的浏览器内确认框。文件名/大小由弹窗自己探测（probeShared）。
                 val dialogLaunched = runCatching {
-                    context.startActivity(DownloadDialogActivity.intent(context, url))
+                    // fork.21：把当前标签的空间带给下载弹窗，否则隐私标签的下载会被盖成普通空间
+                    context.startActivity(DownloadDialogActivity.intent(context, url, space = if (tab.privacySpace) 1 else 0))
                 }.isSuccess
                 Diag.log("BrowserScreen: download hit -> floating dialog launched=$dialogLaunched url=${url.take(100)}")
                 if (!dialogLaunched) {
@@ -3336,7 +3337,8 @@ private fun StartPage(
                                 onRemove = { onHide(HOME_DOWNLOADS) },
                                 onClick = guard(onOpenDownloads),
                             ) {
-                                val tasks = Downloader.tasks.toList().takeLast(3).reversed()
+                                // fork.21：与下载页同口径先按当前空间过滤，再取最近 3 条（排序语义不变）
+                                val tasks = Downloader.tasks.filter { it.space == (if (PrivacyMode.active) 1 else 0) }.takeLast(3).reversed()
                                 if (tasks.isEmpty()) {
                                     HomeEmptyText("还没有下载任务")
                                 } else {
