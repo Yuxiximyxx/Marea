@@ -2,6 +2,15 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.4] - 2026-11-12
+
+### 实验版修复：按真机堆栈修两处崩溃（待真机复验）
+
+- 取证闭环：exp.3 的「导出诊断日志」拿回了真机崩溃堆栈，两处崩溃均已实锤定位，本版逐个对症修复（不再猜测）。
+- 开书黑屏闪退（exp.1 起的老问题）：堆栈为 NoClassDefFoundError: com/materialkolor/scheme/DynamicScheme$Platform——阅读页组合阅读主题时调用 MaterialKolor 动态配色，运行时缺 android 平台类。根因是 legado 库模块里 material-kolor 用的是无后缀 KMP 根坐标，在本仓环境下落不到 android 变体（与此前 miuix-core 同病）。本版改用 com.materialkolor:material-kolor-android:5.0.1 显式坐标，并已在发版 APK 内验过该类存在于 dex 中。
+- 进不去 Legado 书架（exp.3 新问题）：堆栈为 IllegalStateException: You need to use a Theme.AppCompat theme——Legado 的 BaseComposeActivity 系 Activity 要求 AppCompat 后代主题，而合并清单里它们继承到的 Marea 应用主题（Theme.MiuixBrowser）不是。原工程里它们继承 Legado 自家 application 主题 Base.AppTheme（Material3→AppCompat 桥）。本版在 app 清单给全部无显式主题的 Legado Activity（MainActivity、8 个启动器子类、Welcome、QrCode、CrashReport、Dict、FileManage，共 13 个）逐个定版 @style/Base.AppTheme；已有显式主题的（Permission、Transparent 系）经审计父链合规、未动。
+- 其余同 exp.3：Legado 书架与设置界面、应用名 Marea、崩溃落盘与诊断日志导出均保留。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.3] - 2026-11-12
 
 ### 实验版扩展：Legado 书架与设置界面接入

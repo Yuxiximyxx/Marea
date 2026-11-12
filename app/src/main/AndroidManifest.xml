@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -469,6 +470,73 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- 实验分支 exp.4：Legado 的 AppCompat 系 Activity 主题定版。
+             legado 库清单里下列 Activity 未单独配主题，在原工程继承其 application
+             主题 Base.AppTheme（Material3→AppCompat 桥，满足 AppCompatDelegate 检查）；
+             合并进 Marea 后 application 主题是 Theme.MiuixBrowser（非 AppCompat 后代），
+             MainActivity 启动即抛 "You need to use a Theme.AppCompat theme"（真机堆栈实锤）。
+             这里在 app 清单逐个显式定版原主题；已有显式主题者不覆盖：
+             PermissionActivity(Activity.Permission)、SharedReceiverActivity 与
+             association 四件(AppTheme.Transparent，父链即 Base.AppTheme)。
+             审计范围 = legado 库清单全部 20 个 Activity：下列 13 个无主题且均为
+             BaseComposeActivity/BaseActivity/VMBaseActivity 系（含 8 个 MainActivity 子类启动器）。 -->
+        <activity
+            android:name="io.legado.app.ui.main.MainActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.LauncherW"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher0"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher1"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher2"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher3"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher4"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher5"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.main.Launcher6"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.welcome.WelcomeActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.qrcode.QrCodeActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.about.CrashReportActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.dict.DictActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
+        <activity
+            android:name="io.legado.app.ui.file.FileManageActivity"
+            android:theme="@style/Base.AppTheme"
+            tools:replace="android:theme" />
     </application>
 
 </manifest>

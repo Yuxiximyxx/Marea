@@ -172,7 +172,12 @@ dependencies {
     implementation(libs.koin.compose)
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.reorderable)
-    implementation(libs.material.kolor)
+    // exp.4：catalog 的 material-kolor 是无后缀 KMP 根坐标，在本模块（Android 库）
+    // 落到的变体缺 android 平台类——真机开书组合阅读主题时
+    // NoClassDefFoundError: com/materialkolor/scheme/DynamicScheme$Platform 闪退
+    // （exp.1 起的老问题，真机堆栈实锤）。与 miuix-core 同病同法：改用 -android
+    // 后缀坐标（版本同 catalog materialKolor=5.0.1）
+    implementation("com.materialkolor:material-kolor-android:5.0.1")
     implementation(libs.haze.core)
     implementation(libs.haze.blur)
     implementation(libs.miuix.ui.android)
