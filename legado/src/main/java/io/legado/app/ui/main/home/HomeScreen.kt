@@ -28,8 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -51,13 +49,11 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,8 +63,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.platform.LocalContext
@@ -86,30 +80,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
 import io.legado.app.data.entities.Book
-import io.legado.app.data.entities.SearchBook
 import io.legado.app.domain.model.HomeDashboardSection
 import io.legado.app.domain.model.MAX_DAILY_READING_GOAL_MINUTES
 import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.ui.config.backupConfig.BackupOptionSheet
 import io.legado.app.ui.config.backupConfig.RestoreOptionSheet
-import io.legado.app.ui.main.homepage.HomepageFeedActions
-import io.legado.app.ui.main.homepage.HomepageManageActions
-import io.legado.app.ui.main.homepage.HomepageModuleFeed
-import io.legado.app.ui.main.homepage.HomepageModuleManageSheet
-import io.legado.app.ui.main.homepage.HomepageUiState
-import io.legado.app.ui.main.homepage.HomepageViewModel
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.widget.components.AppPullToRefresh
 import io.legado.app.ui.widget.components.AppScaffold
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
-import io.legado.app.ui.widget.components.book.SearchBookPreviewSheet
 import io.legado.app.ui.widget.components.button.series.MediumTonalButton
 import io.legado.app.ui.widget.components.button.series.SmallTonalButton
 import io.legado.app.ui.widget.components.card.GlassCard
 import io.legado.app.ui.widget.components.card.TextCard
-import io.legado.app.ui.widget.components.conflict.BookshelfConflictSheet
-import io.legado.app.ui.widget.components.divider.PillDivider
 import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.icon.AppIcons
 import io.legado.app.ui.widget.components.image.cover.BookshelfCover
@@ -126,7 +109,6 @@ import io.legado.app.utils.sendToClip
 import io.legado.app.utils.takePersistablePermissionSafely
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import java.text.DateFormat
@@ -150,83 +132,9 @@ fun HomeRouteScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     viewModel: HomeViewModel = koinViewModel(),
-    homepageViewModel: HomepageViewModel = koinViewModel(),
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val homepageState by homepageViewModel.uiState.collectAsStateWithLifecycle()
-    var previewBook by remember { mutableStateOf<SearchBook?>(null) }
-    var previewSharedCoverKey by remember { mutableStateOf<String?>(null) }
-
-    val feedActions = remember(homepageViewModel, onNavigateToBookInfo) {
-        HomepageFeedActions(
-            onModuleHeaderClick = { _, _, _ -> },
-            onRetryModule = homepageViewModel::retryModule,
-            onLoadMoreModule = homepageViewModel::loadMoreModule,
-            onBookClick = { book: SearchBook, sharedCoverKey: String? ->
-                onNavigateToBookInfo(
-                    book.name,
-                    book.author,
-                    book.bookUrl,
-                    book.origin,
-                    book.coverUrl,
-                    sharedCoverKey,
-                )
-            },
-            onKindUrlClick = homepageViewModel::onKindUrlClick,
-            onRefreshButtonGroup = homepageViewModel::refreshButtonGroup,
-        )
-    }
-    val manageActions = remember(homepageViewModel) {
-        HomepageManageActions(
-            onToggleSet = { url, isEnabled ->
-                homepageViewModel.toggleSourceFilter(url, isEnabled)
-            },
-            onGetSourceModules = { url, setId ->
-                homepageViewModel.getSourceModules(url, setId)
-            },
-            onSyncSourceModules = { homepageViewModel.syncSourceModules(it) },
-            onToggleModule = { id, visible ->
-                homepageViewModel.setModuleVisible(id, visible)
-            },
-            onJoinModule = { sourceUrl, targetSetId, def ->
-                homepageViewModel.joinModule(sourceUrl, targetSetId, def)
-            },
-            onAddCustomModule = { sourceUrl, targetSetId, def ->
-                homepageViewModel.addCustomModule(sourceUrl, targetSetId, def)
-            },
-            onAddButtonGroupFromKinds = { sourceUrl, targetSetId, title, kinds ->
-                homepageViewModel.addButtonGroupFromKinds(sourceUrl, targetSetId, title, kinds)
-            },
-            onAddRankingFromKinds = { sourceUrl, targetSetId, title, type, kinds ->
-                homepageViewModel.addRankingFromKinds(
-                    sourceUrl,
-                    targetSetId,
-                    title,
-                    type,
-                    kinds
-                )
-            },
-            onGetExploreKinds = { homepageViewModel.getSourceExploreKinds(it) },
-            onUpdateModule = { globalId, def ->
-                homepageViewModel.updateModule(globalId, def)
-            },
-            onDeleteModule = { homepageViewModel.deleteModule(it) },
-            onReorderModules = { homepageViewModel.reorderJoinedModules(it) },
-            onReorderSets = { homepageViewModel.reorderCustomSets(it) },
-            onSetCustomSetTitle = { id, title ->
-                homepageViewModel.setModuleCustomSetTitle(id, title)
-            },
-            onCreateCustomSet = { homepageViewModel.createCustomSet(it) },
-            onRenameCustomSet = { id, name ->
-                homepageViewModel.renameCustomSet(id, name)
-            },
-            onDeleteCustomSet = { homepageViewModel.deleteCustomSet(it) },
-            onAssignModuleToCustomSet = { id, setId ->
-                homepageViewModel.assignModuleToCustomSet(id, setId)
-            },
-        )
-    }
 
     var pendingBackupDestination by remember {
         mutableStateOf<HomeBackupDestination?>(null)
@@ -304,73 +212,16 @@ fun HomeRouteScreen(
         }
     }
 
-    LaunchedEffect(homepageViewModel) {
-        homepageViewModel.effects.collectLatest { effect ->
-            when (effect) {
-                is io.legado.app.ui.main.homepage.HomepageEffect.NavigateToBookInfo ->
-                    onNavigateToBookInfo(
-                        effect.name,
-                        effect.author,
-                        effect.bookUrl,
-                        effect.origin,
-                        effect.coverPath,
-                        effect.sharedCoverKey,
-                    )
-
-                is io.legado.app.ui.main.homepage.HomepageEffect.NavigateToExploreShow -> Unit
-
-                is io.legado.app.ui.main.homepage.HomepageEffect.ShowSnackbar -> {}
-            }
-        }
-    }
 
     HomeScreen(
         state = state,
-        homepageState = homepageState,
-        homepageFeedActions = feedActions,
-        homepageManageActions = manageActions,
         onIntent = viewModel::onIntent,
-        onRefreshHomepage = homepageViewModel::onRefresh,
-        onToggleHomepageManage = homepageViewModel::toggleManageMode,
         onNavigateToReadRecord = onNavigateToReadRecord,
         onNavigateToReadRecordOverview = onNavigateToReadRecordOverview,
-        onHomepageBookLongClick = { book, sharedCoverKey ->
-            previewBook = book
-            previewSharedCoverKey = sharedCoverKey
-        },
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
-    )
+    ) )
 
-    SearchBookPreviewSheet(
-        data = previewBook,
-        shelfState = previewBook?.let { homepageViewModel.getCurrentBookShelfState(it) },
-        sharedCoverKey = previewSharedCoverKey,
-        onDismissRequest = { previewBook = null },
-        onOpenDetail = { book, sharedCoverKey ->
-            previewBook = null
-            onNavigateToBookInfo(
-                book.name,
-                book.author,
-                book.bookUrl,
-                book.origin,
-                book.coverUrl,
-                sharedCoverKey,
-            )
-        },
-        onAddToShelf = { book ->
-            homepageViewModel.onAddToShelf(book)
-        },
-    )
-
-    BookshelfConflictSheet(
-        conflict = homepageState.bookshelfConflict,
-        isResolving = homepageState.isResolvingBookshelfConflict,
-        onDismissRequest = homepageViewModel::dismissBookshelfConflict,
-        onOpenExistingBook = homepageViewModel::openBookshelfConflictBook,
-        onCoexist = homepageViewModel::coexistWithBookshelfConflict,
-        onMigrate = homepageViewModel::migrateBookshelfConflict,
-    )
 }
 
 @OptIn(
@@ -381,15 +232,9 @@ fun HomeRouteScreen(
 @Composable
 fun HomeScreen(
     state: HomeUiState,
-    homepageState: HomepageUiState,
-    homepageFeedActions: HomepageFeedActions,
-    homepageManageActions: HomepageManageActions,
     onIntent: (HomeIntent) -> Unit,
-    onRefreshHomepage: () -> Unit,
-    onToggleHomepageManage: () -> Unit,
     onNavigateToReadRecord: () -> Unit = {},
     onNavigateToReadRecordOverview: () -> Unit = {},
-    onHomepageBookLongClick: (SearchBook, String?) -> Unit = { _, _ -> },
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -397,51 +242,14 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val selectedSets = remember(homepageState.manageState.sets) {
-        homepageState.manageState.sets.filter { it.isSelected }
-    }
-    val pagerState = rememberPagerState(pageCount = {
-        selectedSets.size.coerceAtLeast(1)
-    })
-
-    var showPageMenu by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val currentPageSourceName by remember(selectedSets, pagerState) {
-        derivedStateOf { selectedSets.getOrNull(pagerState.currentPage)?.sourceName }
-    }
-
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }
-            .distinctUntilChanged()
-            .collect { page ->
-                val url = selectedSets.getOrNull(page)?.sourceUrl ?: return@collect
-                onIntent(HomeIntent.SelectSourceSet(url))
-            }
-    }
-
-    LaunchedEffect(state.selectedSourceSetUrl, pagerState) {
-        val targetUrl = state.selectedSourceSetUrl ?: return@LaunchedEffect
-        val targetIndex = selectedSets.indexOfFirst { it.sourceUrl == targetUrl }
-        if (targetIndex >= 0 && targetIndex != pagerState.currentPage) {
-            pagerState.animateScrollToPage(targetIndex)
-        }
-    }
-
     AppScaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
         topBar = {
             GlassMediumFlexibleTopAppBar(
                 title = stringResource(R.string.home),
-                subtitle = currentPageSourceName,
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    TopBarActionButton(
-                        onClick = onToggleHomepageManage,
-                        imageVector = AppIcons.Settings,
-                        contentDescription = stringResource(R.string.homepage_module_manage),
-                    )
                     Box {
                         TopBarActionButton(
                             onClick = { showPageMenu = true },
@@ -459,62 +267,14 @@ fun HomeScreen(
                                     onIntent(HomeIntent.DashboardSettingsClick)
                                 },
                             )
-                            PillDivider()
-                            selectedSets.forEachIndexed { index, source ->
-                                RoundDropdownMenuItem(
-                                    text = source.sourceName,
-                                    isSelected = index == pagerState.currentPage,
-                                    onClick = {
-                                        showPageMenu = false
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(index)
-                                        }
-                                    },
-                                )
-                            }
                         }
                     }
                 },
             )
         },
     ) { paddingValues ->
-        AppPullToRefresh(
-            isRefreshing = homepageState.isRefreshing,
-            onRefresh = onRefreshHomepage,
-            modifier = Modifier.fillMaxSize(),
-            scrollBehavior = scrollBehavior,
-        ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val dashboardScrollState = rememberScrollState()
-                val moduleNestedScrollConnection = remember(dashboardScrollState) {
-                    object : NestedScrollConnection {
-                        override fun onPreScroll(
-                            available: Offset,
-                            source: NestedScrollSource,
-                        ): Offset {
-                            return if (available.y >= 0f) {
-                                Offset.Zero
-                            } else {
-                                val consumed = dashboardScrollState.dispatchRawDelta(-available.y)
-                                Offset(0f, -consumed)
-                            }
-                        }
-
-                        override fun onPostScroll(
-                            consumed: Offset,
-                            available: Offset,
-                            source: NestedScrollSource,
-                        ): Offset {
-                            return if (available.y <= 0f) {
-                                Offset.Zero
-                            } else {
-                                val c = dashboardScrollState.dispatchRawDelta(-available.y)
-                                Offset(0f, -c)
-                            }
-                        }
-                    }
-                }
-                val viewportHeight = maxHeight
                 val hasDashboard = state.visibleSections.isNotEmpty()
 
                 Column(
@@ -539,64 +299,9 @@ fun HomeScreen(
                         )
                     }
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(viewportHeight),
-                    ) {
-                        if (selectedSets.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                AppText(stringResource(R.string.homepage_no_source_sets_selected))
-                            }
-                        } else {
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .nestedScroll(moduleNestedScrollConnection),
-                                key = { index ->
-                                    selectedSets.getOrNull(index)?.sourceUrl ?: index
-                                },
-                            ) { pageIndex ->
-                                val source = selectedSets.getOrNull(pageIndex)
-                                val sourceModules = remember(homepageState.modules, source) {
-                                    homepageState.modules.filter { module ->
-                                        if (source?.isCustomSet == true) {
-                                            val setId =
-                                                HomepageViewModel.customSetIdFromUrl(source.sourceUrl)
-                                            module.customSetId == setId
-                                        } else {
-                                            module.sourceUrl == source?.sourceUrl
-                                        }
-                                    }
-                                }
-                                HomepageModuleFeed(
-                                    modules = sourceModules,
-                                    actions = homepageFeedActions,
-                                    modifier = Modifier.fillMaxSize(),
-                                    sharedTransitionScope = sharedTransitionScope,
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    onBookLongClick = onHomepageBookLongClick,
-                                    onErrorClick = { errorMessage = it },
-                                )
-                            }
-                        }
-                    }
                 }
 
             }
-        }
-
-        HomepageModuleManageSheet(
-            data = if (homepageState.isManageMode) Unit else null,
-            onDismissRequest = onToggleHomepageManage,
-            state = homepageState.manageState,
-            actions = homepageManageActions,
-        )
 
         HomeDialogs(
             dialog = state.activeDialog,

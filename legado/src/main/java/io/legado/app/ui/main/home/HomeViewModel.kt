@@ -47,10 +47,9 @@ class HomeViewModel(
 
     private val dashboardData = combine(
         homeDashboardUseCase.observe(),
-        homeDashboardUseCase.observeSelectedSourceSetUrl(),
         homeDashboardUseCase.observeVisibleSections(),
-    ) { dashboard, selectedSourceUrl, visibleSections ->
-        Triple(dashboard, selectedSourceUrl, visibleSections)
+    ) { dashboard, visibleSections ->
+        dashboard to visibleSections
     }
 
     val uiState = combine(
@@ -59,7 +58,7 @@ class HomeViewModel(
         _activeDialog,
         _activeSheet,
     ) { dashboardData, backup, dialog, sheet ->
-        val (dashboard, selectedSourceUrl, visibleSections) = dashboardData
+        val (dashboard, visibleSections) = dashboardData
         HomeUiState(
             totalReadBooks = dashboard.totalReadBooks,
             totalReadTimeMillis = dashboard.totalReadTimeMillis,
@@ -71,7 +70,6 @@ class HomeViewModel(
                 .take(6)
                 .map { it.toUi() }
                 .toImmutableList(),
-            selectedSourceSetUrl = selectedSourceUrl,
             visibleSections = visibleSections.toImmutableSet(),
             latestBackup = backup.latest?.toUi(),
             isBackupLoading = backup.isLoading,
@@ -106,7 +104,6 @@ class HomeViewModel(
         when (intent) {
             HomeIntent.RecentBookClick -> openRecentBook()
             is HomeIntent.RecentHistoryBookClick -> openBook(intent.bookUrl)
-            is HomeIntent.SelectSourceSet -> selectSourceSet(intent.sourceUrl)
             HomeIntent.DashboardSettingsClick -> {
                 _activeSheet.value = HomeSheet.DashboardSettings
             }
@@ -177,10 +174,6 @@ class HomeViewModel(
         }
     }
 
-    private fun selectSourceSet(sourceUrl: String) {
-        viewModelScope.launch {
-            homeDashboardUseCase.updateSelectedSourceSetUrl(sourceUrl)
-        }
     }
 
     private fun setSectionVisible(

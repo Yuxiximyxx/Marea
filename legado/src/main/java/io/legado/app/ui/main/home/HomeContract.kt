@@ -19,7 +19,6 @@ data class HomeUiState(
     val dailyGoalMinutes: Int = DEFAULT_DAILY_READING_GOAL_MINUTES,
     val recentBook: HomeRecentBookUi? = null,
     val recentBooks: ImmutableList<HomeRecentBookUi> = persistentListOf(),
-    val selectedSourceSetUrl: String? = null,
     val visibleSections: ImmutableSet<HomeDashboardSection> =
         DEFAULT_HOME_DASHBOARD_SECTIONS.toImmutableSet(),
     val latestBackup: HomeBackupUi? = null,
@@ -50,7 +49,6 @@ data class HomeBackupUi(
 sealed interface HomeIntent {
     data object RecentBookClick : HomeIntent
     data class RecentHistoryBookClick(val bookUrl: String) : HomeIntent
-    data class SelectSourceSet(val sourceUrl: String) : HomeIntent
     data object DashboardSettingsClick : HomeIntent
     data class SetSectionVisible(
         val section: HomeDashboardSection,
