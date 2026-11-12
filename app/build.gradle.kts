@@ -98,6 +98,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // hutool-core 与 hutool-crypto 都带 JarIndex，合并时冲突，排除
+            excludes += "/META-INF/INDEX.LIST"
         }
     }
 }
