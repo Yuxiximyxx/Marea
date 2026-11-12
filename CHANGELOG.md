@@ -2,6 +2,16 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.8] - 2026-11-13
+
+Legado 阅读器整体移植实验线第八版：瘦身（小乐拍板不等转正、现在就做）。
+
+- 构建开启 R8 混淆/收缩（isMinifyEnabled）+ 资源压缩（isShrinkResources），optimization 一并打开——即 exp.1 为保真关掉的那套，本版在保留规则齐备的前提下恢复；debug 构建不受影响。原生库只保留 arm64-v8a（abiFilters，仍出单个通用 APK，不用 splits）。基线 exp.7 包 154.8MB，其中 dex 约 131MB 为大头、原生库四架构约 8.5MB。
+- 保留规则先行：legado 模块根目录的两份原工程规则（proguard-rules.pro、cronet-proguard-rules.pro）自移植以来从未被消费——库模块不会自动应用 proguard-rules.pro——本版在 legado 的 defaultConfig 里接回为 consumerProguardFiles，随 app 的 R8 一起生效（其中 -verbose、-flattenpackagehierarchy 两条全局处理指令不适合 consumer 位置，已移除）。
+- app 侧补充规则（app/proguard-rules.pro 的 exp.8 小节）：material-kolor 家族整体保名保留（exp.1–exp.6 缺类教训 + 闭合门禁需按原始描述符核对）；kotlinx.serialization 的 @Serializable Companion/serializer/$$serializer 官方保留式；Room 数据库与其生成实现（**_Impl）保名保留；书源 JS 反射调用的规则解析面（model.analyzeRule）整体保留；Koin 整体保留；@JavascriptInterface、Parcelable、Serializable 兜底。
+- 发版前照例过 materialkolor 全引用闭合门禁（tools/check_materialkolor_closure.py），并对最终包做关键类存在性自检（阅读入口、Legado MainActivity、AppDatabase 及其生成实现、Rhino Context、Room 生成实现抽样、io.legado.app.App）。
+- 本版为构建配置变更，真机需走一轮阅读全流程回归（开书/阅读菜单/目录/阅读设置/书架/WebDAV 页）确认 R8 无误杀，再作数。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.7] - 2026-11-13
 
 Legado 阅读器整体移植实验线第七版：Legado 界面接入 Marea 材质切换 + Legado 全界面导航条沉浸。

@@ -50,9 +50,13 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 281
-        versionName = "v1.8.28-exp.7"
+        versionCode = 282
+        versionName = "v1.8.28-exp.8"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
+        // exp.8 瘦身：原生库只留 arm64-v8a（仍出单个通用 APK，不用 splits）
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildFeatures {
@@ -82,12 +86,13 @@ android {
     buildTypes {
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             optimization {
-                // 实验分支：Legado 依赖树含 Cronet 等，R8 优化会因框架缺类失败；
-                // 按实验口径（CHANGELOG exp.1）关闭 R8 优化保行为保真，正式线 main 不受影响
-                enable = false
+                // exp.8 瘦身：打开 R8（exp.1 为保真而关，靠 legado 模块接回的 consumer
+                // 规则与 app/proguard-rules.pro 的 exp.8 补充规则覆盖 Cronet 等反射面），
+                // 正式线 main 不受影响
+                enable = true
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

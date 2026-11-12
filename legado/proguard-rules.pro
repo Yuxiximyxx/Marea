@@ -22,9 +22,8 @@
 # 混合时不使用大小写混合，混合后的类名为小写
 -dontusemixedcaseclassnames
 
-# 这句话能够使我们的项目混淆后产生映射文件
-# 包含有类名->混淆后类名的映射关系
--verbose
+# exp.8：本文件改以 consumer 规则身份被 app 消费（见 legado/build.gradle.kts）。
+# -verbose 与 -flattenpackagehierarchy 属全局处理指令、不宜出现在 consumer 规则中，已移除。
 
 # 保留Annotation不混淆
 -keepattributes *Annotation*,InnerClasses
@@ -36,7 +35,6 @@
 # 这个过滤器是谷歌推荐的算法，一般不做更改
 -optimizations !code/simplification/cast,!field/*,!class/merging/*
 
--flattenpackagehierarchy
 
 #############################################
 #

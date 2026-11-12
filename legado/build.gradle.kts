@@ -28,6 +28,9 @@ android {
         buildConfigField("String", "Cronet_Main_Version", "\"128.0.0.0\"")
         buildConfigField("String", "VERSION_NAME", "\"3.26.19\"")
         buildConfigField("String", "APPLICATION_ID", "\"io.github.yuxiximyxx.marea\"")
+        // exp.8：原工程 app 时代的两份规则文件在本模块根目录躺了六版——库模块不会
+        // 自动消费 proguard-rules.pro，此前从未生效；开 R8 前接回为 consumer 规则
+        consumerProguardFiles("proguard-rules.pro", "cronet-proguard-rules.pro")
     }
 
     buildFeatures {
