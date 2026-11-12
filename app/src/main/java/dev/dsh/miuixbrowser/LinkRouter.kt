@@ -31,6 +31,10 @@ object LinkRouter {
                 Diag.log("LinkRouter: rule '${rule.name}' dispatched ($scope) url=${url.take(80)}")
                 return Result.Dispatched
             }
+            if (scope == DispatchScope.CLICK) {
+                // fork.32：CLICK 送出失败也留痕（异常明细在 LinkDispatch 的失败日志里），落回浏览器
+                Diag.log("LinkRouter: CLICK rule '${rule.name}' dispatch failed -> browser finalUrl=${finalUrl.take(120)}")
+            }
             if (scope == DispatchScope.DOWNLOAD) {
                 // fork.7 改案：送出失败不再转弹窗（弹窗已是独立系统入口），落回浏览器打开原链接
                 Diag.log("LinkRouter: DOWNLOAD rule '${rule.name}' dispatch failed -> browser")

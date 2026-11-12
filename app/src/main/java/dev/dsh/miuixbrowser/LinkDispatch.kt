@@ -558,7 +558,11 @@ object LinkDispatch {
                 putExtra(Intent.EXTRA_TEXT, url)
             }
         } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            // fork.32：补 BROWSABLE，与浏览器对外链意图的构造一致——
+            // 缺它时部分目标应用（如起点 QDReader）会解析到自带浏览器入口而非原生详情页
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
         }
         val pkg = rule.targetPackage.trim()
         val act = rule.targetActivity.trim()
@@ -574,6 +578,12 @@ object LinkDispatch {
         return runCatching {
             context.startActivity(intent)
             true
+        }.onFailure { e ->
+            // fork.32：送出失败不再静默吞掉——记规则名 / 最终地址 / 异常，供诊断日志定位
+            Diag.log(
+                "LinkDispatch: dispatch failed rule='${rule.name}' " +
+                    "url=${url.take(120)} error=${e.javaClass.simpleName}: ${e.message}"
+            )
         }.getOrDefault(false)
     }
 
