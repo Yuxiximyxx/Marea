@@ -11,13 +11,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.ui.theme.LegadoTheme.composeEngine
-import io.legado.app.ui.theme.ThemeResolver
-import androidx.compose.material3.Slider as M3Slider
 import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 
 /**
- * Vertical slider component that supports both Miuix and M3 engines.
+ * Vertical slider component.
+ *
+ * exp.13：MD3 分支已去除，只保留 Miuix 实现（原双引擎中的 miuix 分支）。
+ * Miuix 有等价的横向 Slider，旋转 -90° 的竖向化做法与原双分支一致；
+ * 唯一调用方（阅读菜单亮度竖条）已在 MiuixSurface 主题环境内。
  *
  * @param height Visual height of the vertical slider.
  */
@@ -49,26 +50,14 @@ fun AppVerticalSlider(
             .height(height),
         contentAlignment = Alignment.Center,
     ) {
-        if (ThemeResolver.isMiuixEngine(composeEngine)) {
-            MiuixSlider(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = sliderModifier,
-                enabled = enabled,
-                valueRange = valueRange,
-                steps = steps,
-                onValueChangeFinished = onValueChangeFinished,
-            )
-        } else {
-            M3Slider(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = sliderModifier,
-                enabled = enabled,
-                valueRange = valueRange,
-                steps = steps,
-                onValueChangeFinished = onValueChangeFinished,
-            )
-        }
+        MiuixSlider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = sliderModifier,
+            enabled = enabled,
+            valueRange = valueRange,
+            steps = steps,
+            onValueChangeFinished = onValueChangeFinished,
+        )
     }
 }

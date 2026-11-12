@@ -9,16 +9,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,8 +39,15 @@ import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.card.SettingCard
 import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenu
 import io.legado.app.ui.widget.components.text.AppText
+import top.yukonga.miuix.kmp.basic.Icon
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * exp.13：行核心收敛为 Miuix 实现——卡片走 [SettingCard]（Miuix BasicComponent），
+ * 行本体由 foundation Row + Miuix Icon + AppText 组成，去除 MD3 ListItem。
+ * [color]、[cornerRadius] 仅为兼容既有调用方签名保留，Miuix 行不使用卡片底色/圆角。
+ * 点击/长按/下拉菜单/展开区与语义（role/stateDescription/toggleableState/disabled）
+ * 的行为与原实现逐项一致。
+ */
 @Composable
 fun SettingItem(
     modifier: Modifier = Modifier,
@@ -74,13 +78,11 @@ fun SettingItem(
         modifier = modifier
             .fillMaxWidth(),
         cornerRadius = cornerRadius,
-        colors = CardDefaults.cardColors(
-            containerColor = color ?: MaterialTheme.colorScheme.surfaceContainerLow
-        ),
     ) {
         Column {
-            ListItem(
+            Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .semantics(mergeDescendants = true) {
                         semanticRole?.let { role = it }
                         semanticStateDescription?.let { stateDescription = it }
@@ -104,74 +106,70 @@ fun SettingItem(
                             onLongClick?.invoke()
                         }
                     ),
-                leadingContent = if (painter != null || imageVector != null) {
-                    {
-                        if (painter != null) {
-                            Icon(
-                                painter = painter,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else if (imageVector != null) {
-                            Icon(
-                                imageVector = imageVector,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else null,
-                supportingContent = if (description != null || option != null) {
-                    {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            description?.let {
-                                AppText(
-                                    it,
-                                    style = LegadoTheme.typography.bodySmallEmphasized,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                            option?.let {
-                                AppText(
-                                    it,
-                                    style = LegadoTheme.typography.labelMediumEmphasized,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-                } else null,
-                trailingContent = {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (isExpandable && trailingContent == null) {
-                            val rotation by animateFloatAsState(
-                                if (expanded) 180f else 0f,
-                                label = "arrow"
-                            )
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                modifier = Modifier.rotate(rotation)
-                            )
-                        } else {
-                            trailingContent?.invoke()
-                        }
-
-                        dropdownMenu?.let { menu ->
-                            RoundDropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }) {
-                                menu { showMenu = false }
-                            }
-                        }
-                    }
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppText(
-                    text = title,
-                    style = LegadoTheme.typography.titleMedium
-                )
+                if (painter != null || imageVector != null) {
+                    if (painter != null) {
+                        Icon(
+                            painter = painter,
+                            contentDescription = null,
+                            tint = LegadoTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (imageVector != null) {
+                        Icon(
+                            imageVector = imageVector,
+                            contentDescription = null,
+                            tint = LegadoTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    AppText(
+                        text = title,
+                        style = LegadoTheme.typography.titleMedium
+                    )
+                    description?.let {
+                        AppText(
+                            it,
+                            style = LegadoTheme.typography.bodySmallEmphasized,
+                            color = LegadoTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    option?.let {
+                        AppText(
+                            it,
+                            style = LegadoTheme.typography.labelMediumEmphasized,
+                            color = LegadoTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Box(contentAlignment = Alignment.Center) {
+                    if (isExpandable && trailingContent == null) {
+                        val rotation by animateFloatAsState(
+                            if (expanded) 180f else 0f,
+                            label = "arrow"
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.rotate(rotation)
+                        )
+                    } else {
+                        trailingContent?.invoke()
+                    }
+
+                    dropdownMenu?.let { menu ->
+                        RoundDropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }) {
+                            menu { showMenu = false }
+                        }
+                    }
+                }
             }
 
             if (isExpandable) {
