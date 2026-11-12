@@ -1288,17 +1288,27 @@ private fun measureTxtParaLines(
     }
     if (indentPx <= 0 || text.isEmpty()) {
         return linesOf(
-            measurer.measure(text, style, Constraints(maxWidth = widthPx)),
+            measurer.measure(
+                text = text, style = style,
+                constraints = Constraints(maxWidth = widthPx),
+            ),
             0,
         )
     }
     val headLayout = measurer.measure(
-        text, style, Constraints(maxWidth = (widthPx - indentPx).coerceAtLeast(1)),
+        text = text, style = style,
+        constraints = Constraints(maxWidth = (widthPx - indentPx).coerceAtLeast(1)),
     )
     val firstEnd = headLayout.getLineEnd(0, true)
     if (firstEnd <= 0 || firstEnd >= text.length) {
         return if (firstEnd <= 0) {
-            linesOf(measurer.measure(text, style, Constraints(maxWidth = widthPx)), 0)
+            linesOf(
+                measurer.measure(
+                    text = text, style = style,
+                    constraints = Constraints(maxWidth = widthPx),
+                ),
+                0,
+            )
         } else {
             TxtParaLines(
                 intArrayOf(0),
@@ -1309,7 +1319,10 @@ private fun measureTxtParaLines(
     }
     val firstHeight = headLayout.getLineBottom(0) - headLayout.getLineTop(0)
     val rest = linesOf(
-        measurer.measure(text.substring(firstEnd), style, Constraints(maxWidth = widthPx)),
+        measurer.measure(
+            text = text.substring(firstEnd), style = style,
+            constraints = Constraints(maxWidth = widthPx),
+        ),
         firstEnd,
     )
     return TxtParaLines(
