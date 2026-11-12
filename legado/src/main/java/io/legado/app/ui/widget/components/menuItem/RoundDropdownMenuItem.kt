@@ -9,19 +9,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -33,13 +24,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.icon.AppIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 
+/**
+ * exp.12：MD3 分支已去除，只保留 Miuix 实现（原双引擎中的 miuix 分支）。
+ * 原 miuix 分支借 material3 的 LocalContentColor 给槽位内容着色，收敛后改用
+ * Miuix 自己的 LocalContentColor（MiuixTheme 提供同一本地量）；
+ * [color]/[contentPadding] 原先只喂 material 分支，Miuix 行不使用，
+ * 仅为兼容既有调用方签名保留。
+ */
 @Composable
 fun RoundDropdownMenuItem(
     text: String,
@@ -50,132 +48,59 @@ fun RoundDropdownMenuItem(
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
     enabled: Boolean = true,
-    contentPadding: PaddingValues = MenuDefaults.DropdownMenuItemContentPadding,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp),
     interactionSource: MutableInteractionSource? = null,
 ) {
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
     val interaction = interactionSource ?: remember { MutableInteractionSource() }
-    val hasCustomContentColor = color != Color.Unspecified
+    val legadoColorScheme = LegadoTheme.colorScheme
+    val textColor = if (isSelected) legadoColorScheme.primary else legadoColorScheme.onSurface
+    val backgroundColor = legadoColorScheme.surfaceContainer
+    val checkColor = if (isSelected) legadoColorScheme.primary else Color.Transparent
 
-    if (isMiuix) {
-        val legadoColorScheme = LegadoTheme.colorScheme
-        val textColor = if (isSelected) legadoColorScheme.primary else legadoColorScheme.onSurface
-        val backgroundColor = legadoColorScheme.surfaceContainer
-        val checkColor = if (isSelected) legadoColorScheme.primary else Color.Transparent
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = modifier
-                .fillMaxWidth()
-                .drawBehind { drawRect(backgroundColor) }
-                .clickable(
-                    interactionSource = interaction,
-                    indication = LocalIndication.current,
-                    enabled = enabled,
-                    onClick = onClick
-                )
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-        ) {
-            CompositionLocalProvider(LocalContentColor provides textColor) {
-                if (leadingIcon != null) {
-                    leadingIcon()
-                    Spacer(Modifier.width(12.dp))
-                }
-
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    MiuixText(
-                        modifier = Modifier.widthIn(max = 200.dp),
-                        text = text,
-                        fontSize = MiuixTheme.textStyles.body1.fontSize,
-                        fontWeight = FontWeight.Medium,
-                        color = textColor,
-                    )
-                }
-
-                if (trailingIcon != null) {
-                    Spacer(Modifier.width(12.dp))
-                    trailingIcon()
-                } else {
-                    Spacer(Modifier.width(12.dp))
-                    AppIcon(
-                        imageVector = MiuixIcons.Basic.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = checkColor
-                    )
-                }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier
+            .fillMaxWidth()
+            .drawBehind { drawRect(backgroundColor) }
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        CompositionLocalProvider(LocalContentColor provides textColor) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(Modifier.width(12.dp))
             }
-        }
-    } else {
-        val legadoColorScheme = LegadoTheme.colorScheme
-        val selectedContentColor = legadoColorScheme.primary
-        val defaultContentColor = legadoColorScheme.onSurface
-        val contentColor = if (enabled) {
-            when {
-                hasCustomContentColor -> color
-                isSelected -> selectedContentColor
-                else -> defaultContentColor
-            }
-        } else {
-            when {
-                hasCustomContentColor -> color.copy(alpha = 0.38f)
-                isSelected -> selectedContentColor.copy(alpha = 0.38f)
-                else -> defaultContentColor.copy(alpha = 0.38f)
-            }
-        }
-        val containerColor = legadoColorScheme.surface
 
-        Surface(
-            onClick = onClick,
-            modifier = modifier
-                .padding(horizontal = 8.dp)
-                .fillMaxWidth(),
-            enabled = enabled,
-            shape = MaterialTheme.shapes.small,
-            color = containerColor,
-            contentColor = contentColor,
-            interactionSource = interaction
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(contentPadding)
-                    .heightIn(min = 48.dp)
-                    .widthIn(min = 120.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
             ) {
-                if (leadingIcon != null) {
-                    leadingIcon()
-                    Spacer(Modifier.width(12.dp))
-                }
+                MiuixText(
+                    modifier = Modifier.widthIn(max = 200.dp),
+                    text = text,
+                    fontSize = MiuixTheme.textStyles.body1.fontSize,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor,
+                )
+            }
 
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        modifier = Modifier.widthIn(max = 200.dp),
-                        text = text,
-                        style = LegadoTheme.typography.labelLargeEmphasized,
-                        color = contentColor
-                    )
-                }
-
-                if (trailingIcon != null) {
-                    Spacer(Modifier.width(8.dp))
-                    trailingIcon()
-                } else {
-                    Spacer(Modifier.width(8.dp))
-                    AppIcon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = if (isSelected) contentColor else Color.Transparent
-                    )
-                }
+            if (trailingIcon != null) {
+                Spacer(Modifier.width(12.dp))
+                trailingIcon()
+            } else {
+                Spacer(Modifier.width(12.dp))
+                AppIcon(
+                    imageVector = MiuixIcons.Basic.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = checkColor
+                )
             }
         }
     }

@@ -6,12 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,15 +15,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.LegadoTheme.composeEngine
 import io.legado.app.ui.theme.ProvideAppDensity
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.button.PrimaryButton
 import io.legado.app.ui.widget.components.button.SecondaryButton
 import top.yukonga.miuix.kmp.window.WindowDialog
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * exp.12：MD3 AlertDialog 分支已去除，只保留 Miuix 实现（原双引擎中的 miuix 分支，
+ * 基于 WindowDialog）。注意原 miuix 分支不渲染 text 的 SelectionContainer，
+ * 正文经 WindowDialog 的 summary 呈现，与原 miuix 分支行为一致。
+ */
 @Composable
 fun AppAlertDialog(
     modifier: Modifier = Modifier,
@@ -44,113 +40,56 @@ fun AppAlertDialog(
     dismissText: String = "取消",
     onDismiss: (() -> Unit)? = null,
 ) {
-    if (ThemeResolver.isMiuixEngine(composeEngine)) {
-        WindowDialog(
-            show = show,
-            modifier = modifier,
-            title = title,
-            summary = text,
-            onDismissRequest = onDismissRequest,
-            content = {
-                ProvideAppDensity {
-                    if (content != null) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            content()
-                        }
-                    }
-
-                    Row(
+    WindowDialog(
+        show = show,
+        modifier = modifier,
+        title = title,
+        summary = text,
+        onDismissRequest = onDismissRequest,
+        content = {
+            ProvideAppDensity {
+                if (content != null) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(top = 12.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        if (onDismiss != null) {
-                            SecondaryButton(
-                                text = dismissText,
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    onDismiss()
-                                }
-                            )
-                        }
+                        content()
+                    }
+                }
 
-                        if (onConfirm != null) {
-                            PrimaryButton(
-                                text = confirmText,
-                                modifier = Modifier.weight(1f),
-                                enabled = confirmEnabled,
-                                onClick = {
-                                    onConfirm()
-                                }
-                            )
-                        }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (onDismiss != null) {
+                        SecondaryButton(
+                            text = dismissText,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onDismiss()
+                            }
+                        )
+                    }
+
+                    if (onConfirm != null) {
+                        PrimaryButton(
+                            text = confirmText,
+                            modifier = Modifier.weight(1f),
+                            enabled = confirmEnabled,
+                            onClick = {
+                                onConfirm()
+                            }
+                        )
                     }
                 }
             }
-        )
-    } else {
-        if (show) {
-            AlertDialog(
-                onDismissRequest = onDismissRequest,
-                modifier = modifier,
-                containerColor = LegadoTheme.colorScheme.surfaceContainer,
-                iconContentColor = LegadoTheme.colorScheme.primary,
-                titleContentColor = LegadoTheme.colorScheme.onSurface,
-                textContentColor = LegadoTheme.colorScheme.onSurfaceVariant,
-                tonalElevation = AlertDialogDefaults.TonalElevation,
-                title = title?.let { { ProvideAppDensity { Text(text = it) } } },
-                text = {
-                    ProvideAppDensity {
-                        Column(
-                            modifier = Modifier.verticalScroll(rememberScrollState())
-                        ) {
-                            if (text != null) {
-                                SelectionContainer {
-                                    Text(
-                                        text = text,
-                                        modifier = Modifier.padding(bottom = if (content != null) 16.dp else 0.dp)
-                                    )
-                                }
-                            }
-                            if (content != null) {
-                                content()
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    if (onConfirm != null) {
-                        ProvideAppDensity {
-                            PrimaryButton(
-                                onClick = onConfirm,
-                                enabled = confirmEnabled,
-                                text = confirmText
-                            )
-                        }
-                    }
-                },
-                dismissButton = {
-                    if (onDismiss != null) {
-                        ProvideAppDensity {
-                            SecondaryButton(
-                                onClick = {
-                                    onDismiss()
-                                },
-                                text = dismissText
-                            )
-                        }
-                    }
-                }
-            )
         }
-    }
+    )
 }
 
 /**
@@ -182,7 +121,7 @@ fun <T> AppAlertDialog(
     if (currentData != null) {
         val currentText = text ?: textProvider?.invoke(currentData)
         var lastValidText by remember { mutableStateOf(currentText) }
-        
+
         if (currentText != null) {
             lastValidText = currentText
         }

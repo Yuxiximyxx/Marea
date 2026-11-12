@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.LocalAppUiConfiguration
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.divider.SettingItemDivider
 import io.legado.app.ui.widget.components.title.AdaptiveTitle
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -44,7 +43,6 @@ fun SplicedColumnGroup(
     title: String = "",
     items: @Composable ColumnScope.() -> Unit,
 ) {
-    val composeEngine = LegadoTheme.composeEngine
     val themeSettings = LocalAppUiConfiguration.current.theme
     val enableItemDivider = themeSettings.enableItemDivider
     val cornerRadius = when {
@@ -87,32 +85,14 @@ fun SplicedColumnGroup(
         }
 
         CompositionLocalProvider(LocalSplicedColumnGroupState provides groupState) {
-            if (ThemeResolver.isMiuixEngine(composeEngine)) {
-                MiuixCard(
-                    modifier = Modifier.then(
-                        border?.let { Modifier.border(it, RoundedCornerShape(cornerRadius)) }
-                            ?: Modifier
-                    ),
-                    cornerRadius = cornerRadius,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateContentSize()
-                            .clip(RoundedCornerShape(cornerRadius))
-                    ) {
-                        Spacer(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .appContainerBackground(AppContainerBackgroundType.Large)
-                        )
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            currentIndex[0] = 0
-                            items()
-                        }
-                    }
-                }
-            } else {
+            // exp.12：引擎分支已去除，只保留 Miuix 卡片容器（原 miuix 分支）
+            MiuixCard(
+                modifier = Modifier.then(
+                    border?.let { Modifier.border(it, RoundedCornerShape(cornerRadius)) }
+                        ?: Modifier
+                ),
+                cornerRadius = cornerRadius,
+            ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -124,10 +104,7 @@ fun SplicedColumnGroup(
                             .matchParentSize()
                             .appContainerBackground(AppContainerBackgroundType.Large)
                     )
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         currentIndex[0] = 0
                         items()
                     }
@@ -135,7 +112,6 @@ fun SplicedColumnGroup(
             }
         }
     }
-}
 
 @Composable
 fun SplicedColumnDivider() {

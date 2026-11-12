@@ -1,16 +1,15 @@
 package io.legado.app.ui.widget.components.checkBox
 
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
-import io.legado.app.ui.theme.LegadoTheme.composeEngine
-import io.legado.app.ui.theme.ThemeResolver
 import top.yukonga.miuix.kmp.basic.Checkbox as MiuixCheckbox
 
+/**
+ * exp.12：MD3 分支已去除，只保留 Miuix 实现（原双引擎中的 miuix 分支）。
+ */
 @Composable
 fun AppCheckbox(
     checked: Boolean,
@@ -28,21 +27,12 @@ fun AppCheckbox(
         modifier
     }
 
-    if (ThemeResolver.isMiuixEngine(composeEngine)) {
-        MiuixCheckbox(
-            state = state,
-            onClick = onCheckedChange?.let { { it(!checked) } },
-            modifier = semanticModifier,
-            enabled = enabled
-        )
-    } else {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            modifier = semanticModifier,
-            enabled = enabled
-        )
-    }
+    MiuixCheckbox(
+        state = state,
+        onClick = onCheckedChange?.let { { it(!checked) } },
+        modifier = semanticModifier,
+        enabled = enabled
+    )
 }
 
 @Composable
@@ -52,19 +42,10 @@ fun AppTriStateCheckbox(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    if (ThemeResolver.isMiuixEngine(composeEngine)) {
-        MiuixCheckbox(
-            state = state,
-            onClick = onClick,
-            modifier = modifier,
-            enabled = enabled
-        )
-    } else {
-        TriStateCheckbox(
-            state = state,
-            onClick = onClick,
-            modifier = modifier,
-            enabled = enabled
-        )
-    }
+    MiuixCheckbox(
+        state = state,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled
+    )
 }

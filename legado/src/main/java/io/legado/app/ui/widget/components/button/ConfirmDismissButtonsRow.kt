@@ -3,14 +3,13 @@ package io.legado.app.ui.widget.components.button
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.legado.app.ui.theme.LegadoTheme.composeEngine
-import io.legado.app.ui.theme.ThemeResolver
 
+/**
+ * exp.12：布局收敛为原双引擎中的 miuix 分支（两按钮等宽平分）。
+ */
 @Composable
 fun ConfirmDismissButtonsRow(
     onDismiss: () -> Unit,
@@ -21,33 +20,19 @@ fun ConfirmDismissButtonsRow(
     dismissEnabled: Boolean = true,
     confirmEnabled: Boolean = true,
 ) {
-    val isMiuix = ThemeResolver.isMiuixEngine(composeEngine)
-
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = if (isMiuix) {
-            Arrangement.spacedBy(12.dp)
-        } else {
-            Arrangement.spacedBy(12.dp, Alignment.End)
-        }
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SecondaryButton(
             onClick = onDismiss,
-            modifier = if (isMiuix) {
-                Modifier.weight(1f)
-            } else {
-                Modifier.widthIn(min = 88.dp)
-            },
+            modifier = Modifier.weight(1f),
             enabled = dismissEnabled,
             text = dismissText
         )
         PrimaryButton(
             onClick = onConfirm,
-            modifier = if (isMiuix) {
-                Modifier.weight(1f)
-            } else {
-                Modifier.widthIn(min = 88.dp)
-            },
+            modifier = Modifier.weight(1f),
             enabled = confirmEnabled,
             text = confirmText
         )

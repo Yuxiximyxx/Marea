@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyItemScope
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,8 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.legado.app.R
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.LegadoTheme.composeEngine
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.AdaptiveSwitch
 import io.legado.app.ui.widget.components.reorderAccessibility
 import io.legado.app.ui.widget.components.button.series.SmallPlainButton
@@ -78,14 +74,14 @@ fun SelectionItemCard(
     editContentDescription: String? = null,
     moreContentDescription: String? = null
 ) {
-    val composeEngine = ThemeResolver.isMiuixEngine(composeEngine)
+    // exp.12：引擎分支已去除，容器色收敛为原 miuix 分支取值
     val animatedContainerColor by animateColorAsState(
         targetValue = if (isSelected)
             selectedContainerColor
-                ?: if (composeEngine) LegadoTheme.colorScheme.secondaryContainer else LegadoTheme.colorScheme.secondaryContainer
+                ?: LegadoTheme.colorScheme.secondaryContainer
         else
             containerColor
-                ?: if (composeEngine) LegadoTheme.colorScheme.surfaceContainer else LegadoTheme.colorScheme.surfaceContainerLow,
+                ?: LegadoTheme.colorScheme.surfaceContainer,
         animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
         label = "CardColor"
     )
@@ -182,53 +178,25 @@ fun SelectionItemCardContent(
             }
         }
 
-        if (ThemeResolver.isMiuixEngine(composeEngine)) {
-            BasicComponent(
-                modifier = Modifier.weight(1f)
-            ) {
-                AppText(
-                    text = title,
-                    style = LegadoTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                when {
-                    supportingContent != null -> supportingContent()
-                    !subtitle.isNullOrBlank() -> {
-                        AppText(
-                            text = subtitle,
-                            style = LegadoTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+        BasicComponent(
+            modifier = Modifier.weight(1f)
+        ) {
+            AppText(
+                text = title,
+                style = LegadoTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            when {
+                supportingContent != null -> supportingContent()
+                !subtitle.isNullOrBlank() -> {
+                    AppText(
+                        text = subtitle,
+                        style = LegadoTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-            }
-        } else {
-            ListItem(
-                modifier = Modifier.weight(1f),
-                supportingContent = when {
-                    supportingContent != null -> supportingContent
-                    !subtitle.isNullOrBlank() -> {
-                        {
-                            AppText(
-                                text = subtitle,
-                                style = LegadoTheme.typography.bodySmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    else -> null
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            ) {
-                AppText(
-                    text = title,
-                    style = LegadoTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
 
