@@ -272,26 +272,3 @@ fun ChangeCoverSheet(
 }
 
 @Composable
-fun ChangeSourceSheet(
-    data: Book?,
-    onDismissRequest: () -> Unit,
-    onReplace: (BookSource, Book, List<BookChapter>, ChangeSourceMigrationOptions) -> Unit,
-    onAddAsNew: (Book, List<BookChapter>) -> Unit,
-) {
-    var cachedData by remember { mutableStateOf(data) }
-
-    if (data != null) {
-        cachedData = data
-    }
-
-    val currentData = cachedData
-    if (currentData != null) {
-        ChangeSourceSheet(
-            show = data != null,
-            oldBook = currentData,
-            onDismissRequest = onDismissRequest,
-            onReplace = onReplace,
-            onAddAsNew = onAddAsNew,
-        )
-    }
-}

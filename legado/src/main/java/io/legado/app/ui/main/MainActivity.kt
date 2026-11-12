@@ -83,7 +83,6 @@ import io.legado.app.help.storage.Backup
 import io.legado.app.help.update.AppUpdateGitHub
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.model.AudioPlay
-import io.legado.app.service.WebService
 import io.legado.app.ui.about.MarkdownSheet
 import io.legado.app.ui.about.UpdateDialog
 import io.legado.app.ui.book.audio.AudioPlayViewModel
@@ -346,23 +345,12 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
     private val otherSettingsGateway by inject<OtherSettingsGateway>()
     private val mangaSettingsGateway by inject<MangaSettingsGateway>()
     private val backupSettingsGateway by inject<BackupSettingsGateway>()
-    private val readAloudSettingsRepository by inject<ReadAloudSettingsRepository>()
     internal val navRouteTracker by inject<MainNavRouteTracker>()
     private val routeEvents = MutableSharedFlow<RouteEvent>(extraBufferCapacity = 1)
     /**
      * Web 服务与「局域网请求」各自持有独立的 launcher：授权结果互不影响，也不需要用一个可变字段
      * 记录「本次申请的目的」——那种写法在配置变更/进程重建后会丢失，导致结果被误判为 Web 服务申请。
      */
-    private val webServiceLocalNetworkPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            WebService.startForeground(this)
-        } else {
-            toastOnUi(R.string.web_service_local_network_permission_denied)
-        }
-    }
-
     private val localNetworkRequestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -393,14 +381,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         val shouldAutoCheckUpdate = startupUpdateCheckGate.consume(
             otherSettingsGateway.currentSettings.autoCheckUpdateOnStart
         )
-
-        // 智能自启：如果上次是手动开启状态（web_service_auto 为 true），则自启；
-        // 本地网络权限缺失时先申请，磁贴等入口也通过该 extra 转发到这里。
-        val requestWebService = otherSettingsGateway.currentSettings.webServiceAutoStart ||
-                intent?.getBooleanExtra(MainIntent.EXTRA_WEB_SERVICE_LOCAL_NETWORK, false) == true
-        if (requestWebService) {
-            startWebServiceWithLocalNetworkPermission()
-        }
 
         // 局域网请求（书源 / 图源 / WebDAV）被系统拦下时，前台立即补一次本地网络权限申请。
         lifecycleScope.launch {
@@ -439,14 +419,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
      * Android 17 (API 37) 起 Web 服务需要本地网络权限才能接受局域网入站连接。
      * 已授予直接启动；未授予先申请，授予后由 launcher 回调补启。
      */
-    private fun startWebServiceWithLocalNetworkPermission() {
-        if (LocalNetworkAccess.isGranted(this)) {
-            WebService.startForeground(this)
-        } else {
-            webServiceLocalNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-        }
-    }
-
     /**
      * exp.10：入口带了空间 extra 就应用到 [MareaSpace]（无 extra 的拉起不动当前空间，
      * 回落其持久化的上次空间）。onResume 时若本实例 intent 仍带 extra 则重申一次——
@@ -486,14 +458,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         setIntent(intent)
         // exp.10：存活实例被另一空间的入口再次拉起时，先切空间再处理路由。
         applyMareaSpaceFrom(intent)
-        if (intent.getBooleanExtra(MainIntent.EXTRA_OPEN_READ_ALOUD_PLAYER, false)) {
-            ReadAloudPlayerOverlayBus.request()
-            return
-        }
-        if (intent.getBooleanExtra(MainIntent.EXTRA_WEB_SERVICE_LOCAL_NETWORK, false)) {
-            startWebServiceWithLocalNetworkPermission()
-            return
-        }
         if (!intent.hasExplicitStartRoute()) return
         routeEvents.tryEmit(
             RouteEvent(
@@ -551,7 +515,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
             val resolved = MainNavigator.resolveStartRoute(intent)
             val hasExplicitStartRoute = intent?.hasExplicitStartRoute() == true
             when {
-                resolved is MainRouteAudioPlay -> arrayOf(MainRouteHome)
                 MainIntent.shouldOpenRouteWithHomeParent(intent) -> {
                     if (resolved == MainRouteHome) {
                         arrayOf(MainRouteHome)
@@ -567,9 +530,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
                         resolved == MainRouteHome -> {
                     arrayOf(MainRouteHome, MainRouteReadBook())
                 }
-                resolved is MainRouteSourceLogin -> {
-                    arrayOf(MainRouteHome, resolved)
-                }
                 else -> {
                     arrayOf(resolved)
                 }
@@ -577,8 +537,7 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         }
         val backStack = rememberNavBackStack(*startRoutes)
         val paneStack = backStack.dropLastWhile {
-            it is MainRouteSourceLogin || it is MainRouteSearchContent ||
-                    it is MainRouteAudioPlay || it == MainRouteReadAloudPlayer
+            it is MainRouteSearchContent
         }
         val paneParentIsHome = paneStack.getOrNull(paneStack.lastIndex - 1) == MainRouteHome ||
                 paneStack.size == 1 && paneStack.firstOrNull() == MainRouteHome
@@ -588,9 +547,7 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         val currentHasAdaptivePair by rememberUpdatedState(hasAdaptivePair)
         val activeRoute = backStack.lastOrNull()
         val fullScreenContent =
-            activeRoute is MainRouteReadBook || activeRoute is MainRouteReadManga ||
-                    activeRoute is MainRouteWebView || activeRoute is io.legado.app.ui.rss.read.MainRouteRssRead ||
-                    activeRoute is MainRouteAudioPlay || activeRoute == MainRouteReadAloudPlayer
+            activeRoute is MainRouteReadBook || activeRoute is MainRouteReadManga
         val singleRegion = if (!hasAdaptivePair && !fullScreenContent &&
             adaptiveEnvironment.safeRegions().size > 1
         ) adaptiveEnvironment.singlePaneBounds() else null
@@ -608,162 +565,18 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
             backStack.lastOrNull()?.let { top -> NavEntry(top) {}.contentKey == contentKey } == true
         }
 
-        // 悬浮胶囊是全局叠层：数据来自全局朗读会话与设置，不依赖阅读器是否在栈上。
-        val pageShellPlayerViewModel: ReadAloudPlayerViewModel =
-            org.koin.compose.koinInject()
-        val pageShellPlayerState by pageShellPlayerViewModel.uiState.collectAsStateWithLifecycle()
-        val pageShellAloudSettings by pageShellPlayerViewModel.readAloudSettings
-            .collectAsStateWithLifecycle()
-        val pageShellShowCapsule = pageShellAloudSettings.showReadAloudCapsule
-        val pageShellCapsuleScope = rememberCoroutineScope()
-
-        // 两种播放页共享同窗口形变容器，导航栈保留原页面作为动画背景。
-        val initialAudioRoute =
-            remember { MainNavigator.resolveStartRoute(intent) as? MainRouteAudioPlay }
-        var initialAudioHandled by rememberSaveable { mutableStateOf(false) }
-        var readAloudPlayerVisible by rememberSaveable {
-            mutableStateOf(
-                initialAudioRoute == null &&
-                        intent.getBooleanExtra(MainIntent.EXTRA_OPEN_READ_ALOUD_PLAYER, false)
-            )
-        }
-        var audioPlayerVisible by rememberSaveable { mutableStateOf(initialAudioRoute != null) }
-        var audioPlayerBookUrl by rememberSaveable { mutableStateOf(initialAudioRoute?.bookUrl.orEmpty()) }
-        var audioPlayerInBookshelf by rememberSaveable {
-            mutableStateOf(
-                initialAudioRoute?.inBookshelf ?: true
-            )
-        }
-        var playerSource by rememberSaveable {
-            mutableStateOf(if (initialAudioRoute != null) PlaybackCapsuleSource.AudioBook else PlaybackCapsuleSource.ReadAloud)
-        }
-        val readAloudMorph = rememberReadAloudMorphState()
-        val playbackGateway: PlaybackCapsuleGateway = org.koin.compose.koinInject()
-        val playbackCapsuleState by playbackGateway.state.collectAsStateWithLifecycle()
-        val playerOpenMutex = remember { Mutex() }
-        val morphPresent by remember { derivedStateOf { readAloudMorph.progress.value > 0f } }
-
-        suspend fun openPlayer(request: PlaybackCapsuleState) = playerOpenMutex.withLock {
-            val source = request.source ?: PlaybackCapsuleSource.ReadAloud
-            val switchingPlayer = playerSource != source ||
-                    (source == PlaybackCapsuleSource.AudioBook && audioPlayerBookUrl != request.bookUrl)
-            if (switchingPlayer && readAloudMorph.progress.value > 0f) {
-                // 先交回起点，防止两个宿主同时驱动同一进度，或飞行中途换封面。
-                readAloudPlayerVisible = false
-                audioPlayerVisible = false
-                // 当前宿主响应 visible=false 完成收起，避免两个协程争用 Animatable。
-                snapshotFlow { readAloudMorph.progress.value }.first { it <= 0f }
-            }
-            playerSource = source
-            if (source == PlaybackCapsuleSource.AudioBook) {
-                audioPlayerBookUrl = request.bookUrl
-                audioPlayerInBookshelf = request.inBookshelf
-                audioPlayerVisible = true
-                readAloudPlayerVisible = false
-            } else {
-                readAloudPlayerVisible = true
-                audioPlayerVisible = false
-            }
-        }
-        LaunchedEffect(Unit) {
-            if (!initialAudioHandled) {
-                initialAudioHandled = true
-                initialAudioRoute?.let { route ->
-                    openPlayer(
-                        PlaybackCapsuleState(
-                            source = PlaybackCapsuleSource.AudioBook,
-                            bookUrl = route.bookUrl.orEmpty(),
-                            inBookshelf = route.inBookshelf,
-                        )
-                    )
-                }
-            }
-            ReadAloudPlayerOverlayBus.events.collect { openPlayer(it) }
-        }
-        val playerVisible = readAloudPlayerVisible || audioPlayerVisible
-
-        /**
-         * 听书/朗读播放页是全屏浮层而不是导航栈上的页面：从阅读器进来时系统栏可能已被
-         * 阅读器按设置收起（见 ReadBookController.upSystemUiVisibility），浮层不会触发
-         * Activity 重建或阅读器重新布局，必须自己把系统栏叫回来；收起时再还原进入前的
-         * 可见性，否则阅读器不会因为浮层消失重新执行自己的系统栏逻辑。
-         */
-        var systemBarsBeforePlayer by remember { mutableStateOf<Boolean?>(null) }
-        LaunchedEffect(playerVisible, morphPresent) {
-            if (playerVisible) {
-                if (systemBarsBeforePlayer == null) {
-                    systemBarsBeforePlayer = ViewCompat.getRootWindowInsets(window.decorView)
-                        ?.isVisible(WindowInsetsCompat.Type.systemBars()) ?: true
-                }
-                toggleSystemBar(true)
-                return@LaunchedEffect
-            }
-            if (morphPresent) return@LaunchedEffect
-            val restoreVisible = systemBarsBeforePlayer ?: return@LaunchedEffect
-            // 收起动画也可能是「听书 ⇄ 朗读」切换的中转（先收起再展开），
-            // 短暂不可见时先缓一缓，交由随后的展开取消这次还原。
-            delay(SYSTEM_BARS_RESTORE_DELAY_MILLIS)
-            systemBarsBeforePlayer = null
-            if (playerVisible) return@LaunchedEffect
-            // 阅读页能按当前菜单状态算出权威结果，交给它；其他页面按进入前的可见性还原。
-            val readBookHost = activeReadBookInputHandler as? ReadBookRouteHost
-            if (readBookHost != null) {
-                readBookHost.upSystemUiVisibility()
-            } else {
-                toggleSystemBar(restoreVisible)
-            }
-        }
-        val matchingCapsule = !playerVisible || capsuleMatchesPlayer(
-            playbackCapsuleState, playerSource, audioPlayerBookUrl,
-        )
-        SideEffect {
-            readAloudMorph.reportCapsuleCoverLinked(
-                playbackCapsuleState.source == null || matchingCapsule,
-            )
-            if (!pageShellShowCapsule) readAloudMorph.clearStartAnchors()
-            isPlaybackOverlayVisible = playerVisible
-        }
-        // 只用于首帧锚点布局，不把尚未启动的朗读伪装成正在播放。
-        val capsuleAnchorPreview = if (playerVisible && pageShellShowCapsule) {
-            PlaybackCapsuleState(source = playerSource)
-        } else null
-        // 两种胶囊互斥：主页悬浮底栏用圆形胶囊，其余页面用全局可拖拽胶囊。
-        val currentRoute = backStack.lastOrNull()
-        val onMainRoute = currentRoute is MainRouteHome
-        val useFloatingBottomBar = LocalAppUiConfiguration.current.appShell.useFloatingBottomBar
-        val useHomeCapsule = shouldUseHomePlaybackCapsule(
-            onMainRoute, configuration.appShell.showBottomView, useFloatingBottomBar, useRail,
-        )
-        SideEffect {
-            readAloudMorph.expectCapsuleAnchors(
-                if (!pageShellShowCapsule) null
-                else if (useHomeCapsule) CapsuleAnchorKind.HomeBar else CapsuleAnchorKind.Global,
-            )
-        }
-
         SideEffect {
             shouldApplyDefaultToRead = false
         }
 
         LaunchedEffect(backStack) {
             routeEvents.collect { event ->
-                val audioRoute = event.route as? MainRouteAudioPlay
-                if (audioRoute != null) {
-                    openPlayer(
-                        PlaybackCapsuleState(
-                            source = PlaybackCapsuleSource.AudioBook,
-                            bookUrl = audioRoute.bookUrl.orEmpty(),
-                            inBookshelf = audioRoute.inBookshelf,
-                        )
-                    )
-                } else {
-                    MainNavigator.navigateToRoute(
-                        backStack = backStack,
-                        route = event.route,
-                        tracker = navRouteTracker,
-                        resetToHome = event.resetToHome,
-                    )
-                }
+                MainNavigator.navigateToRoute(
+                    backStack = backStack,
+                    route = event.route,
+                    tracker = navRouteTracker,
+                    resetToHome = event.resetToHome,
+                )
             }
         }
 
@@ -781,9 +594,7 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
             PrivateAppStartGate {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Box(
-                        Modifier
-                            .fillMaxSize()
-                            .playerUnderlaySemantics(playerVisible || morphPresent)
+                        Modifier.fillMaxSize()
                     ) {
                         NavDisplay(
                             modifier = adaptiveDisplayModifier,
@@ -905,23 +716,11 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
                                 panesEnabled = listDetailEnabled,
                                 onNavigationRailWidthChanged = { navigationRailWidth = it },
                                 navigateToRoute = { route ->
-                                    if (route is MainRouteAudioPlay) {
-                                        pageShellCapsuleScope.launch {
-                                            openPlayer(
-                                                PlaybackCapsuleState(
-                                                    source = PlaybackCapsuleSource.AudioBook,
-                                                    bookUrl = route.bookUrl.orEmpty(),
-                                                    inBookshelf = route.inBookshelf,
-                                                )
-                                            )
-                                        }
-                                    } else {
-                                        MainNavigator.navigateToRoute(
-                                            backStack,
-                                            route,
-                                            navRouteTracker
-                                        )
-                                    }
+                                    MainNavigator.navigateToRoute(
+                                        backStack,
+                                        route,
+                                        navRouteTracker
+                                    )
                                 },
                                 onNavigateBack = {
                                     MainNavigator.navigateBack(
@@ -930,109 +729,15 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
                                         navRouteTracker
                                     )
                                 },
-                                readAloudMorph = readAloudMorph.takeIf { useHomeCapsule },
-                                homePlaybackCapsuleEnabled = useHomeCapsule,
-                                capsuleAnchorPreview = capsuleAnchorPreview,
                             )
                         )
                     }
-                    // 全局胶囊与导航容器并列，始终画在阅读等 Nav3 叠层之上。
-                    // 主页开启悬浮底栏时仍使用主页自己的圆形胶囊。
-                    CompositionLocalProvider(
-                        // 收起完成后不再用残留进度给可点击胶囊加透明层。
-                        LocalReadAloudMorph provides readAloudMorph.takeIf {
-                            !useHomeCapsule && (playerVisible || readAloudMorph.progress.isRunning)
-                        }
-                    ) {
-                        ReadAloudShellHost(
-                            showCapsule = pageShellShowCapsule,
-                            hidden = useHomeCapsule,
-                            anchorPreview = capsuleAnchorPreview,
-                            onCapsulePositionChanged = { x, y ->
-                                pageShellCapsuleScope.launch {
-                                    readAloudSettingsRepository.putCapsulePosition(x, y)
-                                }
-                            },
-                            onOpenPlayer = { ReadAloudPlayerOverlayBus.request(it) },
-                        )
-                    }
-                    // 听书播放页：同窗口 morph 面板，从胶囊位置长出来。
-                    if (playerSource == PlaybackCapsuleSource.ReadAloud) ReadAloudPlayerMorphHost(
-                        playerViewModel = pageShellPlayerViewModel,
-                        playerState = pageShellPlayerState,
-                        morph = readAloudMorph,
-                        visible = readAloudPlayerVisible,
-                        awaitCapsuleAnchor = pageShellShowCapsule,
-                        predictiveBackEnabled = configuration.appShell.predictiveBackEnabled,
-                        onDismiss = { readAloudPlayerVisible = false },
-                        onSwitchToClassic = { bookUrl ->
-                            // 栈顶是阅读界面：让它直接落在经典朗读控制页；
-                            // 否则没有可用的阅读界面，打开一个新的。
-                            if (isReaderOnTop(backStack) &&
-                                io.legado.app.model.ReadBook.book?.bookUrl == bookUrl
-                            ) {
-                                ReadAloudControlsRequestBus.request()
-                            } else {
-                                MainNavigator.navigateToRoute(
-                                    backStack,
-                                    MainRouteReadBook(bookUrl = bookUrl.ifBlank { null }),
-                                    navRouteTracker,
-                                )
-                            }
-                        },
-                        onOpenTtsEnginesAndVoices = { bookUrl ->
-                            MainNavigator.navigateToRoute(
-                                backStack,
-                                MainRouteCloudTtsEngines(bookUrl.takeIf(String::isNotBlank)),
-                                navRouteTracker,
-                            )
-                        },
-                        onOpenTtsCache = {
-                            MainNavigator.navigateToRoute(
-                                backStack,
-                                MainRouteTtsCache,
-                                navRouteTracker,
-                            )
-                        },
-                        onOpenBookVoiceCasting = { bookUrl ->
-                            if (bookUrl.isNotBlank()) {
-                                MainNavigator.navigateToRoute(
-                                    backStack,
-                                    MainRouteBookVoiceCasting(bookUrl),
-                                    navRouteTracker,
-                                )
-                            }
-                        },
-                        onOpenReadAloudSubPage = { page ->
-                            MainNavigator.navigateToRoute(
-                                backStack,
-                                page.toMainRoute(),
-                                navRouteTracker,
-                            )
-                        },
-                    )
-                    if (playerSource == PlaybackCapsuleSource.AudioBook &&
-                        (audioPlayerVisible || morphPresent)
-                    ) {
-                        key(audioPlayerBookUrl, audioPlayerInBookshelf) {
-                            AudioPlayerMorphOverlay(
-                                bookUrl = audioPlayerBookUrl,
-                                inBookshelf = audioPlayerInBookshelf,
-                                morph = readAloudMorph,
-                                visible = audioPlayerVisible,
-                                awaitCapsuleAnchor = pageShellShowCapsule,
-                                predictiveBackEnabled = configuration.appShell.predictiveBackEnabled,
-                                onDismiss = { audioPlayerVisible = false },
-                            )
-                        }
-                    }
-                }
                 // 关闭预见性返回时由宿主在导航层之前接管返回：手势不跟手预览，
                 // 松手后走普通出栈，popTransitionSpec 的返回动画照常播放。
                 BackHandler(
                     enabled = shouldHandleActivityBack(
                         predictiveBackEnabled = configuration.appShell.predictiveBackEnabled,
-                        playerPresent = playerVisible || morphPresent,
+                        playerPresent = false,
                     )
                 ) {
                     MainNavigator.navigateBack(this@MainActivity, backStack)

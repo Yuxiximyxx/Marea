@@ -160,18 +160,6 @@ fun ReadBookRouteScreen(
     /** 「本地目录规则」：菜单入口打开规则预览页；应用结果由宿主的书页结果通道回灌。 */
     onOpenTocRulePreview: (bookUrl: String, tocRegex: String?) -> Unit = { _, _ -> },
     onOpenReplaceRule: (bookUrl: String?, editor: ReplaceEditRoute?) -> Unit,
-    onOpenVoiceCasting: (bookUrl: String) -> Unit = {},
-    onOpenAiChat: (
-        bookUrl: String?,
-        bookName: String?,
-        bookAuthor: String?,
-        chapterIndex: Int?,
-        chapterTitle: String?,
-    ) -> Unit = { _, _, _, _, _ -> },
-    onOpenReadAloudSubPage: (ReadAloudSubPage) -> Unit = {},
-    onOpenTtsEnginesAndVoices: () -> Unit = {},
-    onOpenTtsCache: () -> Unit = {},
-    onOpenSourceEdit: (sourceUrl: String) -> Unit,
     onNavigateBack: () -> Boolean = { true },
 ) {
     // 归因定界：与末尾 compose.screen.end 成对。若首帧 `Compose:recompose` 里出现
@@ -344,7 +332,6 @@ fun ReadBookRouteScreen(
     }
 
     val currentOpenBookInfo by rememberUpdatedState(onOpenBookInfo)
-    val currentOpenSourceEdit by rememberUpdatedState(onOpenSourceEdit)
 
     AutoSuggestDayNightObserver(
         viewModel = viewModel,
@@ -366,63 +353,15 @@ fun ReadBookRouteScreen(
                     try {
                         when (effect) {
                             // Launcher-dependent effects — handled directly by route
-                            is ReadBookEffect.OpenSourceEdit -> {
-                                currentOpenSourceEdit(effect.sourceUrl)
-                            }
                             is ReadBookEffect.OpenChapterList -> {
                                 onOpenToc(effect.bookUrl, 0)
                             }
                             is ReadBookEffect.OpenBookInfo -> {
                                 currentOpenBookInfo(effect.name, effect.author, effect.bookUrl)
                             }
-                            is ReadBookEffect.ShowLogin -> {
-                                context.startActivity(
-                                    MainActivity.createSourceLoginIntent(
-                                        context,
-                                        SourceLoginType.ReadingBook
-                                    )
-                                )
-                            }
-                            is ReadBookEffect.OpenWebView -> {
-                                context.startActivity(
-                                    MainActivity.createWebViewIntent(
-                                        context, effect.title, effect.url, effect.sourceOrigin,
-                                        effect.sourceName, effect.sourceType, html = effect.html,
-                                    )
-                                )
-                            }
-                            is ReadBookEffect.RunSourceCustomButton -> {
-                                (context as? AppCompatActivity)?.let { activity ->
-                                    SourceCallBack.callBackBtn(
-                                        activity,
-                                        effect.event,
-                                        effect.source,
-                                        effect.book,
-                                        effect.chapter,
-                                        BookType.text,
-                                    )
-                                }
-                            }
                             is ReadBookEffect.OpenSearch -> {
                                 onOpenSearch(effect.word, effect.bookUrl, effect.autoFocus)
                             }
-                            is ReadBookEffect.OpenBookVoiceCasting -> {
-                                onOpenVoiceCasting(effect.bookUrl)
-                            }
-                            is ReadBookEffect.OpenAiChat -> {
-                                onOpenAiChat(
-                                    effect.bookUrl,
-                                    effect.bookName,
-                                    effect.bookAuthor,
-                                    effect.chapterIndex,
-                                    effect.chapterTitle,
-                                )
-                            }
-                            is ReadBookEffect.OpenReadAloudSubPage -> {
-                                onOpenReadAloudSubPage(effect.page)
-                            }
-                            ReadBookEffect.OpenTtsEnginesAndVoices -> onOpenTtsEnginesAndVoices()
-                            ReadBookEffect.OpenTtsCache -> onOpenTtsCache()
                             is ReadBookEffect.MenuSettingReplace -> {
                                 onOpenReplaceRule(ReadBook.book?.bookUrl, null)
                             }

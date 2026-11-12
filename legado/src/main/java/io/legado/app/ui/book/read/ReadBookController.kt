@@ -468,13 +468,6 @@ class ReadBookController(
 
     val isAutoPage: Boolean get() = viewModel.uiState.value.isAutoPage
 
-    private fun speak(text: String) {
-        if (tts == null) {
-            tts = TTS()
-        }
-        tts?.speak(text)
-    }
-
     fun clearTts() {
         ReadBook.unregisterRender(this)
         readerChapterPaginationJobs.values.forEach { it.job.cancel() }
@@ -626,7 +619,6 @@ class ReadBookController(
     fun showComposeActionMenu() {
         val state = viewModel.uiState.value
         when {
-            ReadBook.isCurrentBookReadAloud -> viewModel.onIntent(ReadBookIntent.ReadAloudAction)
             isAutoPage -> viewModel.onIntent(ReadBookIntent.OpenReadMenuRoute(ReadBookMenuRoute.AutoRead))
             state.isShowingSearchResult -> viewModel.onIntent(ReadBookIntent.ShowSearchMenu)
             else -> viewModel.onIntent(ReadBookIntent.ShowMenu)
@@ -641,10 +633,8 @@ class ReadBookController(
             ReaderTapAction.PREVIOUS_PAGE -> Unit
             ReaderTapAction.NEXT_CHAPTER -> viewModel.onIntent(ReadBookIntent.NextChapter)
             ReaderTapAction.PREVIOUS_CHAPTER -> viewModel.onIntent(ReadBookIntent.PrevChapter)
-            ReaderTapAction.READ_ALOUD_PREVIOUS_PARAGRAPH ->
-                viewModel.onIntent(ReadBookIntent.ReadAloudPrevParagraph)
-            ReaderTapAction.READ_ALOUD_NEXT_PARAGRAPH ->
-                viewModel.onIntent(ReadBookIntent.ReadAloudNextParagraph)
+            ReaderTapAction.READ_ALOUD_PREVIOUS_PARAGRAPH,
+            ReaderTapAction.READ_ALOUD_NEXT_PARAGRAPH -> Unit
             ReaderTapAction.ADD_BOOKMARK -> viewModel.onIntent(ReadBookIntent.AddBookmark)
             ReaderTapAction.OPEN_CONTENT_EDIT -> viewModel.onIntent(ReadBookIntent.OpenContentEdit)
             ReaderTapAction.TOGGLE_REPLACE -> viewModel.onIntent(ReadBookIntent.MenuEnableReplace)
@@ -663,11 +653,7 @@ class ReadBookController(
                     activity.longToastOnUi(activity.getString(R.string.sync_book_progress_success))
                 },
             )
-            ReaderTapAction.TOGGLE_READ_ALOUD_PAUSE -> if (BaseReadAloudService.isPlay()) {
-                ReadAloud.pause(activity)
-            } else {
-                ReadAloud.resume(activity)
-            }
+            ReaderTapAction.TOGGLE_READ_ALOUD_PAUSE -> Unit
         }
     }
 
@@ -1116,9 +1102,6 @@ class ReadBookController(
         // 旧 View 每次翻页的其余副作用（阅读时长 / 预下载 / 进度落库）必须在，否则崩溃回到
         // 上次切章位置、静读时长不计、邻章预取推迟。
         ReadBook.onComposeManualPageCommitted()
-        if (BaseReadAloudService.isRun && ReadBook.onComposeManualPageTurn()) {
-            readAloudPosition = page.id.chapterIndex to chapterPosition
-        }
     }
 
     fun seekComposeChapterPage(chapterPageIndex: Int): Boolean {
@@ -2067,32 +2050,6 @@ class ReadBookController(
                 return true
             }
 
-            R.id.menu_ai_clean -> {
-                composeSelectionBookmark(bodyOnly = true)?.let { selection ->
-                    viewModel.onIntent(
-                        ReadBookIntent.OpenAiTextClean(
-                            text = selection.bookText,
-                            chapterIndex = selection.chapterIndex,
-                            chapterPosition = selection.chapterPos,
-                        )
-                    )
-                } ?: activity.toastOnUi(R.string.ai_text_clean_selection_error)
-                return true
-            }
-
-            R.id.menu_ai_rewrite -> {
-                composeSelectionBookmark(bodyOnly = true)?.let { selection ->
-                    viewModel.onIntent(
-                        ReadBookIntent.OpenAiTextRewrite(
-                            text = selection.bookText,
-                            chapterIndex = selection.chapterIndex,
-                            chapterPosition = selection.chapterPos,
-                        )
-                    )
-                } ?: activity.toastOnUi(R.string.ai_text_clean_selection_error)
-                return true
-            }
-
             R.id.menu_search_content -> {
                 viewModel.onIntent(ReadBookIntent.TextActionSearchContent(selectedText))
                 return true
@@ -2481,11 +2438,6 @@ class ReadBookController(
 
             is ReadBookEffect.UpTextSelectAble -> Unit
 
-            is ReadBookEffect.UpAloudState -> {
-                readAloudPosition = null
-                directReaderPageIndex?.let(::publishDirectReaderWindow)
-            }
-
             is ReadBookEffect.RefreshBookContent -> {
                 ReadBook.clearTextChapter()
                 ReadBook.book?.let { viewModel.refreshContentDur(it) }
@@ -2506,15 +2458,8 @@ class ReadBookController(
             }
 
             // ── Phase 4: Activity-dependent effects ──
-            is ReadBookEffect.ToggleReadAloud -> onToggleReadAloud?.invoke() ?: toggleReadAloud()
             is ReadBookEffect.ToggleAutoPage -> onToggleAutoPage?.invoke() ?: toggleAutoPage()
             is ReadBookEffect.StopAutoPage -> onStopAutoPage?.invoke() ?: stopAutoPage()
-            is ReadBookEffect.TextActionAloudPosition -> {
-                ReadBook.updateReadingPosition(effect.chapterPosition)
-                ReadBook.readAloud(chapterPosition = effect.chapterPosition)
-            }
-
-            is ReadBookEffect.TextActionSpeak -> speak(effect.text)
             is ReadBookEffect.NavigateToSearchResult -> {
                 pendingSearchNavigation = effect
                 val result = effect.result
@@ -2601,20 +2546,10 @@ class ReadBookController(
             is ReadBookEffect.OpenReadStyleConfigsExport,
             is ReadBookEffect.OpenMenuCustomIconPicker,
             is ReadBookEffect.OpenTitleBarCustomIconPicker,
-            is ReadBookEffect.OpenSystemTtsSettings,
-            ReadBookEffect.OpenTtsEnginesAndVoices,
-            ReadBookEffect.OpenTtsCache,
-            is ReadBookEffect.OpenBookVoiceCasting,
-            is ReadBookEffect.OpenAiChat,
-            is ReadBookEffect.OpenReadAloudSubPage,
             is ReadBookEffect.OpenHighlightRuleImportPicker,
             is ReadBookEffect.OpenHighlightRuleExportPicker,
-            is ReadBookEffect.TtsCacheCleared,
             is ReadBookEffect.ExportJson,
             // DB query + bookmark effects — handled by ViewModel, ignored here
-            is ReadBookEffect.MenuChangeSource,
-            is ReadBookEffect.MenuBookChangeSource,
-            is ReadBookEffect.MenuChapterChangeSource,
             is ReadBookEffect.AddBookmark -> {
                 // Handled by route/ViewModel — no-op here
             }
@@ -2623,18 +2558,7 @@ class ReadBookController(
         }
     }
 
-    fun updateReadAloudProgress(chapterStart: Int) {
-        if (!ReadBook.isCurrentBookReadAloud || !BaseReadAloudService.isPlay()) return
-        // 只更新朗读高亮锚点。可见页的移动由朗读服务驱动（moveToReadAloudPage →
-        // moveToNextPage → upContent）与用户导航负责；这里若再按朗读位置 locate
-        // 回迁可见页，进入阅读器时会把页面先拉回朗读所在的上一段（跨页段落的
-        // locate 落在段落起始页），随后 curPageChanged 的跟随重启又跳回当前页。
-        val anchor = BaseReadAloudService.currentChapterIndex to chapterStart
-        if (readAloudPosition == anchor) return
-        readAloudPosition = anchor
-        // 高亮在窗口发布时才计算绘制（directReaderWindow），锚点变化后必须重发布
-        directReaderPageIndex?.let(::publishDirectReaderWindow)
-    }
+    fun updateReadAloudProgress(chapterStart: Int) = Unit
 
     fun setComposeVisibleBodyTextPositionProvider(
         provider: (() -> ReaderVisibleTextPosition?)?,
@@ -2642,39 +2566,9 @@ class ReadBookController(
         composeVisibleBodyTextPositionProvider = provider
     }
 
-    private fun readAloudFromComposeVisibleStart(): Boolean {
-        val position = composeVisibleBodyTextPositionProvider?.invoke() ?: return false
-        // The Canvas window is normally kept on the logical current page. A crossing may
-        // briefly expose a neighbor before its chapter becomes the active ReadBook chapter;
-        // let the existing chapter-transition path handle that case rather than speaking
-        // with mismatched chapter coordinates.
-        if (position.chapterIndex != ReadBook.durChapterIndex) return false
-        ReadBook.updateReadingPosition(position.chapterPosition)
-        ReadBook.readAloud(chapterPosition = position.chapterPosition)
-        return true
-    }
-
     // ── Key handling ──
 
-    private fun toggleReadAloud() {
-        viewModel.onIntent(ReadBookIntent.StopAutoPage)
-        when {
-            !ReadBook.isCurrentBookReadAloud -> {
-                if (!readAloudFromComposeVisibleStart()) ReadBook.readAloud()
-            }
-
-            BaseReadAloudService.pause -> {
-                val restartFromVisibleStart = pageChanged && readAloudFromComposeVisibleStart()
-                pageChanged = false
-                if (!restartFromVisibleStart) ReadAloud.resume(activity)
-            }
-
-            else -> ReadAloud.pause(activity)
-        }
-    }
-
     private fun toggleAutoPage() {
-        if (ReadBook.isCurrentBookReadAloud) ReadAloud.stop(activity)
         if (isAutoPage) {
             stopAutoPage()
         } else {
@@ -2782,9 +2676,6 @@ class ReadBookController(
 
     private fun volumeKeyPage(direction: PageDirection, longPress: Boolean): Boolean {
         if (!readSettingsGateway.currentSettings.volumeKeyPage) {
-            return false
-        }
-        if (!readSettingsGateway.currentSettings.volumeKeyPageOnPlay && BaseReadAloudService.isPlay()) {
             return false
         }
         handleKeyPage(direction, longPress)

@@ -70,38 +70,14 @@ import org.koin.androidx.compose.koinViewModel
 fun MyRouteScreen(
     viewModel: MyViewModel = koinViewModel(),
     onOpenSettings: () -> Unit,
-    onNavigateToChat: () -> Unit,
     onNavigate: (PrefClickEvent) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            viewModel.onIntent(MyIntent.StartWebService)
-        } else {
-            Toast.makeText(
-                context,
-                R.string.web_service_local_network_permission_denied,
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collectLatest { effect ->
-            when (effect) {
-                MyEffect.RequestLocalNetworkPermission -> localNetworkPermissionLauncher.launch(
-                    Manifest.permission.ACCESS_LOCAL_NETWORK
-                )
-            }
-        }
-    }
     MyScreen(
         state = uiState,
         onIntent = viewModel::onIntent,
         onOpenSettings = onOpenSettings,
-        onNavigateToChat = onNavigateToChat,
         onNavigate = onNavigate,
     )
 }
@@ -112,7 +88,6 @@ fun MyScreen(
     state: MyUiState,
     onIntent: (MyIntent) -> Unit,
     onOpenSettings: () -> Unit,
-    onNavigateToChat: () -> Unit,
     onNavigate: (PrefClickEvent) -> Unit,
 ) {
     val scrollBehavior = GlassTopAppBarDefaults.defaultScrollBehavior()
@@ -140,30 +115,8 @@ fun MyScreen(
                 )
         ) {
             SplicedColumnGroup(
-                title = ""
-            ) {
-                WebServiceSettingBlock(
-                    uiState = state,
-                    onToggleWebService = {
-                        onIntent(MyIntent.ToggleWebService)
-                    },
-                    onNavigate = onNavigate
-                )
-            }
-
-            SplicedColumnGroup(
                 title = stringResource(R.string.rule_segment),
             ) {
-                ClickableSettingItem(
-                    title = stringResource(R.string.book_source_manage),
-                    description = stringResource(R.string.book_source_manage_desc),
-                    imageVector = Icons.Default.Source,
-                    onClick = {
-                        onNavigate(
-                            PrefClickEvent.OpenBookSourceManage
-                        )
-                    }
-                )
                 ClickableSettingItem(
                     title = stringResource(R.string.replace_purify),
                     imageVector = Icons.Default.FindReplace,
@@ -193,11 +146,6 @@ fun MyScreen(
             SplicedColumnGroup(
                 title = stringResource(R.string.other)
             ) {
-                ClickableSettingItem(
-                    title = stringResource(R.string.ai_chat),
-                    imageVector = Icons.Default.AutoAwesome,
-                    onClick = onNavigateToChat
-                )
                 ClickableSettingItem(
                     title = stringResource(R.string.setting),
                     imageVector = Icons.Default.Settings,
@@ -251,54 +199,3 @@ fun MyScreen(
 }
 
 
-@Composable
-fun WebServiceSettingBlock(
-    uiState: MyUiState,
-    onToggleWebService: () -> Unit,
-    onNavigate: (PrefClickEvent) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        SwitchSettingItem(
-            title = stringResource(R.string.web_service),
-            description = if (uiState.isWebServiceRun) {
-                uiState.webServiceAddress
-            } else {
-                stringResource(R.string.web_service_desc)
-            },
-            imageVector = Icons.Default.Web,
-            checked = uiState.isWebServiceRun,
-            onCheckedChange = { onToggleWebService() }
-        )
-
-        AnimatedVisibility(
-            visible = uiState.isWebServiceRun,
-            enter = expandVertically(),
-            exit = shrinkVertically()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                SmallPlainButton(
-                    onClick = {
-                        onNavigate(PrefClickEvent.CopyUrl(uiState.webServiceAddress))
-                    },
-                    icon = Icons.Default.ContentCopy,
-                    text = stringResource(R.string.copy_url)
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                SmallPlainButton(
-                    onClick = {
-                        onNavigate(PrefClickEvent.OpenUrl(uiState.webServiceAddress))
-                    },
-                    icon = Icons.Default.OpenInBrowser,
-                    text = stringResource(R.string.open_in_browser)
-                )
-            }
-        }
-    }
-}

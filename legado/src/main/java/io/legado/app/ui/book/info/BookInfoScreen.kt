@@ -133,7 +133,6 @@ import io.legado.app.ui.widget.components.button.series.SmallTonalButton
 import io.legado.app.ui.widget.components.card.GlassCard
 import io.legado.app.ui.widget.components.card.HighlightTagRow
 import io.legado.app.ui.widget.components.card.TextCard
-import io.legado.app.ui.widget.components.changeSource.ChangeSourceSheet
 import io.legado.app.ui.widget.components.conflict.BookshelfConflictSheet
 import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.icon.AppIcons
@@ -431,33 +430,8 @@ private fun BookInfoScreenContent(
                                             onShelfClick = { onIntent(BookInfoIntent.ShelfClick) },
                                             onTocClick = { onIntent(BookInfoIntent.TocClick) },
                                             onGroupClick = { onIntent(BookInfoIntent.GroupClick) },
-                                            onSourceClick = { onIntent(BookInfoIntent.ChangeSourceClick) },
                                             onReadRecordClick = { onIntent(BookInfoIntent.ReadRecordClick) },
                                         )
-                                        if (
-                                            state.characters.isNotEmpty() ||
-                                            state.knowledgeEntries.isNotEmpty() ||
-                                            state.recentEvents.isNotEmpty()
-                                        ) {
-                                            BookInfoCharacters(
-                                                characters = state.characters,
-                                                onCharacterClick = {
-                                                    onIntent(BookInfoIntent.CharacterClick(it))
-                                                },
-                                                onNetworkClick = {
-                                                    onIntent(BookInfoIntent.CharacterNetworkClick)
-                                                },
-                                                onViewAllClick = {
-                                                    onIntent(BookInfoIntent.CharacterListClick)
-                                                },
-                                                onKnowledgeClick = {
-                                                    onIntent(BookInfoIntent.KnowledgeListClick)
-                                                },
-                                                onEventsClick = {
-                                                    onIntent(BookInfoIntent.EventListClick)
-                                                },
-                                            )
-                                        }
                                         BookInfoSummary(
                                             book = book,
                                             tocLoadFailed = state.tocLoadFailed,
@@ -479,25 +453,6 @@ private fun BookInfoScreenContent(
                                                 onIntent(BookInfoIntent.IntroImageLongClick(source))
                                             },
                                         )
-                                        state.relatedBooks.forEach { module ->
-                                            RelatedBooksBanner(
-                                                title = module.title,
-                                                books = module.books,
-                                                showMore = module.resolvedUrl.isNotBlank(),
-                                                onBookClick = { book, _ ->
-                                                    onIntent(BookInfoIntent.RelatedBookClick(book))
-                                                },
-                                                onMoreClick = {
-                                                    onIntent(
-                                                        BookInfoIntent.RelatedBooksMore(
-                                                            module.title,
-                                                            module.resolvedUrl
-                                                        )
-                                                    )
-                                                },
-                                            )
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -547,30 +502,6 @@ private fun BookInfoScreenContent(
             onDelete = { onIntent(BookInfoIntent.ShelfDeleteConfirm(it)) },
             onDismissRequest = { onIntent(BookInfoIntent.DismissSheet) },
         )
-        is BookInfoSheet.SourcePicker -> {
-            ChangeSourceSheet(
-                show = currentSheet is BookInfoSheet.SourcePicker,
-                oldBook = sheet.oldBook,
-                onDismissRequest = { onIntent(BookInfoIntent.DismissSheet) },
-                onReplace = { source, newBook, toc, options ->
-                    onIntent(BookInfoIntent.ReplaceWithSource(source, newBook, toc, options))
-                },
-                onAddAsNew = { newBook, toc ->
-                    onIntent(BookInfoIntent.AddSourceAsNewBook(newBook, toc))
-                },
-                onReplaceConflict = { oldBook, source, newBook, toc, options ->
-                    onIntent(
-                        BookInfoIntent.ReplaceConflictingBook(
-                            oldBook = oldBook,
-                            source = source,
-                            book = newBook,
-                            toc = toc,
-                            options = options,
-                        )
-                    )
-                },
-            )
-        }
         BookInfoSheet.ReadRecord -> BookReadRecordSheet(
             show = currentSheet == BookInfoSheet.ReadRecord,
             totalReadTime = state.readRecordTotalTime,
@@ -1039,12 +970,6 @@ private fun BookInfoOverflowMenu(
 ) {
     val book = state.book
     RoundDropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest) {
-        if (state.bookSourceUi?.hasCustomButton == true) {
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.custom_button),
-                onClick = { onMenuAction(BookInfoMenuAction.CustomButton) }
-            )
-        }
         if (state.inBookshelf) {
             RoundDropdownMenuItem(
                 text = stringResource(R.string.edit),
@@ -1074,30 +999,6 @@ private fun BookInfoOverflowMenu(
             RoundDropdownMenuItem(
                 text = stringResource(R.string.upload_to_remote),
                 onClick = { onMenuAction(BookInfoMenuAction.Upload) }
-            )
-        }
-        if (state.bookSourceUi?.hasLogin == true) {
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.login),
-                onClick = { onMenuAction(BookInfoMenuAction.Login) }
-            )
-        }
-        if (state.bookSourceUi != null) {
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.set_source_variable),
-                onClick = { onMenuAction(BookInfoMenuAction.SetSourceVariable) }
-            )
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.set_book_variable),
-                onClick = { onMenuAction(BookInfoMenuAction.SetBookVariable) }
-            )
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.copy_book_url),
-                onClick = { onMenuAction(BookInfoMenuAction.CopyBookUrl) }
-            )
-            RoundDropdownMenuItem(
-                text = stringResource(R.string.copy_toc_url),
-                onClick = { onMenuAction(BookInfoMenuAction.CopyTocUrl) }
             )
         }
         RoundDropdownMenuItem(
@@ -1394,7 +1295,6 @@ private fun BookInfoActions(
     onShelfClick: () -> Unit,
     onTocClick: () -> Unit,
     onGroupClick: () -> Unit,
-    onSourceClick: () -> Unit,
     onReadRecordClick: () -> Unit,
 ) {
     var awaitingShelfAddition by rememberSaveable { mutableStateOf(false) }
@@ -1479,54 +1379,10 @@ private fun BookInfoActions(
         )
         BookInfoActionCard(
             modifier = Modifier.weight(1f),
-            icon = Icons.Default.Code,
-            label = stringResource(R.string.change_origin),
-            onClick = onSourceClick
-        )
-        BookInfoActionCard(
-            modifier = Modifier.weight(1f),
             icon = Icons.Default.Timeline,
             label = stringResource(R.string.read_record),
             onClick = onReadRecordClick
         )
-    }
-}
-
-@Composable
-private fun BookInfoActionCard(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    label: String,
-    contentDescription: String = label,
-    containerColor: Color = LegadoTheme.colorScheme.surfaceContainerLow,
-    contentColor: Color = LegadoTheme.colorScheme.onSurface,
-    onLongClick: (() -> Unit)? = null,
-    onClick: () -> Unit
-) {
-    GlassCard(
-        modifier = modifier.semantics(mergeDescendants = true) {
-            role = Role.Button
-            this.contentDescription = contentDescription
-        },
-        onLongClick = onLongClick,
-        onClick = onClick,
-        containerColor = containerColor,
-        contentColor = contentColor,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            AppIcon(icon, null)
-            AnimatedTextLine(
-                text = label,
-                style = LegadoTheme.typography.bodySmall,
-                maxLines = 2,
-            )
-        }
     }
 }
 
@@ -2122,121 +1978,7 @@ private fun BookInfoDialogs(
 }
 
 @Composable
-private fun RelatedBooksBanner(
-    title: String,
-    books: ImmutableList<SearchBook>,
-    onBookClick: (SearchBook, String?) -> Unit,
-    onMoreClick: () -> Unit,
-    showMore: Boolean = true,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp)
-    ) {
-        if (title.isNotBlank()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AppText(
-                    text = title,
-                    style = LegadoTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (showMore) {
-                    SmallTonalButton(
-                        onClick = onMoreClick,
-                        icon = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = stringResource(R.string.a11y_related_books_more, title),
-                    )
-                }
-            }
-        }
-        BannerModule(
-            books = books.map { io.legado.app.ui.main.homepage.HomepageBookItemUi(book = it) }
-                .toImmutableList(),
-            onClick = onBookClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-        )
-    }
-}
-
 @Composable
-private fun BookInfoCharacters(
-    characters: ImmutableList<BookInfoCharacterUi>,
-    onCharacterClick: (String) -> Unit,
-    onNetworkClick: () -> Unit,
-    onViewAllClick: () -> Unit,
-    onKnowledgeClick: () -> Unit,
-    onEventsClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(LegadoTheme.colorScheme.surface)
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AppText(
-                text = stringResource(R.string.book_info_knowledge),
-                style = LegadoTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            SmallTonalButton(
-                onClick = onViewAllClick,
-                icon = Icons.AutoMirrored.Outlined.FormatListBulleted,
-                contentDescription = stringResource(R.string.book_characters),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            SmallTonalButton(
-                onClick = onNetworkClick,
-                icon = Icons.Default.Group,
-                contentDescription = stringResource(R.string.character_network),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            SmallTonalButton(
-                onClick = onKnowledgeClick,
-                icon = Icons.Default.Book,
-                contentDescription = stringResource(R.string.book_knowledge),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            SmallTonalButton(
-                onClick = onEventsClick,
-                icon = Icons.Default.Timeline,
-                contentDescription = stringResource(R.string.plot_events),
-            )
-        }
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(
-                items = characters,
-                key = { it.id },
-            ) { character ->
-                CharacterEntryCard(
-                    character = character,
-                    onClick = { onCharacterClick(character.id) },
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun CharacterEntryCard(
     character: BookInfoCharacterUi,

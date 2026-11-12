@@ -403,20 +403,6 @@ internal fun buildReadMenuActionDefs(
         def("catalog") {
             onIntent(ReadBookIntent.OpenChapterList)
         },
-        def(
-            "read_aloud",
-            isActive = state.isReadAloudRunning,
-            onLongClick = {
-                onIntent(ReadBookIntent.OpenReadMenuRoute(ReadBookMenuRoute.ReadAloud))
-            },
-        ) {
-            if (state.isReadAloudRunning) {
-                onIntent(ReadBookIntent.ReadAloudAction)
-            } else {
-                onIntent(ReadBookIntent.ToggleReadAloud)
-                onIntent(ReadBookIntent.HideMenu)
-            }
-        },
         def("setting") {
             onIntent(ReadBookIntent.OpenReadMenuRoute(ReadBookMenuRoute.ReadStyle))
         },

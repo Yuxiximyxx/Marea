@@ -193,19 +193,6 @@ private fun OverflowDropdownMenu(
         if (state.menuConfig.titleBarCompact) {
             if (!state.isLocalBook) {
                 RoundDropdownMenuItem(
-                    text = stringResource(R.string.change_origin),
-                    leadingIcon = menuIcon(Icons.Default.SwapHoriz),
-                    onClick = { dismiss(); onIntent(ReadBookIntent.MenuChangeSource) },
-                )
-                RoundDropdownMenuItem(
-                    text = stringResource(R.string.read_aloud_audio_download_entry),
-                    leadingIcon = menuIcon(Icons.Default.Download),
-                    onClick = {
-                        dismiss()
-                        onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.AudioDownload))
-                    },
-                )
-                RoundDropdownMenuItem(
                     text = stringResource(R.string.menu_refresh_dur),
                     leadingIcon = menuIcon(Icons.Default.Refresh),
                     onClick = { dismiss(); onIntent(ReadBookIntent.MenuRefreshDur) },

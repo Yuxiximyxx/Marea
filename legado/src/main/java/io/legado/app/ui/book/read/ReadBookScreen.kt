@@ -74,12 +74,6 @@ fun ReadBookOverlayRoute(
     sheetsVisible: Boolean = true,
     additionalSheetContent: @Composable (ReadBookSheet, Boolean, () -> Unit) -> Unit = { _, _, _ -> },
 ) {
-    val aiActive = rememberFeatureActivated(
-        state.findSheet<ReadBookSheet.ChapterSummary>() != null ||
-                state.findSheet<ReadBookSheet.AiTextClean>() != null ||
-                state.findSheet<ReadBookSheet.AiTextRewrite>() != null ||
-                state.findSheet<ReadBookSheet.AiRewritePresetConfig>() != null
-    )
     val highlightActive = rememberFeatureActivated(
         state.findSheet<ReadBookSheet.HighlightRuleConfig>() != null
     )
@@ -89,9 +83,6 @@ fun ReadBookOverlayRoute(
     val contentProcessActive = rememberFeatureActivated(
         state.findSheet<ReadBookSheet.TextProcessing>() != null
     )
-    val aiState = if (aiActive) {
-        viewModel.aiState.collectAsStateWithLifecycle().value
-    } else ReadAiUiState()
     val highlightRuleState = if (highlightActive) {
         viewModel.highlightRuleState.collectAsStateWithLifecycle().value
     } else HighlightRuleConfigUiState()
@@ -108,7 +99,6 @@ fun ReadBookOverlayRoute(
         state = state,
         sheetsVisible = sheetsVisible,
         additionalSheetContent = additionalSheetContent,
-        aiState = aiState,
         highlightRuleState = highlightRuleState,
         markingState = markingState,
         contentEditState = contentEditState,
@@ -135,7 +125,6 @@ fun ReadBookScreen(
     state: ReadBookUiState,
     sheetsVisible: Boolean = true,
     additionalSheetContent: @Composable (ReadBookSheet, Boolean, () -> Unit) -> Unit = { _, _, _ -> },
-    aiState: ReadAiUiState,
     highlightRuleState: HighlightRuleConfigUiState,
     markingState: MarkingUiState,
     contentEditState: ContentEditUiState,
@@ -332,8 +321,7 @@ fun ReadBookScreen(
                         )
                     ),
                     sheetsVisible = visible,
-                    aiState = aiState,
-                    highlightRuleState = highlightRuleState,
+                                highlightRuleState = highlightRuleState,
                     markingState = markingState,
                     contentEditState = contentEditState,
                     contentProcessState = contentProcessState,
@@ -364,7 +352,6 @@ private data class ReaderSheetLayer(
 private fun ReadBookSheetContent(
     state: ReadBookUiState,
     sheetsVisible: Boolean,
-    aiState: ReadAiUiState,
     highlightRuleState: HighlightRuleConfigUiState,
     markingState: MarkingUiState,
     contentEditState: ContentEditUiState,
@@ -384,53 +371,10 @@ private fun ReadBookSheetContent(
     }
 
     // 多角色分配弹层（点击正文角色胶囊打开）
-    if (state.activeSheet is ReadBookSheet.RoleCast) {
-        io.legado.app.ui.book.read.sheet.ReadAloudCastSheet(
-            show = visibleState.findSheet<ReadBookSheet.RoleCast>() != null,
-            ordinal = visibleState.findSheet<ReadBookSheet.RoleCast>()?.ordinal ?: -1,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.RoleCast>()),
-            onIntent = onIntent,
-            menuConfig = state.menuConfig,
-        )
-    }
-
     // 段首配乐弹层（点击正文 ♪ 胶囊打开）
-    if (state.activeSheet is ReadBookSheet.BgmScene) {
-        io.legado.app.ui.book.read.sheet.BgmSceneSheet(
-            show = visibleState.findSheet<ReadBookSheet.BgmScene>() != null,
-            paragraphIndex = visibleState.findSheet<ReadBookSheet.BgmScene>()?.paragraphIndex ?: -1,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.BgmScene>()),
-            onIntent = onIntent,
-            menuConfig = state.menuConfig,
-        )
-    }
-
     // 本章背景音乐总览（配乐弹层/朗读面板打开，一屏改完本章所有区间）
-    if (state.activeSheet is ReadBookSheet.BgmSceneTable) {
-        io.legado.app.ui.book.read.sheet.BgmSceneTableSheet(
-            show = visibleState.findSheet<ReadBookSheet.BgmSceneTable>() != null,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.BgmSceneTable>()),
-            onIntent = onIntent,
-        )
-    }
-
     // AI 分配角色弹层
-    if (state.activeSheet is ReadBookSheet.AiCastDialog) {
-        io.legado.app.ui.book.read.sheet.AiCastDialogSheet(
-            show = visibleState.findSheet<ReadBookSheet.AiCastDialog>() != null,
-            sceneOnly = visibleState.findSheet<ReadBookSheet.AiCastDialog>()?.sceneOnly == true,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.AiCastDialog>()),
-            onIntent = onIntent,
-        )
-    }
     // 听书下载：项目通用 AppModalBottomSheet，和其它弹层一样 by show 驱动进出场
-    if (state.activeSheet is ReadBookSheet.AudioDownload) {
-        io.legado.app.ui.book.read.sheet.ReaderAudioDownloadSheet(
-            show = visibleState.findSheet<ReadBookSheet.AudioDownload>() != null,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.AudioDownload>()),
-        )
-    }
-
     if (state.activeSheet is ReadBookSheet.ShadowSet) {
         ShadowSetSheet(
             show = visibleState.findSheet<ReadBookSheet.ShadowSet>() != null,
@@ -571,38 +515,6 @@ private fun ReadBookSheetContent(
             onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.ContentEdit>()),
         )
     }
-    if (state.activeSheet is ReadBookSheet.ChapterSummary) {
-        ChapterSummarySheet(
-            show = visibleState.findSheet<ReadBookSheet.ChapterSummary>() != null,
-            state = aiState.chapterSummary,
-            onIntent = onIntent,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.ChapterSummary>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.AiTextClean) {
-        AiTextCleanSheet(
-            show = visibleState.findSheet<ReadBookSheet.AiTextClean>() != null,
-            state = aiState.aiTextClean,
-            onIntent = onIntent,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.AiTextClean>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.AiTextRewrite) {
-        AiTextRewriteSheet(
-            show = visibleState.findSheet<ReadBookSheet.AiTextRewrite>() != null,
-            state = aiState.aiTextRewrite,
-            onIntent = onIntent,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.AiTextRewrite>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.AiRewritePresetConfig) {
-        AiRewritePresetConfigSheet(
-            show = visibleState.findSheet<ReadBookSheet.AiRewritePresetConfig>() != null,
-            state = aiState.aiRewritePresetConfig,
-            onIntent = onIntent,
-            onDismissRequest = { onIntent(ReadBookIntent.CloseAiRewritePresetConfig) },
-        )
-    }
     if (state.activeSheet is ReadBookSheet.MoreConfig) {
         MoreConfigSheet(
             show = visibleState.findSheet<ReadBookSheet.MoreConfig>() != null,
@@ -617,62 +529,6 @@ private fun ReadBookSheetContent(
             onOpenTextSelectMenuConfig = onOpenTextSelectMenuConfig,
             onPickBookmarkBadgeImage = onPickBookmarkBadgeImage,
             onResetBookmarkBadge = onResetBookmarkBadge,
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.PreDownloadConfig) {
-        ReadAloudNumberConfigSheet(
-            show = visibleState.findSheet<ReadBookSheet.PreDownloadConfig>() != null,
-            title = stringResource(R.string.read_aloud_preload),
-            description = stringResource(R.string.read_aloud_preload_summary, state.preDownloadNum),
-            value = state.preDownloadNum,
-            defaultValue = 10,
-            valueRange = 0f..100f,
-            onValueChange = { onIntent(ReadBookIntent.ApplyPreDownloadNum(it)) },
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.PreDownloadConfig>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.PreSynthesisConcurrencyConfig) {
-        ReadAloudNumberConfigSheet(
-            show = visibleState.findSheet<ReadBookSheet.PreSynthesisConcurrencyConfig>() != null,
-            title = stringResource(R.string.tts_pre_synthesis_concurrency),
-            description = stringResource(
-                R.string.tts_pre_synthesis_concurrency_summary, state.preSynthesisConcurrency,
-            ),
-            value = state.preSynthesisConcurrency,
-            defaultValue = 3,
-            valueRange = 1f..8f,
-            onValueChange = { onIntent(ReadBookIntent.ApplyPreSynthesisConcurrency(it)) },
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.PreSynthesisConcurrencyConfig>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.AudioCacheCleanConfig) {
-        ReadAloudNumberConfigSheet(
-            show = visibleState.findSheet<ReadBookSheet.AudioCacheCleanConfig>() != null,
-            title = stringResource(R.string.audio_cache_clean_time),
-            description = stringResource(
-                R.string.audio_cache_clean_time_summary,
-                state.audioCacheCleanTime
-            ),
-            value = state.audioCacheCleanTime,
-            defaultValue = 10,
-            valueRange = 0f..10080f,
-            onValueChange = { onIntent(ReadBookIntent.ApplyAudioCacheCleanTime(it)) },
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.AudioCacheCleanConfig>()),
-        )
-    }
-    if (state.activeSheet is ReadBookSheet.ParagraphIntervalConfig) {
-        ReadAloudNumberConfigSheet(
-            show = visibleState.findSheet<ReadBookSheet.ParagraphIntervalConfig>() != null,
-            title = stringResource(R.string.tts_paragraph_interval),
-            description = stringResource(
-                R.string.tts_paragraph_interval_summary,
-                state.readAloudParagraphInterval
-            ),
-            value = state.readAloudParagraphInterval,
-            defaultValue = 0,
-            valueRange = 0f..5000f,
-            onValueChange = { onIntent(ReadBookIntent.ApplyParagraphInterval(it)) },
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.ParagraphIntervalConfig>()),
         )
     }
     if (state.activeSheet is ReadBookSheet.AppLog) {
@@ -696,9 +552,6 @@ private fun ReadBookSheetContent(
         )
     }
 
-    val aloudPlayerViewModel: ReadAloudPlayerViewModel =
-        org.koin.compose.koinInject()
-    val aloudPlayerShellState by aloudPlayerViewModel.uiState.collectAsStateWithLifecycle()
     /*
      * 朗读设置是窗口级浮层（AppModalBottomSheet 在 miuix 引擎下走独立窗口），压上整屏页时它
      * 不会跟着下沉，于是从「引擎与音色」「角色与配乐」里那几个跳转项进新页面时，朗读设置
@@ -710,23 +563,6 @@ private fun ReadBookSheetContent(
         .value.lastOrNull() is io.legado.app.ui.main.MainRouteReadBook
     // 听书播放页是 Activity 级 morph 浮层（见 ReadAloudPlayerMorphHost），阅读器内
     // 只保留经典控制面板自己的朗读配置卡片；两者共用同一份配置内容。
-    if (state.activeSheet is ReadBookSheet.ReadAloudConfig) {
-        AppModalBottomSheet(
-            show = visibleState.findSheet<ReadBookSheet.ReadAloudConfig>() != null && readerIsTop,
-            onDismissRequest = dismissSheet(visibleState.findSheet<ReadBookSheet.ReadAloudConfig>()),
-            title = stringResource(R.string.aloud_config),
-        ) {
-            ReadAloudConfigContent(
-                state = state,
-                playerState = aloudPlayerShellState,
-                onIntent = onIntent,
-                onPlayerIntent = aloudPlayerViewModel::onIntent,
-                selectedTab = state.readAloudConfigTab,
-                onTabSelected = { onIntent(ReadBookIntent.SetReadAloudConfigTab(it)) },
-            )
-        }
-    }
-
     val dictSheet = state.findSheet<ReadBookSheet.Dict>()
     if (dictSheet != null) {
         DictSheet(
@@ -761,7 +597,7 @@ private fun ReadBookSheetContent(
     // AlertDialog-based sheets and special cases — conditionally composed
     val sendSheetIntent = onIntent
     state.sheetStack.filter {
-        sheetsVisible || it is ReadBookSheet.ChangeBookSource || it is ReadBookSheet.ChangeChapterSource
+        sheetsVisible
     }.forEach { sheet ->
         androidx.compose.runtime.key(sheet::class) {
             val onIntent: (ReadBookIntent) -> Unit = { intent ->
@@ -828,111 +664,6 @@ private fun ReadBookSheetContent(
                     // Integrated into TypographyPage
                     LaunchedEffect(sheet) {
                         onIntent(ReadBookIntent.DismissSheet)
-                    }
-                }
-
-                is ReadBookSheet.ChangeChapterSource -> {
-                    val book = state.book
-                    if (book != null) {
-                        var showSheet by remember { mutableStateOf(true) }
-                        LaunchedEffect(showSheet) {
-                            if (!showSheet) {
-                                kotlinx.coroutines.delay(300)
-                                onIntent(ReadBookIntent.SetActiveSheet(null))
-                            }
-                        }
-                        val viewModel = androidx.compose.runtime.key(
-                            "chapter-source-${book.bookUrl}-${sheet.chapterIndex}"
-                        ) {
-                            org.koin.androidx.compose.koinViewModel<io.legado.app.ui.book.changesource.ChangeChapterSourceViewModel>()
-                        }
-                        androidx.compose.runtime.DisposableEffect(viewModel) {
-                            onDispose { viewModel.dispose() }
-                        }
-                        LaunchedEffect(book.bookUrl, sheet.chapterIndex) {
-                            viewModel.initData(
-                                book,
-                                sheet.chapterIndex,
-                                sheet.chapterTitle
-                            )
-                        }
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        ChangeChapterSourceSheet(
-                            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-                            onIntent = viewModel::onIntent,
-                            show = showSheet && sheetsVisible,
-                            onDismissRequest = { showSheet = false },
-                            onAnimationFinish = {
-                                if (!showSheet) onIntent(ReadBookIntent.SetActiveSheet(null))
-                            },
-                            bookScoreFlow = viewModel::bookScoreFlow,
-                            onBookScoreClick = viewModel::onBookScoreClick,
-                            onEditSource = { sourceUrl ->
-                                onIntent(ReadBookIntent.OpenSourceEditByUrl(sourceUrl))
-                            },
-                        )
-                        // Handle ReplaceContent effect
-                        LaunchedEffect(viewModel) {
-                            viewModel.effects.collectLatest { effect ->
-                                when (effect) {
-                                    is io.legado.app.ui.book.changesource.ChangeChapterSourceEffect.ReplaceContent -> {
-                                        showSheet = false
-                                        onIntent(
-                                            ReadBookIntent.SaveChapterContent(
-                                                effect.content,
-                                                sheet.chapterIndex
-                                            )
-                                        )
-                                    }
-
-                                    is io.legado.app.ui.book.changesource.ChangeChapterSourceEffect.ShowToast -> {
-                                        context.toastOnUi(effect.message)
-                                    }
-
-                                    is io.legado.app.ui.book.changesource.ChangeChapterSourceEffect.Dismiss -> {
-                                        // Handled by showSheet animation — no-op
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        LaunchedEffect(sheet) {
-                            onIntent(ReadBookIntent.DismissSheet)
-                        }
-                    }
-                }
-
-                is ReadBookSheet.ChangeBookSource -> {
-                    val changeSourceSheet = sheet
-                    val changeSourceBook = state.book
-                    if (changeSourceBook == null) {
-                        LaunchedEffect(changeSourceSheet) {
-                            onIntent(ReadBookIntent.DismissSheet)
-                        }
-                    }
-                    if (changeSourceBook != null) {
-                        ChangeSourceSheet(
-                            show = sheetsVisible,
-                            oldBook = changeSourceBook,
-                            fromReadBookActivity = true,
-                            allowAddAsNew = false,
-                            dismissOnReplaceStart = true,
-                            onEditSource = { onIntent(ReadBookIntent.OpenSourceEditByUrl(it)) },
-                            editedSourceUrl = state.pendingEditedSource,
-                            onSourceEditHandled = { onIntent(ReadBookIntent.SourceEditHandled(it)) },
-                            onDismissRequest = { onIntent(ReadBookIntent.DismissSheet) },
-                            onReplace = { _, newBook, toc, _ ->
-                                onIntent(ReadBookIntent.DismissSheet)
-                                onIntent(ReadBookIntent.ChangeSource(newBook, toc))
-                            },
-                            onReplaceBook = { newBook ->
-                                onIntent(ReadBookIntent.ChangeSourceBook(newBook))
-                            },
-                            onAddAsNew = { newBook, toc ->
-                                onIntent(ReadBookIntent.DismissSheet)
-                                onIntent(ReadBookIntent.AddSourceAsNewBook(newBook, toc))
-                            },
-                        )
                     }
                 }
 

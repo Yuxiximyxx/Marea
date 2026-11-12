@@ -412,7 +412,6 @@ val appModule = module {
     single { ReadSettingsRepository(settingsRepository = get()) }
     single<ReadSettingsGateway> { get<ReadSettingsRepository>() }
     singleOf(::ReadAloudSettingsRepository)
-    singleOf(::ReadAloudSessionStore)
     single<PlaybackCapsuleGateway> { PlaybackCapsuleGatewayAdapter(get(), get()) }
     singleOf(::MainNavRouteTracker)
     // 会话每个所有者一份。ReadBook.callBack 的身份是「阅读页已挂载」信号
@@ -539,7 +538,6 @@ val appModule = module {
     singleOf(::CheckBookContentQualityUseCase)
     singleOf(::AiToolAwareGenerationUseCase)
     singleOf(::AiTaskManager)
-    singleOf(::IdentifyBookCharactersUseCase)
     singleOf(::GenerateChapterSummaryUseCase)
     singleOf(::AiTextFactoryUseCase)
     singleOf(::GenerateBookshelfAutoGroupPlanUseCase)
@@ -574,34 +572,13 @@ val appModule = module {
 
     viewModelOf(::DictRuleViewModel)
     viewModelOf(::ImportDictRuleViewModel)
-    viewModelOf(::ImportHttpTtsViewModel)
     viewModelOf(::ImportReplaceRuleViewModel)
-    viewModelOf(::ImportRssSourceViewModel)
     viewModelOf(::ImportTxtTocRuleViewModel)
     viewModelOf(::HighlightTagRuleViewModel)
-    viewModelOf(::MultiRoleRuleViewModel)
-    viewModelOf(::BgmPoolViewModel)
-    viewModelOf(::RegexCastRuleViewModel)
-    viewModelOf(::VoiceEffectViewModel)
-    viewModelOf(::MultiRoleRecognitionViewModel)
-    singleOf(::AiCastAssignUseCase)
-    singleOf(::AiSceneAssignUseCase)
     viewModelOf(::TagGroupRuleViewModel)
     viewModelOf(::DictViewModel)
-    viewModelOf(::RssSourceViewModel)
-    viewModelOf(::BookSourceViewModel)
-    viewModelOf(::BookSourceEditViewModel)
-    viewModelOf(::BookSourceDebugViewModel)
-    viewModelOf(::RssSourceEditViewModel)
-    viewModelOf(::RssSourceDebugViewModel)
-    viewModelOf(::RssSortViewModel)
-    viewModelOf(::RssArticlesViewModel)
-    viewModelOf(::ReadRssViewModel)
-    viewModelOf(::RssFavoritesViewModel)
-    viewModelOf(::RuleSubViewModel)
     viewModelOf(::ReadRecordViewModel)
     viewModelOf(::ReadRecordOverviewViewModel)
-    viewModelOf(::ExploreShowViewModel)
     viewModelOf(::MyViewModel)
     viewModelOf(::BookshelfViewModel)
     viewModelOf(::AiAutoGroupViewModel)
@@ -644,183 +621,14 @@ val appModule = module {
     viewModelOf(::BackupConfigViewModel)
     viewModelOf(::LabConfigViewModel)
     viewModelOf(::TranslationConfigViewModel)
-    viewModelOf(::AiConfigViewModel)
-    viewModelOf(::AiSummaryConfigViewModel)
-    viewModelOf(::AiPromptConfigViewModel)
-    viewModelOf(::AiChatViewModel)
-    viewModel { (providerId: String?) ->
-        AiProviderEditViewModel(
-            initialProviderId = providerId,
-            aiProfileGateway = get(),
-            aiTextGateway = get()
-        )
-    }
-    viewModel { (providerId: String?, modelProfileId: String?) ->
-        AiModelEditViewModel(
-            initialProviderId = providerId,
-            initialModelProfileId = modelProfileId,
-            aiProfileGateway = get(),
-            aiTextGateway = get()
-        )
-    }
     viewModelOf(::TocViewModel)
     viewModelOf(::ImportBookViewModel)
     viewModelOf(::RemoteBookViewModel)
     viewModelOf(::ServerConfigViewModel)
     viewModelOf(::ServersViewModel)
     viewModelOf(::BookInfoViewModel)
-    viewModel {
-        WebViewModel(
-            application = get(),
-            bookSourceRepository = get(),
-        )
-    }
-    viewModel {
-        BookInfoEditViewModel(
-            application = get(),
-            bookRepository = get(),
-        )
-    }
-    viewModel {
-        AudioPlayViewModel(
-            application = get(),
-            coordinator = get(),
-            bookRepository = get(),
-            otherSettingsGateway = get(),
-            readAloudSettingsGateway = get(),
-            readSettingsGateway = get(),
-        )
-    }
-    singleOf(::AudioPlayCoordinator)
-    viewModel {
-        SourceLoginViewModel(
-            application = get(),
-            bookRepository = get(),
-            bookSourceRepository = get(),
-            rssRepository = get(),
-            httpTtsRepository = get(),
-            searchRepository = get(),
-            downloadCacheSettingsGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String, characterId: String?) ->
-        BookCharacterDetailViewModel(
-            bookUrl = bookUrl,
-            characterId = characterId,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String) ->
-        BookCharacterNetworkViewModel(
-            bookUrl = bookUrl,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String) ->
-        BookKnowledgeListViewModel(
-            bookUrl = bookUrl,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String) ->
-        BookCharacterListViewModel(
-            bookUrl = bookUrl,
-            bookKnowledgeGateway = get(),
-            identifyBookCharacters = get(),
-        )
-    }
-    viewModel { (bookUrl: String) ->
-        BookVoiceCastingViewModel(
-            bookUrl = bookUrl,
-            bookKnowledgeGateway = get(),
-            voiceGateway = get(),
-            styleGateway = get(),
-        )
-    }
-    viewModelOf(::CloudTtsViewModel)
-    viewModelOf(::TtsCacheViewModel)
-    singleOf(::ReadAloudPlayerCoordinator)
-    /**
-     * 朗读播放界面状态宿主。
-     *
-     * 用单例而不是 `viewModelOf`：悬浮胶囊（Activity 叠层）与听书页目的地会同时存在，
-     * 若各自持有实例，`activeSheet` 之类的瞬态状态与设置快照就会各改各的。
-     * 播放状态本身在 `ReadAloudSessionStore`/服务里，这里只是界面投影。
-     */
-    single { ReadAloudPlayerViewModel(get(), get(), get()) }
-    viewModel { (bookUrl: String, entryId: String?) ->
-        BookKnowledgeDetailViewModel(
-            bookUrl = bookUrl,
-            entryId = entryId,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String) ->
-        BookEventListViewModel(
-            bookUrl = bookUrl,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModel { (bookUrl: String, eventId: String?) ->
-        BookEventDetailViewModel(
-            bookUrl = bookUrl,
-            eventId = eventId,
-            bookKnowledgeGateway = get(),
-        )
-    }
-    viewModelOf(::MangaReaderViewModel)
-    viewModelOf(::ReaderSessionViewModel)
-    viewModel {
-        ReadBookViewModel(
-            application = get(),
-            getReadingProgressUseCase = get(),
-            uploadReadingProgressUseCase = get(),
-            translateChapterUseCase = get(),
-            readSettingsRepository = get(),
-            readBookStyleConfigRepository = get(),
-            readAloudSettingsRepository = get(),
-            aiCastAssignUseCase = get(),
-            aiSceneAssignUseCase = get(),
-            localPreferencesRepository = get(),
-            highlightRuleRepository = get(),
-            uploadRepository = get(),
-            changeBookSourceUseCase = get(),
-            generateChapterSummaryUseCase = get(),
-            cleanSelectedTextUseCase = get(),
-            aiTextFactoryUseCase = get(),
-            saveBookContentProcessUseCase = get(),
-            saveMarkingUseCase = get(),
-            verifyBookmarkTargetUseCase = get(),
-            relocateMarkingTargetUseCase = get(),
-            bookContentProcessGateway = get(),
-            aiArtifactGateway = get(),
-            aiPromptPresetGateway = get(),
-            aiProfileGateway = get(),
-            syncReadAloudVoicesUseCase = get(),
-            readAloudSessionStore = get(),
-            replaceRuleRepository = get(),
-            changeSourceSettingsGateway = get(),
-            appShellSettingsGateway = get(),
-            appUiConfigurationGateway = get(),
-            otherSettingsGateway = get(),
-            downloadCacheSettingsGateway = get(),
-            backupSettingsGateway = get(),
-            themeSettingsGateway = get(),
-            httpTtsRepository = get(),
-            bookSourceRepository = get(),
-            bookmarkRepository = get(),
-            bookRepository = get(),
-            readRecordRepository = get(),
-            readerSession = get(),
-        )
-    }
     viewModelOf(::ChangeCoverViewModel)
     viewModelOf(::ChangeBookSourceComposeViewModel)
-    viewModelOf(::ChangeChapterSourceViewModel)
-    viewModelOf(::ExploreViewModel)
-    viewModelOf(::ExploreMainViewModel)
-    viewModelOf(::RssViewModel)
-    viewModelOf(::SearchViewModel)
     viewModelOf(::BookCacheManageViewModel)
     viewModel {
         BookshelfManageScreenViewModel(

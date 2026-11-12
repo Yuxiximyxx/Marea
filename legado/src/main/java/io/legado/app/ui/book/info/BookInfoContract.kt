@@ -35,11 +35,6 @@ data class BookInfoUiState(
     val readRecordTimelineDays: List<ReadRecordTimelineDay> = emptyList(),
     val inBookshelf: Boolean = false,
     val bookSource: BookSource? = null,
-    val bookSourceUi: BookInfoSourceUi? = null,
-    val relatedBooks: ImmutableList<RelatedBooksUi> = persistentListOf(),
-    val characters: ImmutableList<BookInfoCharacterUi> = persistentListOf(),
-    val knowledgeEntries: ImmutableList<BookInfoKnowledgeUi> = persistentListOf(),
-    val recentEvents: ImmutableList<BookInfoEventUi> = persistentListOf(),
     val isTocLoading: Boolean = false,
     val isBusy: Boolean = false,
     val deleteAlertEnabled: Boolean = true,
@@ -116,40 +111,6 @@ data class BookInfoBookUi(
     )
 }
 
-@Stable
-data class BookInfoSourceUi(
-    val sourceUrl: String,
-    val hasLogin: Boolean,
-    val hasCustomButton: Boolean,
-)
-
-@Stable
-data class BookInfoCharacterUi(
-    val id: String,
-    val name: String,
-    val avatarUri: String?,
-    val role: String,
-    val tags: String,
-    val summary: String,
-)
-
-@Stable
-data class BookInfoKnowledgeUi(
-    val id: String,
-    val type: String,
-    val title: String,
-    val summary: String,
-)
-
-@Stable
-data class BookInfoEventUi(
-    val id: String,
-    val chapterTitle: String,
-    val eventTimeText: String,
-    val content: String,
-    val characterName: String,
-)
-
 sealed interface BookInfoSheet {
     data object None : BookInfoSheet
     data object CoverPicker : BookInfoSheet
@@ -157,7 +118,6 @@ sealed interface BookInfoSheet {
 
     /** 已入架书籍的删除 Sheet：其他副本 / 分组 / 删除确认。 */
     data object ShelfDelete : BookInfoSheet
-    data class SourcePicker(val oldBook: Book) : BookInfoSheet
     data object ReadRecord : BookInfoSheet
     data class WebFiles(val openAfterImport: Boolean) : BookInfoSheet
     data class ArchiveEntries(
@@ -184,14 +144,6 @@ data class BookInfoWebFile(
     override fun toString(): String = name
 }
 
-data class RelatedBooksUi(
-    val key: String,
-    val title: String,
-    val url: String,
-    val resolvedUrl: String,
-    val books: ImmutableList<SearchBook>,
-)
-
 sealed interface BookInfoIntent {
     data object DismissSheet : BookInfoIntent
     data object DismissDialog : BookInfoIntent
@@ -208,24 +160,12 @@ sealed interface BookInfoIntent {
     data object CoverClick : BookInfoIntent
     data object CoverLongClick : BookInfoIntent
     data object GroupClick : BookInfoIntent
-    data object ChangeSourceClick : BookInfoIntent
     data object ReadRecordClick : BookInfoIntent
     data object RemarkClick : BookInfoIntent
     data class SaveCover(val path: String) : BookInfoIntent
     data class UpdateRemark(val remark: String) : BookInfoIntent
     data class SelectGroup(val groupId: Long) : BookInfoIntent
     data class SelectCover(val coverUrl: String) : BookInfoIntent
-    data class ReplaceWithSource(
-        val source: BookSource,
-        val book: Book,
-        val toc: List<BookChapter>,
-        val options: ChangeSourceMigrationOptions,
-    ) : BookInfoIntent
-    data class AddSourceAsNewBook(
-        val book: Book,
-        val toc: List<BookChapter>,
-    ) : BookInfoIntent
-
     data object DismissShelfConflict : BookInfoIntent
     data class OpenShelfConflictBook(val summary: ConflictBookSummary) : BookInfoIntent
 
@@ -244,14 +184,6 @@ sealed interface BookInfoIntent {
         val options: ChangeSourceMigrationOptions,
     ) : BookInfoIntent
 
-    data class ReplaceConflictingBook(
-        val oldBook: Book,
-        val source: BookSource,
-        val book: Book,
-        val toc: List<BookChapter>,
-        val options: ChangeSourceMigrationOptions,
-    ) : BookInfoIntent
-
     data class SelectWebFile(
         val webFile: BookInfoWebFile,
         val openAfterImport: Boolean,
@@ -265,14 +197,6 @@ sealed interface BookInfoIntent {
         val openAfterImport: Boolean,
     ) : BookInfoIntent
 
-    data class RelatedBookClick(val book: SearchBook) : BookInfoIntent
-    data class RelatedBooksMore(val title: String, val url: String) : BookInfoIntent
-    data class CharacterClick(val characterId: String) : BookInfoIntent
-    data object AddCharacterClick : BookInfoIntent
-    data object CharacterNetworkClick : BookInfoIntent
-    data object CharacterListClick : BookInfoIntent
-    data object KnowledgeListClick : BookInfoIntent
-    data object EventListClick : BookInfoIntent
     data class SetDefaultBookTreeUri(val value: String) : BookInfoIntent
 
     /** 简介 HTML 中 `<button>名称@onclick:脚本</button>` 的点击。 */
@@ -312,8 +236,6 @@ sealed interface BookInfoEffect {
         val inBookshelf: Boolean,
         val chapterChanged: Boolean,
     ) : BookInfoEffect
-    data class OpenBookSourceEdit(val sourceUrl: String) : BookInfoEffect
-    data class OpenSourceLogin(val sourceUrl: String) : BookInfoEffect
     data object OpenSelectBooksDir : BookInfoEffect
     data class OpenFile(val uri: Uri, val mimeType: String) : BookInfoEffect
     data class RunSourceCallback(
@@ -329,33 +251,6 @@ sealed interface BookInfoEffect {
         val origin: String?,
         val coverPath: String?,
     ) : BookInfoEffect
-    data class NavigateToExploreShow(
-        val title: String?,
-        val sourceUrl: String,
-        val exploreUrl: String?,
-    ) : BookInfoEffect
-
-    data class OpenCharacterDetail(
-        val bookUrl: String,
-        val characterId: String?,
-    ) : BookInfoEffect
-
-    data class OpenCharacterNetwork(
-        val bookUrl: String,
-    ) : BookInfoEffect
-
-    data class OpenCharacterList(
-        val bookUrl: String,
-    ) : BookInfoEffect
-
-    data class OpenKnowledgeList(
-        val bookUrl: String,
-    ) : BookInfoEffect
-
-    data class OpenEventList(
-        val bookUrl: String,
-    ) : BookInfoEffect
-
     /** 简介按钮/图片触发的书源 JS 执行，由宿主（持有 Activity）用 SourceLoginJsExtensions 运行。 */
     data class RunIntroJs(
         val name: String,

@@ -164,10 +164,8 @@ import io.legado.app.ui.login.SourceLoginViewModel
 import io.legado.app.ui.replace.ReplaceRuleRouteScreen
 import io.legado.app.ui.replace.edit.ReplaceEditRouteScreen
 import io.legado.app.ui.replace.edit.ReplaceEditViewModel
-import io.legado.app.ui.rss.article.MainRouteRssSort
 import io.legado.app.ui.rss.article.RssSortRouteScreen
 import io.legado.app.ui.rss.favorites.RssFavoritesRouteScreen
-import io.legado.app.ui.rss.read.MainRouteRssRead
 import io.legado.app.ui.rss.read.RssReadRouteScreen
 import io.legado.app.ui.rss.source.debug.RssSourceDebugRoute
 import io.legado.app.ui.rss.source.debug.RssSourceDebugViewModel
@@ -281,9 +279,6 @@ fun MainActivity.mainEntryProvider(
      * 主界面要把听书胶囊排在悬浮底栏同一行里，需要把胶囊的锚点上报给同一个进度源，
      * 所以这里透传（其余目的地不用）。
      */
-    readAloudMorph: ReadAloudMorphState?,
-    homePlaybackCapsuleEnabled: Boolean,
-    capsuleAnchorPreview: io.legado.app.domain.model.PlaybackCapsuleState?,
 ) = mainPaneEntryProvider(backStack, panesEnabled, navRouteTracker, navigateToRoute) {
     entry<MainRouteToc> { route ->
         // VM 提到 entry 里，是为了让「规则列表选好的规则」能从这里回灌（SaveTocRegex）。
@@ -338,10 +333,6 @@ fun MainActivity.mainEntryProvider(
                     )
                 }
             },
-            onOpenCharacterList = { onNavigateToRoute(MainRouteBookCharacterList(it)) },
-            onOpenCharacterNetwork = { onNavigateToRoute(MainRouteBookCharacterNetwork(it)) },
-            onOpenKnowledgeList = { onNavigateToRoute(MainRouteBookKnowledgeList(it)) },
-            onOpenEventList = { onNavigateToRoute(MainRouteBookEventList(it)) },
         )
     }
     entry<MainRouteReplaceRules> { route ->
@@ -362,142 +353,6 @@ fun MainActivity.mainEntryProvider(
             onSaveSuccess = { closeBookPage(backStack, route) },
         )
     }
-    entry<MainRouteWebView> { route ->
-        val viewModel = koinViewModel<WebViewModel>(
-            key = "WebView:${route.url}:${route.sourceOrigin}:${route.sourceVerificationEnable}",
-        )
-        val browserIntent = remember(route) {
-            Intent().apply {
-                putExtra("title", route.title)
-                putExtra("url", route.url)
-                putExtra("sourceOrigin", route.sourceOrigin)
-                putExtra("sourceName", route.sourceName)
-                route.sourceType?.let { putExtra("sourceType", it) }
-                putExtra("sourceVerificationEnable", route.sourceVerificationEnable)
-                putExtra("refetchAfterSuccess", route.refetchAfterSuccess)
-                putExtra("html", route.html)
-            }
-        }
-        WebViewRouteScreen(
-            intent = browserIntent,
-            viewModel = viewModel,
-            onFinish = onNavigateBack,
-            onImportBookSource = { importUrl ->
-                onNavigateToRoute(MainRouteBookSourceManage(importUrl))
-            },
-        )
-    }
-    entry<MainRouteSourceLogin>(
-        metadata = ModalOverlaySceneStrategy.modalOverlay(),
-    ) { route ->
-        DisposableEffect(route) {
-            MainActivity.hasActiveSourceLoginRoute = true
-            onDispose {
-                MainActivity.hasActiveSourceLoginRoute = false
-            }
-        }
-        val viewModel = koinViewModel<SourceLoginViewModel>(
-            key = "SourceLogin:${route.type}:${route.sourceKey}:${route.bookUrl}",
-        )
-        SourceLoginRoute(
-            request = SourceLoginIntent.Initialize(route.type, route.sourceKey, route.bookUrl),
-            viewModel = viewModel,
-            host = this@mainEntryProvider,
-            onBack = onNavigateBack,
-        )
-    }
-    entry<MainRouteBookSourceManage> { route ->
-        BookSourceRouteScreen(
-            initialImportUrl = route.importUrl,
-            closeAfterImport = route.importUrl != null,
-            onImportClosed = onNavigateBack,
-            onBackClick = onNavigateBack,
-            onAddSource = { onNavigateToRoute(MainRouteBookSourceEdit()) },
-            onEditSource = { onNavigateToRoute(MainRouteBookSourceEdit(it)) },
-            onLoginSource = {
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.BookSource, it))
-            },
-            onSearchSource = { sourceName, sourceUrl ->
-                val scopeRaw = BookSearchScope.encodeSource(sourceName, sourceUrl)
-                onNavigateToRoute(MainRouteSearch(null, scopeRaw))
-            },
-            onDebugSource = { sourceUrl ->
-                onNavigateToRoute(MainRouteBookSourceDebug(sourceUrl))
-            },
-        )
-    }
-    entry<MainRouteBookSourceEdit> { route ->
-        val viewModel = koinViewModel<BookSourceEditViewModel>(
-            key = "BookSourceEdit:${route.sourceUrl.orEmpty()}",
-        )
-        BookSourceEditRoute(
-            sourceUrl = route.sourceUrl,
-            viewModel = viewModel,
-            onBack = { savedSourceUrl ->
-                if (backStack.size == 1) {
-                    savedSourceUrl?.let {
-                        this@mainEntryProvider.setResult(
-                            android.app.Activity.RESULT_OK,
-                            Intent().putExtra("origin", it),
-                        )
-                    }
-                    this@mainEntryProvider.finish()
-                } else closeBookPage(
-                    backStack,
-                    route,
-                    savedSourceUrl?.let { BookPageResult.SourceEdited(it) },
-                )
-            },
-            onLogin = {
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.BookSource, it))
-            },
-            onDebug = { onNavigateToRoute(MainRouteBookSourceDebug(it)) },
-            onSearch = { onNavigateToRoute(MainRouteSearch(null, it.toString())) },
-        )
-    }
-    entry<MainRouteRssSourceManage> {
-        RssSourceRouteScreen(
-            onBackClick = onNavigateBack,
-            onEditSource = { onNavigateToRoute(MainRouteRssSourceEdit(it.sourceUrl)) },
-            onAddSource = { onNavigateToRoute(MainRouteRssSourceEdit()) },
-        )
-    }
-    entry<MainRouteRssSourceEdit> { route ->
-        val viewModel = koinViewModel<RssSourceEditViewModel>(
-            key = "RssSourceEdit:${route.sourceUrl.orEmpty()}",
-        )
-        RssSourceEditRoute(
-            sourceUrl = route.sourceUrl,
-            viewModel = viewModel,
-            onBack = { savedSourceUrl ->
-                if (backStack.size == 1) {
-                    savedSourceUrl?.let {
-                        this@mainEntryProvider.setResult(
-                            android.app.Activity.RESULT_OK,
-                            Intent().putExtra("origin", it),
-                        )
-                    }
-                    this@mainEntryProvider.finish()
-                } else onNavigateBack()
-            },
-            onLogin = {
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.RssSource, it))
-            },
-            onDebug = { onNavigateToRoute(MainRouteRssSourceDebug(it)) },
-        )
-    }
-    entry<MainRouteBookSourceDebug> { route ->
-        val viewModel = koinViewModel<BookSourceDebugViewModel>(
-            key = "BookSourceDebug:${route.sourceUrl.orEmpty()}",
-        )
-        BookSourceDebugRoute(route.sourceUrl, viewModel, onNavigateBack)
-    }
-    entry<MainRouteRssSourceDebug> { route ->
-        val viewModel = koinViewModel<RssSourceDebugViewModel>(
-            key = "RssSourceDebug:${route.sourceUrl.orEmpty()}",
-        )
-        RssSourceDebugRoute(route.sourceUrl, viewModel, onNavigateBack)
-    }
     entry<MainRouteHome> {
         val mainViewModel = koinViewModel<MainViewModel>()
         val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
@@ -506,28 +361,12 @@ fun MainActivity.mainEntryProvider(
             onIntent = mainViewModel::onIntent,
             effects = mainViewModel.effects,
             useRail = useRail,
-            readAloudMorph = readAloudMorph,
-            homePlaybackCapsuleEnabled = homePlaybackCapsuleEnabled,
-            capsuleAnchorPreview = capsuleAnchorPreview,
             onNavigationRailWidthChanged = onNavigationRailWidthChanged,
             onMainDestinationChanged = {
                 if (panesEnabled) onNavigateToRoute(MainRouteHome)
             },
             onOpenSettings = {
                 onNavigateToRoute(MainRouteSettings)
-            },
-            onNavigateToChat = {
-                onNavigateToRoute(MainRouteAiChat())
-            },
-            onNavigateToSearch = { key ->
-                onNavigateToRoute(
-                    MainRouteSearch(
-                        key = key?.trim()?.takeIf { it.isNotEmpty() }
-                    )
-                )
-            },
-            onNavigateToScopedSearch = { scopeRaw ->
-                onNavigateToRoute(MainRouteSearch(key = null, scopeRaw = scopeRaw))
             },
             onNavigateToRemoteImport = {
                 onNavigateToRoute(MainRouteImportRemote)
@@ -542,14 +381,7 @@ fun MainActivity.mainEntryProvider(
                 onNavigateToRoute(MainRouteBookCacheManage)
             },
             onOpenBookshelfBook = { book, sharedCoverKey ->
-                if (book.isAudio) {
-                    onNavigateToRoute(
-                        MainRouteAudioPlay(
-                            bookUrl = book.bookUrl,
-                            sharedCoverKey = sharedCoverKey
-                        )
-                    )
-                } else if (!book.isLocal && book.isImage && showMangaUi) {
+                if (!book.isLocal && book.isImage && showMangaUi) {
                     onNavigateToRoute(
                         MainRouteReadManga(
                             bookUrl = book.bookUrl,
@@ -580,56 +412,12 @@ fun MainActivity.mainEntryProvider(
                     )
                 )
             },
-            onNavigateToExploreShow = { title, sourceUrl, exploreUrl ->
-                onNavigateToRoute(
-                    MainRouteExploreShow(
-                        title = title,
-                        sourceUrl = sourceUrl,
-                        exploreUrl = exploreUrl
-                    )
-                )
-            },
             onNavigateToSourceLogin = { type, sourceUrl ->
                 onNavigateToRoute(MainRouteSourceLogin(type, sourceUrl))
-            },
-            onNavigateToBookSourceManage = {
-                onNavigateToRoute(MainRouteBookSourceManage())
             },
             onNavigateToReplaceRules = { onNavigateToRoute(MainRouteReplaceRules()) },
             onNavigateToBookSourceEdit = {
                 onNavigateToRoute(MainRouteBookSourceEdit(it))
-            },
-            onNavigateToRssSourceManage = {
-                onNavigateToRoute(MainRouteRssSourceManage)
-            },
-            onNavigateToRssSourceEdit = {
-                onNavigateToRoute(MainRouteRssSourceEdit(it))
-            },
-            onNavigateToRssSort = { sourceUrl, sortUrl, key ->
-                onNavigateToRoute(
-                    MainRouteRssSort(
-                        sourceUrl = sourceUrl,
-                        sortUrl = sortUrl,
-                        key = key
-                    )
-                )
-            },
-            onNavigateToRssRead = { title, origin, link, openUrl, startPage ->
-                onNavigateToRoute(
-                    MainRouteRssRead(
-                        title = title,
-                        origin = origin,
-                        link = link,
-                        openUrl = openUrl,
-                        startPage = startPage
-                    )
-                )
-            },
-            onNavigateToRssFavorites = {
-                onNavigateToRoute(MainRouteRssFavorites)
-            },
-            onNavigateToRuleSub = {
-                onNavigateToRoute(MainRouteRuleSub)
             },
             onNavigateToReadRecord = {
                 onNavigateToRoute(MainRouteReadRecord)
@@ -663,11 +451,9 @@ fun MainActivity.mainEntryProvider(
             onNavigateToOther = { pushRoute(MainRouteSettingsOther) },
             onNavigateToRead = { pushRoute(MainRouteSettingsRead) },
             // 朗读规则 hub：入口从「我的」移到设置，页面标题与这里统一叫「朗读设置」
-            onNavigateToReadAloud = { pushRoute(MainRouteMultiRoleRule) },
             onNavigateToCover = { pushRoute(MainRouteSettingsCover) },
             onNavigateToTheme = { pushRoute(MainRouteSettingsTheme) },
             onNavigateToBackup = { pushRoute(MainRouteSettingsBackup) },
-            onNavigateToAi = { pushRoute(MainRouteSettingsAi) },
             onNavigateToDownloadCache = { pushRoute(MainRouteSettingsDownloadCache) },
             onNavigateToTranslation = { pushRoute(MainRouteSettingsTranslation) },
             onNavigateToLab = { pushRoute(MainRouteSettingsLabConfig) },
@@ -708,77 +494,11 @@ fun MainActivity.mainEntryProvider(
         BackupConfigRouteScreen(onBackClick = { onNavigateBack() })
     }
 
-    entry<MainRouteSettingsAi> {
-        AiConfigRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onNavigateToProviderEdit = { providerId ->
-                pushRoute(MainRouteSettingsAiProviderEdit(providerId = providerId))
-            },
-            onNavigateToModelEdit = { providerId, modelProfileId ->
-                pushRoute(
-                    MainRouteSettingsAiModelEdit(
-                        providerId = providerId,
-                        modelProfileId = modelProfileId
-                    )
-                )
-            },
-            onNavigateToTranslation = { pushRoute(MainRouteSettingsTranslation) },
-            onNavigateToAiSummary = { pushRoute(MainRouteSettingsAiSummary) },
-            onNavigateToAiPrompt = { pushRoute(MainRouteSettingsAiPrompt) }
-        )
-    }
 
-    entry<MainRouteSettingsAiSummary> {
-        AiSummaryConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
 
-    entry<MainRouteSettingsAiPrompt> {
-        AiPromptConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
 
-    entry<MainRouteSettingsAiProviderEdit> { route ->
-        AiProviderEditRouteScreen(
-            providerId = route.providerId,
-            onBackClick = { onNavigateBack() }
-        )
-    }
 
-    entry<MainRouteAiChat> { route ->
-        val readingContext = remember(route) {
-            route.bookUrl?.takeIf { it.isNotBlank() }?.let { bookUrl ->
-                AiReadingContext(
-                    bookUrl = bookUrl,
-                    bookName = route.bookName.orEmpty(),
-                    bookAuthor = route.bookAuthor.orEmpty(),
-                    chapterIndex = route.chapterIndex,
-                    chapterTitle = route.chapterTitle.orEmpty()
-                )
-            }
-        }
-        AiChatRouteScreen(
-            readingContext = readingContext,
-            onBackClick = { onNavigateBack() },
-            onOpenBookInfo = { book ->
-                onNavigateToRoute(
-                    MainRouteBookInfo(
-                        name = book.name,
-                        author = book.author,
-                        bookUrl = book.bookUrl,
-                        origin = book.origin,
-                        coverPath = book.coverPath
-                    )
-                )
-            }
-        )
-    }
 
-    entry<MainRouteSettingsAiModelEdit> { route ->
-        AiModelEditRouteScreen(
-            providerId = route.providerId,
-            modelProfileId = route.modelProfileId,
-            onBackClick = { onNavigateBack() }
-        )
-    }
 
     entry<MainRouteSettingsDownloadCache> {
         DownloadCacheConfigRouteScreen(onBackClick = { onNavigateBack() })
@@ -935,15 +655,6 @@ fun MainActivity.mainEntryProvider(
             }
             val readerResumeState = remember(controller, lifecycleOwner) { booleanArrayOf(false) }
             val collectorReady = remember(readBookViewModel) { booleanArrayOf(false) }
-            // 是否跟随朗读位置：用户手动翻页/跳章后为 false，此时回阅读界面不回拉可见页。
-            val readAloudSessionStore: ReadAloudSessionStore = org.koin.compose.koinInject()
-            val readAloudFollow = remember(readBookViewModel) { booleanArrayOf(true) }
-            LaunchedEffect(readAloudSessionStore) {
-                readAloudSessionStore.state
-                    .map { it.followReadAloudPosition }
-                    .distinctUntilChanged()
-                    .collect { readAloudFollow[0] = it }
-            }
             fun resumeReader() {
                 if (readerResumeState[0]) return
                 readerResumeState[0] = true
@@ -952,9 +663,6 @@ fun MainActivity.mainEntryProvider(
                 // 回到阅读界面时把可见页对齐到当前朗读位置：朗读期间用户可能进听书页跳段/跳章，
                 // 服务驱动的是内部页游标，可见页需要显式回位，否则停在离开时那一页。
                 // 只在跟随状态下做（用户手动翻页脱离后不回拉），语义与「回到朗读位置」一致。
-                if (ReadBook.isCurrentBookReadAloud && readAloudFollow[0]) {
-                    readBookViewModel.onIntent(ReadBookIntent.BackToSpeakingPosition)
-                }
             }
 
             fun pauseReader() {
@@ -996,42 +704,6 @@ fun MainActivity.mainEntryProvider(
                         )
                     )
                 },
-                onOpenSearch = { word, bookUrl, autoFocus ->
-                    onNavigateToRoute(
-                        MainRouteSearchContent(
-                            bookUrl = bookUrl,
-                            searchWord = word,
-                            searchResultIndex = readBookViewModel.uiState.value.searchResultIndex,
-                            autoFocus = autoFocus,
-                        )
-                    )
-                },
-                onOpenVoiceCasting = { bookUrl ->
-                    onNavigateToRoute(MainRouteBookVoiceCasting(bookUrl))
-                },
-                onOpenAiChat = { bookUrl, bookName, bookAuthor, chapterIndex, chapterTitle ->
-                    onNavigateToRoute(
-                        MainRouteAiChat(
-                            bookUrl = bookUrl,
-                            bookName = bookName,
-                            bookAuthor = bookAuthor,
-                            chapterIndex = chapterIndex,
-                            chapterTitle = chapterTitle,
-                        )
-                    )
-                },
-                onOpenReadAloudSubPage = { page ->
-                    onNavigateToRoute(page.toMainRoute())
-                },
-                onOpenTtsEnginesAndVoices = {
-                    onNavigateToRoute(MainRouteCloudTtsEngines(route.bookUrl))
-                },
-                onOpenTtsCache = {
-                    onNavigateToRoute(MainRouteTtsCache)
-                },
-                onOpenSourceEdit = { sourceUrl ->
-                    onNavigateToRoute(MainRouteBookSourceEdit(sourceUrl))
-                },
                 onNavigateBack = {
                     MainNavigator.navigateBack(
                         this@mainEntryProvider,
@@ -1047,11 +719,6 @@ fun MainActivity.mainEntryProvider(
                 activeReadBookRoute = route
                 MainActivity.hasActiveReadBookRoute = true
                 controller.onClose = { onNavigateBack() }
-                controller.onStartContentLoadFinish = {
-                    if (route.readAloud) {
-                        io.legado.app.model.ReadBook.readAloud()
-                    }
-                }
 
                 val lifecycleObserver = LifecycleEventObserver { _, event ->
                     when (event) {
@@ -1151,40 +818,11 @@ fun MainActivity.mainEntryProvider(
                     )
                 )
             },
-            onOpenSourceLogin = { sourceUrl ->
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.BookSource, sourceUrl))
-            },
-            onOpenSourceEdit = { sourceUrl ->
-                onNavigateToRoute(MainRouteBookSourceEdit(sourceUrl))
-            },
-            onOpenWebView = { title, url, sourceOrigin, sourceName, sourceType ->
-                onNavigateToRoute(
-                    MainRouteWebView(title, url, sourceOrigin, sourceName, sourceType)
-                )
-            },
         )
     }
 
-    entry<MainRouteReadAloudPlayer>(metadata = modalOverlayEntryMetadata()) {
-        LaunchedEffect(Unit) {
-            ReadAloudPlayerOverlayBus.request(PlaybackCapsuleState(source = PlaybackCapsuleSource.ReadAloud))
-            if (backStack.size > 1) onNavigateBack() else backStack[0] = MainRouteHome
-        }
-    }
 
     // 兼容已保存的导航栈。新入口在 MainActivity 直接打开同窗口播放浮层。
-    entry<MainRouteAudioPlay>(metadata = modalOverlayEntryMetadata()) { route ->
-        LaunchedEffect(route) {
-            ReadAloudPlayerOverlayBus.request(
-                PlaybackCapsuleState(
-                    source = PlaybackCapsuleSource.AudioBook,
-                    bookUrl = route.bookUrl.orEmpty(),
-                    inBookshelf = route.inBookshelf,
-                )
-            )
-            if (backStack.size > 1) onNavigateBack() else backStack[0] = MainRouteHome
-        }
-    }
 
     entry<MainRouteSearchContent>(
         metadata = modalOverlayEntryMetadata() + ModalOverlaySceneStrategy.searchSlide()
@@ -1202,127 +840,11 @@ fun MainActivity.mainEntryProvider(
         )
     }
 
-    entry<MainRouteSearch> { route ->
-        val searchViewModel = koinViewModel<SearchViewModel>()
 
-        LaunchedEffect(route.key, route.scopeRaw, searchViewModel) {
-            searchViewModel.onIntent(
-                SearchIntent.Initialize(
-                    key = route.key,
-                    scopeRaw = route.scopeRaw
-                )
-            )
-        }
-
-        SearchRouteScreen(
-            viewModel = searchViewModel,
-            onBack = {
-                onNavigateBack()
-            },
-            onOpenBookInfo = { name, author, bookUrl, origin, coverPath, sharedCoverKey ->
-                onNavigateToRoute(
-                    MainRouteBookInfo(
-                        name = name,
-                        author = author,
-                        bookUrl = bookUrl,
-                        origin = origin,
-                        coverPath = coverPath,
-                        sharedCoverKey = sharedCoverKey
-                    )
-                )
-            },
-            onOpenSourceManage = {
-                onNavigateToRoute(MainRouteBookSourceManage())
-            },
-            sharedTransitionScope = sharedTransitionScope,
-            animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-        )
-    }
-
-    entry<MainRouteRssSort> { route ->
-        RssSortRouteScreen(
-            sourceUrl = route.sourceUrl,
-            initialSortUrl = route.sortUrl,
-            initialSearchKey = route.key,
-            onBackClick = { onNavigateBack() },
-            onSearch = { key ->
-                onNavigateToRoute(
-                    MainRouteRssSort(
-                        sourceUrl = route.sourceUrl,
-                        key = key
-                    )
-                )
-            },
-            onOpenRead = { title, origin, link, openUrl ->
-                if (link?.contains("@js:") == true) {
-                    onNavigateToRoute(
-                        MainRouteRssSort(
-                            sourceUrl = origin,
-                            sortUrl = link
-                        )
-                    )
-                } else {
-                    onNavigateToRoute(
-                        MainRouteRssRead(
-                            title = title,
-                            origin = origin,
-                            link = link,
-                            openUrl = openUrl
-                        )
-                    )
-                }
-            },
-            onEditSource = { onNavigateToRoute(MainRouteRssSourceEdit(it)) },
-            onLogin = {
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.RssSource, it))
-            },
-        )
-    }
 
     // 与内置浏览器一致：不覆盖宿主转场，交由 NavDisplay 的全局 transitionSpec 结算。
-    entry<MainRouteRssRead> { route ->
-        RssReadRouteScreen(
-            title = route.title,
-            origin = route.origin,
-            link = route.link,
-            openUrl = route.openUrl,
-            startPage = route.startPage,
-            onBackClick = { onNavigateBack() },
-            onOpenArticles = { sortUrl, targetOrigin ->
-                onNavigateToRoute(
-                    MainRouteRssSort(
-                        sourceUrl = targetOrigin ?: route.origin,
-                        sortUrl = sortUrl
-                    )
-                )
-            }
-        )
-    }
 
-    entry<MainRouteRssFavorites> {
-        RssFavoritesRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onOpenRead = { title, origin, link, openUrl ->
-                onNavigateToRoute(
-                    MainRouteRssRead(
-                        title = title,
-                        origin = origin,
-                        link = link,
-                        openUrl = openUrl
-                    )
-                )
-            }
-        )
-    }
 
-    entry<MainRouteRuleSub> {
-        RuleSubRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onImportBookSource = {
-                onNavigateToRoute(MainRouteBookSourceManage(it))
-            },
-        )
-    }
 
     entry<MainRouteReadRecord> {
         ReadRecordRouteScreen(
@@ -1416,9 +938,6 @@ fun MainActivity.mainEntryProvider(
             onOpenSearch = { keyword ->
                 onNavigateToRoute(MainRouteSearch(key = keyword))
             },
-            onOpenBookSourceEdit = { sourceUrl ->
-                onNavigateToRoute(MainRouteBookSourceEdit(sourceUrl))
-            },
             onOpenSourceLogin = { sourceUrl ->
                 onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.BookSource, sourceUrl))
             },
@@ -1448,26 +967,8 @@ fun MainActivity.mainEntryProvider(
                     )
                 )
             },
-            onOpenAudioPlay = { bookUrl, inBookshelf ->
-                onNavigateToRoute(
-                    MainRouteAudioPlay(
-                        bookUrl = bookUrl,
-                        inBookshelf = inBookshelf,
-                        sharedCoverKey = bookInfoCoverSharedElementKey(
-                            bookUrl,
-                            route.openRequestId
-                        ),
-                    )
-                )
-            },
             onNavigateToBookInfo = { name, author, bookUrl, origin, coverPath ->
                 onNavigateToRoute(MainRouteBookInfo(name, author, bookUrl, origin, coverPath))
-            },
-            onNavigateToExploreShow = { title, sourceUrl, exploreUrl ->
-                onNavigateToRoute(MainRouteExploreShow(title, sourceUrl, exploreUrl))
-            },
-            onOpenCharacterDetail = { bookUrl, characterId ->
-                onNavigateToRoute(MainRouteBookCharacterDetail(bookUrl, characterId))
             },
             onOpenCharacterNetwork = { bookUrl ->
                 onNavigateToRoute(MainRouteBookCharacterNetwork(bookUrl))
@@ -1487,258 +988,16 @@ fun MainActivity.mainEntryProvider(
         )
     }
 
-    entry<MainRouteBookCharacterDetail> { route ->
-        val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        var pendingAvatarUri by rememberSaveable { mutableStateOf<String?>(null) }
-        val viewModel = koinViewModel<BookCharacterDetailViewModel>(
-            key = "BookCharacterDetail:${route.bookUrl}:${route.characterId.orEmpty()}",
-            parameters = { parametersOf(route.bookUrl, route.characterId) }
-        )
-        val state = viewModel.uiState.collectAsStateWithLifecycle().value
-        val imagePicker = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument()
-        ) { uri ->
-            pendingAvatarUri = uri?.toString()
-        }
-        var showAvatarSource by remember { mutableStateOf(false) }
-        BookCharacterDetailScreen(
-            state = state,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onPickAvatar = { showAvatarSource = true },
-        )
-        // 头像有两种来源（本地文件 / 图片链接），选择器同时提供「编辑当前头像」重进裁剪。
-        CharacterAvatarSourceSheet(
-            show = showAvatarSource,
-            onDismissRequest = { showAvatarSource = false },
-            onPickLocal = {
-                showAvatarSource = false
-                imagePicker.launch(arrayOf("image/*"))
-            },
-            onUrl = { url ->
-                showAvatarSource = false
-                // 旧头像文件由 ViewModel 在落库成功后再删（见 save 的 avatarChanged 分支）：
-                // 在这里删的话，用户不保存就退出，档案里留的是个已被删掉的地址。
-                viewModel.onIntent(CharacterDetailIntent.SetAvatarUri(url))
-            },
-            hasAvatar = state.avatarUri.isNotBlank(),
-            onEditAvatar = {
-                showAvatarSource = false
-                pendingAvatarUri = state.avatarUri
-            },
-        )
-        CharacterAvatarCropDialog(
-            sourceUri = pendingAvatarUri?.let(Uri::parse),
-            onDismissRequest = { pendingAvatarUri = null },
-            onConfirm = { crop ->
-                val sourceUri =
-                    pendingAvatarUri?.let(Uri::parse) ?: return@CharacterAvatarCropDialog
-                pendingAvatarUri = null
-                scope.launch {
-                    runCatching {
-                        withContext(IO) {
-                            saveCharacterAvatar(context, sourceUri, crop)
-                        }
-                    }.onSuccess { avatarUri ->
-                        deleteCharacterAvatar(context, state.avatarUri)
-                        viewModel.onIntent(CharacterDetailIntent.SetAvatarUri(avatarUri))
-                    }.onFailure {
-                        context.toastOnUi(
-                            it.localizedMessage ?: context.getString(R.string.save_failed)
-                        )
-                    }
-                }
-            },
-        )
-    }
 
-    entry<MainRouteBookCharacterNetwork> { route ->
-        val viewModel = koinViewModel<BookCharacterNetworkViewModel>(
-            key = "BookCharacterNetwork:${route.bookUrl}",
-            parameters = { parametersOf(route.bookUrl) }
-        )
-        BookCharacterNetworkScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onOpenCharacterDetail = { characterId ->
-                onNavigateToRoute(MainRouteBookCharacterDetail(route.bookUrl, characterId))
-            },
-            onRefresh = viewModel::refresh,
-        )
-    }
 
-    entry<MainRouteBookCharacterList> { route ->
-        val viewModel = koinViewModel<BookCharacterListViewModel>(
-            key = "CharacterList:${route.bookUrl}",
-            parameters = { parametersOf(route.bookUrl) }
-        )
-        BookCharacterListScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onOpenDetail = { characterId ->
-                onNavigateToRoute(MainRouteBookCharacterDetail(route.bookUrl, characterId))
-            },
-            onRefresh = viewModel::refresh,
-        )
-    }
 
-    entry<MainRouteBookVoiceCasting> { route ->
-        val viewModel = koinViewModel<BookVoiceCastingViewModel>(
-            key = "BookVoiceCasting:${route.bookUrl}",
-            parameters = { parametersOf(route.bookUrl) },
-        )
-        BookVoiceCastingScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onManageCloudTts = { onNavigateToRoute(MainRouteCloudTtsEngines(route.bookUrl)) },
-            onOpenCharacterDetail = { characterId ->
-                onNavigateToRoute(MainRouteBookCharacterDetail(route.bookUrl, characterId))
-            },
-        )
-    }
 
-    entry<MainRouteCloudTtsEngines> { route ->
-        val viewModel = koinViewModel<CloudTtsViewModel>()
-        LaunchedEffect(route.bookUrl) {
-            viewModel.onIntent(CloudTtsIntent.SetBookContext(route.bookUrl))
-        }
-        val context = LocalContext.current
-        val importLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument()
-        ) { uri -> uri?.let { viewModel.onIntent(CloudTtsIntent.ImportHttpTtsFileSelected(it)) } }
-        val exportLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/json")
-        ) { uri -> uri?.let { viewModel.onIntent(CloudTtsIntent.ExportHttpTtsFileSelected(it)) } }
-        LaunchedEffect(viewModel) {
-            viewModel.effects.collectLatest { effect ->
-                when (effect) {
-                    CloudTtsEffect.OpenHttpTtsImportPicker -> importLauncher.launch(
-                        arrayOf("application/json", "text/plain")
-                    )
 
-                    CloudTtsEffect.OpenHttpTtsExportPicker -> exportLauncher.launch("httpTTS.json")
-                    is CloudTtsEffect.OpenHttpTtsLogin -> onNavigateToRoute(
-                        MainRouteSourceLogin(
-                            type = SourceLoginType.HttpTts,
-                            sourceKey = effect.engineId.toString(),
-                        )
-                    )
 
-                    else -> Unit
-                }
-            }
-        }
-        CloudTtsScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-        )
-    }
 
-    entry<MainRouteTtsCache> {
-        TtsCacheRouteScreen(
-            onBackClick = { onNavigateBack() },
-        )
-    }
 
-    entry<MainRouteBookKnowledgeList> { route ->
-        val viewModel = koinViewModel<BookKnowledgeListViewModel>(
-            key = "KnowledgeList:${route.bookUrl}",
-            parameters = { parametersOf(route.bookUrl) }
-        )
-        BookKnowledgeListScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onOpenDetail = { entryId ->
-                onNavigateToRoute(MainRouteBookKnowledgeDetail(route.bookUrl, entryId))
-            },
-            onRefresh = viewModel::refresh,
-        )
-    }
 
-    entry<MainRouteBookKnowledgeDetail> { route ->
-        val viewModel = koinViewModel<BookKnowledgeDetailViewModel>(
-            key = "KnowledgeDetail:${route.bookUrl}:${route.entryId.orEmpty()}",
-            parameters = { parametersOf(route.bookUrl, route.entryId) }
-        )
-        BookKnowledgeDetailScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-        )
-    }
 
-    entry<MainRouteBookEventList> { route ->
-        val viewModel = koinViewModel<BookEventListViewModel>(
-            key = "EventList:${route.bookUrl}",
-            parameters = { parametersOf(route.bookUrl) }
-        )
-        BookEventListScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-            onOpenDetail = { eventId ->
-                onNavigateToRoute(MainRouteBookEventDetail(route.bookUrl, eventId))
-            },
-            onRefresh = viewModel::refresh,
-        )
-    }
-
-    entry<MainRouteBookEventDetail> { route ->
-        val viewModel = koinViewModel<BookEventDetailViewModel>(
-            key = "EventDetail:${route.bookUrl}:${route.eventId.orEmpty()}",
-            parameters = { parametersOf(route.bookUrl, route.eventId) }
-        )
-        BookEventDetailScreen(
-            state = viewModel.uiState.collectAsStateWithLifecycle().value,
-            onIntent = viewModel::onIntent,
-            effects = viewModel.effects,
-            onBack = { onNavigateBack() },
-        )
-    }
-
-    entry<MainRouteExploreShow> { route ->
-        val exploreViewModel = koinViewModel<ExploreShowViewModel>()
-
-        LaunchedEffect(route.sourceUrl, route.exploreUrl, exploreViewModel) {
-            exploreViewModel.onIntent(
-                ExploreShowIntent.InitData(route.sourceUrl, route.exploreUrl)
-            )
-        }
-
-        ExploreShowRouteScreen(
-            viewModel = exploreViewModel,
-            title = route.title ?: "探索",
-            onBack = { onNavigateBack() },
-            onBookClick = { book, sharedCoverKey ->
-                onNavigateToRoute(
-                    MainRouteBookInfo(
-                        name = book.name,
-                        author = book.author,
-                        bookUrl = book.bookUrl,
-                        origin = book.origin,
-                        coverPath = book.coverUrl,
-                        sharedCoverKey = sharedCoverKey
-                    )
-                )
-            },
-            sharedTransitionScope = sharedTransitionScope,
-            animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-        )
-    }
 
     entry<MainRouteHighlightTagRule> {
         HighlightTagRuleRouteScreen(
@@ -1782,54 +1041,12 @@ fun MainActivity.mainEntryProvider(
         AllBookmarkRouteScreen(onBack = { onNavigateBack() })
     }
 
-    entry<MainRouteMultiRoleRule> {
-        MultiRoleRuleRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onNavigateToVoicePool = { pushRoute(MainRouteVoicePool) },
-            onNavigateToBgmPool = { pushRoute(MainRouteBgmPool) },
-            onNavigateToVoiceEffect = { pushRoute(MainRouteVoiceEffect) },
-            onNavigateToCapsuleStyle = { pushRoute(MainRouteCastCapsuleStyle) },
-            onNavigateToEngines = { pushRoute(MainRouteCloudTtsEngines()) },
-            onNavigateToRecognition = { pushRoute(MainRouteMultiRoleRecognition) },
-            onNavigateToRegexCast = { pushRoute(MainRouteRegexCastRule) },
-        )
-    }
 
-    entry<MainRouteCastCapsuleStyle> {
-        CastCapsuleStyleRouteScreen(
-            onBackClick = { onNavigateBack() },
-        )
-    }
 
-    entry<MainRouteVoicePool> {
-        VoicePoolRouteScreen(
-            onBackClick = { onNavigateBack() }
-        )
-    }
 
-    entry<MainRouteBgmPool> {
-        BgmPoolRouteScreen(
-            onBackClick = { onNavigateBack() }
-        )
-    }
 
-    entry<MainRouteVoiceEffect> {
-        VoiceEffectRouteScreen(
-            onBackClick = { onNavigateBack() },
-        )
-    }
 
-    entry<MainRouteMultiRoleRecognition> {
-        MultiRoleRecognitionRouteScreen(
-            onBackClick = { onNavigateBack() }
-        )
-    }
 
-    entry<MainRouteRegexCastRule> {
-        RegexCastRuleRouteScreen(
-            onBackClick = { onNavigateBack() },
-        )
-    }
 
     entry<MainRouteAbout> {
         val viewModel = koinViewModel<AboutViewModel>()
@@ -1856,186 +1073,3 @@ fun MainActivity.mainEntryProvider(
 }
 
 /** 有声书的 Android 宿主动作；播放页与听书页共用同窗口形变组件。 */
-@Composable
-internal fun MainActivity.AudioPlayerMorphOverlay(
-    bookUrl: String,
-    inBookshelf: Boolean,
-    morph: ReadAloudMorphState,
-    visible: Boolean,
-    awaitCapsuleAnchor: Boolean,
-    predictiveBackEnabled: Boolean,
-    onDismiss: () -> Unit,
-) {
-    // 浮层关闭后释放页面 VM；播放服务和会话继续保留，重新打开会重新同步书籍。
-    val playerStoreOwner = remember {
-        object : ViewModelStoreOwner {
-            override val viewModelStore = ViewModelStore()
-        }
-    }
-    DisposableEffect(playerStoreOwner) {
-        onDispose { playerStoreOwner.viewModelStore.clear() }
-    }
-    val audioPlayViewModel = koinViewModel<AudioPlayViewModel>(
-        key = "AudioPlay:${bookUrl}",
-        viewModelStoreOwner = playerStoreOwner,
-    )
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val uiState by audioPlayViewModel.uiState.collectAsStateWithLifecycle()
-    var showAudioChangeSource by remember { mutableStateOf(false) }
-    val sourceEditResult = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        if (it.resultCode == Activity.RESULT_OK) {
-            audioPlayViewModel.onIntent(AudioPlayIntent.SourceEdited)
-        }
-    }
-
-    fun copyAudioPlayUrl() {
-        AudioPlay.book?.let {
-            SourceCallBack.callBackBtn(
-                this@AudioPlayerMorphOverlay,
-                SourceCallBack.CLICK_COPY_PLAY_URL,
-                AudioPlay.bookSource,
-                it,
-                AudioPlay.durChapter,
-                BookType.audio,
-                result = AudioPlayService.url,
-            ) {
-                sendToClip(AudioPlayService.url)
-            }
-        }
-    }
-
-    fun finishAudioPlay() {
-        if (AudioPlay.inBookshelf) {
-            SourceCallBack.callBackBook(
-                SourceCallBack.END_READ,
-                AudioPlay.bookSource,
-                AudioPlay.book,
-                AudioPlay.durChapter
-            )
-        }
-        onDismiss()
-    }
-
-    LaunchedEffect(bookUrl, inBookshelf, audioPlayViewModel) {
-        audioPlayViewModel.onIntent(
-            AudioPlayIntent.Init(bookUrl.orEmpty(), inBookshelf)
-        )
-    }
-    DisposableEffect(audioPlayViewModel, lifecycleOwner) {
-        MainActivity.hasActiveAudioPlayRoute = true
-        this@AudioPlayerMorphOverlay.activeAudioPlayViewModel = audioPlayViewModel
-        AudioPlay.register(this@AudioPlayerMorphOverlay)
-        onDispose {
-            AudioPlay.unregister(this@AudioPlayerMorphOverlay)
-            if (this@AudioPlayerMorphOverlay.activeAudioPlayViewModel === audioPlayViewModel) {
-                this@AudioPlayerMorphOverlay.activeAudioPlayViewModel = null
-            }
-            MainActivity.hasActiveAudioPlayRoute = false
-        }
-    }
-    LaunchedEffect(audioPlayViewModel) {
-        audioPlayViewModel.effects.collectLatest { effect ->
-            when (effect) {
-                is AudioPlayEffect.OpenChangeSource -> showAudioChangeSource = true
-
-                is AudioPlayEffect.OpenLogin -> startActivity(
-                    MainActivity.createSourceLoginIntent(
-                        this@AudioPlayerMorphOverlay,
-                        SourceLoginType.BookSource,
-                        effect.sourceUrl
-                    )
-                )
-
-                AudioPlayEffect.CopyPlayUrl -> copyAudioPlayUrl()
-                is AudioPlayEffect.OpenEditSource -> sourceEditResult.launch(
-                    MainActivity.createBookSourceEditIntent(
-                        this@AudioPlayerMorphOverlay,
-                        effect.sourceUrl
-                    )
-                )
-
-                is AudioPlayEffect.ShowToast -> toastOnUi(effect.message)
-                is AudioPlayEffect.OpenBookReader -> {
-                    startActivity(
-                        MainActivity.createReadBookIntent(
-                            this@AudioPlayerMorphOverlay,
-                            effect.bookUrl
-                        )
-                    )
-                    onDismiss()
-                }
-
-                AudioPlayEffect.Finish -> {
-                    if (!morph.hasCapsuleAnchors) {
-                        val anchor = BookCoverMorphAnchors.get(bookUrl)
-                        if (anchor != null && !anchor.bounds.isEmpty && isAnchorVisibleInScreen(
-                                anchor.bounds,
-                                morph.screenBounds
-                            )
-                        ) {
-                            morph.reportBookCoverAnchor(anchor.bounds, anchor.cornerRadiusPx)
-                        }
-                    }
-                    morph.animateTo(0f)
-                    finishAudioPlay()
-                }
-            }
-        }
-    }
-    val refreshAudioAnchor = {
-        if (!morph.hasCapsuleAnchors) {
-            val anchor = BookCoverMorphAnchors.get(bookUrl)
-            if (anchor != null && !anchor.bounds.isEmpty && isAnchorVisibleInScreen(
-                    anchor.bounds,
-                    morph.screenBounds
-                )
-            ) {
-                morph.reportBookCoverAnchor(anchor.bounds, anchor.cornerRadiusPx)
-            }
-        }
-    }
-    LaunchedEffect(bookUrl, visible) {
-        if (visible && morph.progress.value == 0f) {
-            refreshAudioAnchor()
-        }
-    }
-    PlayerMorphHost(
-        appearance = PlayerMorphAppearance(
-            uiState.bookName, uiState.author, uiState.coverPath,
-            uiState.sourceOrigin, uiState.bgMode,
-        ),
-        playerTheme = rememberPlayerThemeOverride(
-            uiState.bookName, uiState.author, uiState.coverPath, uiState.sourceOrigin,
-        ),
-        morph = morph,
-        visible = visible,
-        awaitCapsuleAnchor = awaitCapsuleAnchor,
-        predictiveBackEnabled = predictiveBackEnabled,
-        verticalDragEnabled = true,
-        onBeforeCollapse = refreshAudioAnchor,
-        backEnabled = uiState.activeSheet == null && !showAudioChangeSource,
-        onDismiss = ::finishAudioPlay,
-    ) { onCollapse ->
-        AudioPlayScreenContent(
-            state = uiState,
-            onIntent = audioPlayViewModel::onIntent,
-            onBack = onCollapse,
-        )
-    }
-    val audioBook = AudioPlay.book
-    if (showAudioChangeSource && audioBook != null) {
-        ChangeSourceSheet(
-            show = true,
-            oldBook = audioBook,
-            onDismissRequest = { showAudioChangeSource = false },
-            onReplace = { source, book, toc, _ ->
-                audioPlayViewModel.changeTo(source, book, toc)
-            },
-            onAddAsNew = { book, toc ->
-                audioPlayViewModel.addToBookshelf(book, toc)
-            },
-        )
-    }
-}

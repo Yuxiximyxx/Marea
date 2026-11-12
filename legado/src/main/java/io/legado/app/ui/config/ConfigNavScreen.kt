@@ -23,11 +23,9 @@ fun ConfigNavScreen(
     onBackClick: () -> Unit,
     onNavigateToOther: () -> Unit,
     onNavigateToRead: () -> Unit,
-    onNavigateToReadAloud: () -> Unit,
     onNavigateToCover: () -> Unit,
     onNavigateToTheme: () -> Unit,
     onNavigateToBackup: () -> Unit,
-    onNavigateToAi: () -> Unit,
     onNavigateToDownloadCache: () -> Unit,
     onNavigateToTranslation: () -> Unit,
     onNavigateToLab: () -> Unit,
@@ -69,11 +67,6 @@ fun ConfigNavScreen(
                         onClick = onNavigateToRead
                     )
                     ClickableSettingItem(
-                        title = stringResource(R.string.aloud_config),
-                        description = stringResource(R.string.multi_role_rule_summary),
-                        onClick = onNavigateToReadAloud
-                    )
-                    ClickableSettingItem(
                         title = stringResource(R.string.cover_config),
                         onClick = onNavigateToCover
                     )
@@ -84,10 +77,6 @@ fun ConfigNavScreen(
                     ClickableSettingItem(
                         title = stringResource(R.string.backup_restore),
                         onClick = onNavigateToBackup
-                    )
-                    ClickableSettingItem(
-                        title = stringResource(R.string.ai_config),
-                        onClick = onNavigateToAi
                     )
                     ClickableSettingItem(
                         title = stringResource(R.string.translation_config),

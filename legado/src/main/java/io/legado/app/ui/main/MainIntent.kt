@@ -66,12 +66,6 @@ object MainIntent {
     /**
      * 磁贴等无 Activity 的入口无法自行申请本地网络权限，转到宿主 Activity 申请并补启 Web 服务。
      */
-    fun createWebServiceLocalNetworkIntent(context: Context): Intent =
-        createLauncherIntent(context).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_WEB_SERVICE_LOCAL_NETWORK, true)
-        }
-
     fun createSourceLoginIntent(
         context: Context,
         type: io.legado.app.ui.login.SourceLoginType,

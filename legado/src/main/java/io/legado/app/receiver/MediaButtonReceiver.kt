@@ -100,20 +100,7 @@ class MediaButtonReceiver : BroadcastReceiver() {
                 MainActivity.hasActiveReadBookRoute || MainActivity.hasActiveAudioPlayRoute ->
                     postEvent(EventBus.MEDIA_BUTTON, true)
 
-                else -> if (aloudSettingsGateway.currentSettings.mediaButtonOnExit || LifecycleHelp.activitySize() > 0 || !isMediaKey) {
-                    ReadAloud.upReadAloudClass()
-                    if (ReadBook.book != null) {
-                        ReadBook.readAloud()
-                    } else {
-                        appDb.bookDao.lastReadBook?.let {
-                            ReadBook.resetData(it)
-                            ReadBook.clearTextChapter()
-                            ReadBook.loadContent(false) {
-                                ReadBook.readAloud()
-                            }
-                        }
-                    }
-                }
+                else -> Unit
             }
         }
     }

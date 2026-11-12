@@ -15,7 +15,6 @@ private val standaloneMainRoutes = setOf(
     MainRouteReadAloudPlayer::class,
     MainRouteSearchContent::class,
     MainRouteSourceLogin::class,
-    MainRouteWebView::class,
     MainRouteRssRead::class,
 )
 
@@ -82,7 +81,7 @@ internal class MainEntryNavigation(
         // 播放、登录等浮层继续覆盖当前场景，不能移除其下的详情。
         if (supportsMainPanes(source::class) &&
             (destination is MainRouteReadBook || destination is MainRouteReadManga ||
-                    destination is MainRouteWebView || destination is MainRouteRssRead)
+                    destination is MainRouteRssRead)
         ) {
             while (backStack.lastIndex > sourceIndex) backStack.removeAt(backStack.lastIndex)
             tracker.onBackStackChanged(backStack)

@@ -357,23 +357,11 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                     }
                     val readerResumeState = remember(controller, lifecycleOwner) { booleanArrayOf(false) }
                     val collectorReady = remember(readBookViewModel) { booleanArrayOf(false) }
-                    val readAloudSessionStore: io.legado.app.model.ReadAloudSessionStore =
-                        org.koin.compose.koinInject()
-                    val readAloudFollow = remember(readBookViewModel) { booleanArrayOf(true) }
-                    LaunchedEffect(readAloudSessionStore) {
-                        readAloudSessionStore.state
-                            .map { it.followReadAloudPosition }
-                            .distinctUntilChanged()
-                            .collect { readAloudFollow[0] = it }
-                    }
                     fun resumeReader() {
                         if (readerResumeState[0]) return
                         readerResumeState[0] = true
                         controller.onResume()
                         readBookViewModel.onIntent(ReadBookIntent.OnResume)
-                        if (ReadBook.isCurrentBookReadAloud && readAloudFollow[0]) {
-                            readBookViewModel.onIntent(ReadBookIntent.BackToSpeakingPosition)
-                        }
                     }
                     fun pauseReader() {
                         if (!readerResumeState[0]) return
@@ -423,12 +411,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                             )
                         },
                         // 以下子页不在本实验范围（AI / 朗读配音 / TTS / 书源），回调留空
-                        onOpenVoiceCasting = { },
-                        onOpenAiChat = { _, _, _, _, _ -> },
-                        onOpenReadAloudSubPage = { },
-                        onOpenTtsEnginesAndVoices = { },
-                        onOpenTtsCache = { },
-                        onOpenSourceEdit = { },
                         onNavigateBack = {
                             navigateBack(backStack, route)
                         },
@@ -436,11 +418,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                     DisposableEffect(controller, lifecycleOwner, route.readAloud) {
                         readerController = controller
                         controller.onClose = { navigateBack(backStack) }
-                        controller.onStartContentLoadFinish = {
-                            if (route.readAloud) {
-                                ReadBook.readAloud()
-                            }
-                        }
                         val lifecycleObserver = LifecycleEventObserver { _, event ->
                             when (event) {
                                 Lifecycle.Event.ON_RESUME -> {
@@ -605,8 +582,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                         },
                         // 以下目标页不在本实验宿主范围
                         onOpenSearch = { },
-                        onOpenBookSourceEdit = { },
-                        onOpenSourceLogin = { },
                         onOpenSettings = { },
                         onOpenReader = { readerBookUrl, inBookshelf, chapterChanged ->
                             navigateToRoute(

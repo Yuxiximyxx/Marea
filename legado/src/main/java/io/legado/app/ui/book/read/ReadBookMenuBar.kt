@@ -391,7 +391,7 @@ private fun ReadBookMenuSurface(
     // + 两根滑块 + 底部五个动作），沿用官方那 64% 的高度装不下，只能上下滑才看全，
     // 所以只给这一路抬高上限，其它路由的观感保持不变。
     val maxHeight = with(density) {
-        val fraction = if (route == ReadBookMenuRoute.ReadAloud) 0.92f else 0.64f
+        val fraction = 0.64f
         windowSize.height.toDp() * fraction
     }
     val screenWidth = with(density) { windowSize.width.toDp() }
@@ -825,62 +825,6 @@ private fun ReadBookMenuSurface(
                                 onGridMeasured = { themeListGridHeightPx = it },
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 styleConfig = state.styleConfig,
-                            )
-                        }
-                    }
-
-                    ReadBookMenuRoute.ReadAloud -> {
-                        // 定时卡片叠在菜单页之上：它是宿主无关的读写组件，
-                        // 由 ReadBookMenuBar 自己的布尔状态控制，不占 activeSheet。
-                        ReadAloudTimerSheet(
-                            show = readAloudTimerSheetOpen,
-                            config = ReadAloudTimerConfig(
-                                mode = ReadAloudTimerMode.fromStorage(state.readAloudTimerMode),
-                                minutes = state.readAloudTtsTimer,
-                                chapters = state.readAloudTimerChapters,
-                                finishCurrentChapterAfterTimer =
-                                    state.readAloudFinishCurrentChapterAfterTimer,
-                            ),
-                            onDismissRequest = { readAloudTimerSheetOpen = false },
-                            onSetMode = {
-                                onIntent(
-                                    ReadBookIntent.SetReadAloudTimerMode(it.storageValue)
-                                )
-                            },
-                            onSetMinutes = { onIntent(ReadBookIntent.SetReadAloudTtsTimer(it)) },
-                            onSetChapters = {
-                                onIntent(ReadBookIntent.SetReadAloudTimerChapters(it))
-                            },
-                            onSetFinishCurrentChapterAfterTimer = {
-                                onIntent(ReadBookIntent.SetFinishCurrentChapterAfterTimer(it))
-                            },
-                        )
-                        ReadBookMenuRoutePage(
-                            title = stringResource(R.string.aloud_config),
-                            maxHeight = maxHeight,
-                            scrollContent = true,
-                            bottomPadding = if (extendSurfaceToNavigationBar) navBarHeight else 0.dp,
-                            onBack = { onIntent(ReadBookIntent.ReadMenuBack) },
-                        ) {
-                            ReadAloudContent(
-                                state = state,
-                                onIntent = onIntent,
-                                onDismissRequest = { onIntent(ReadBookIntent.HideMenu) },
-                                onOpenChapterList = {
-                                    onIntent(ReadBookIntent.HideMenu)
-                                    onIntent(ReadBookIntent.OpenChapterList)
-                                },
-                                onGoToBackground = {
-                                    onIntent(ReadBookIntent.CloseReadBook(keepReadAloud = true))
-                                },
-                                onOpenMainMenu = {
-                                    onIntent(ReadBookIntent.ReadMenuBack)
-                                },
-                                onShowReadAloudConfig = {
-                                    onIntent(ReadBookIntent.ShowReadAloudConfig)
-                                },
-                                onShowTimerSettings = { readAloudTimerSheetOpen = true },
-                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }

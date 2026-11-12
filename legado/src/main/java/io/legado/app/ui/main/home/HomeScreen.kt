@@ -144,11 +144,6 @@ fun HomeRouteScreen(
         coverPath: String?,
         sharedCoverKey: String?,
     ) -> Unit,
-    onOpenExploreShow: (
-        title: String?,
-        sourceUrl: String,
-        exploreUrl: String?,
-    ) -> Unit,
     onOpenBackupSettings: () -> Unit,
     onNavigateToReadRecord: () -> Unit,
     onNavigateToReadRecordOverview: () -> Unit,
@@ -163,11 +158,9 @@ fun HomeRouteScreen(
     var previewBook by remember { mutableStateOf<SearchBook?>(null) }
     var previewSharedCoverKey by remember { mutableStateOf<String?>(null) }
 
-    val feedActions = remember(homepageViewModel, onNavigateToBookInfo, onOpenExploreShow) {
+    val feedActions = remember(homepageViewModel, onNavigateToBookInfo) {
         HomepageFeedActions(
-            onModuleHeaderClick = { sourceUrl, exploreUrl, title ->
-                onOpenExploreShow(title, sourceUrl, exploreUrl)
-            },
+            onModuleHeaderClick = { _, _, _ -> },
             onRetryModule = homepageViewModel::retryModule,
             onLoadMoreModule = homepageViewModel::loadMoreModule,
             onBookClick = { book: SearchBook, sharedCoverKey: String? ->
@@ -324,8 +317,7 @@ fun HomeRouteScreen(
                         effect.sharedCoverKey,
                     )
 
-                is io.legado.app.ui.main.homepage.HomepageEffect.NavigateToExploreShow ->
-                    onOpenExploreShow(effect.title, effect.sourceUrl, effect.exploreUrl)
+                is io.legado.app.ui.main.homepage.HomepageEffect.NavigateToExploreShow -> Unit
 
                 is io.legado.app.ui.main.homepage.HomepageEffect.ShowSnackbar -> {}
             }

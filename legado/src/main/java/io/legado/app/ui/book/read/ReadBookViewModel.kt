@@ -120,11 +120,9 @@ class ReadBookViewModel(
     val translateChapterUseCase: io.legado.app.domain.usecase.TranslateChapterUseCase,
     private val readSettingsRepository: ReadSettingsRepository,
     private val readBookStyleConfigRepository: ReadStyleGateway,
-    private val readAloudSettingsRepository: ReadAloudSettingsRepository,
     private val localPreferencesRepository: SettingsRepository,
     private val highlightRuleRepository: HighlightRuleRepository,
     private val uploadRepository: UploadRepository,
-    private val changeBookSourceUseCase: ChangeBookSourceUseCase,
     private val generateChapterSummaryUseCase: GenerateChapterSummaryUseCase,
     private val cleanSelectedTextUseCase: CleanSelectedTextUseCase,
     private val aiTextFactoryUseCase: AiTextFactoryUseCase,
@@ -136,12 +134,9 @@ class ReadBookViewModel(
     private val aiArtifactGateway: AiArtifactGateway,
     private val aiPromptPresetGateway: AiPromptPresetGateway,
     private val aiProfileGateway: AiProfileGateway,
-    private val syncReadAloudVoicesUseCase: SyncReadAloudVoicesUseCase,
-    private val readAloudSessionStore: ReadAloudSessionStore,
     private val aiCastAssignUseCase: io.legado.app.help.readaloud.cast.AiCastAssignUseCase,
     private val aiSceneAssignUseCase: io.legado.app.help.readaloud.cast.AiSceneAssignUseCase,
     private val replaceRuleRepository: ReplaceRuleRepository,
-    private val changeSourceSettingsGateway: ChangeSourceSettingsGateway,
     private val appShellSettingsGateway: AppShellSettingsGateway,
     private val appUiConfigurationGateway: AppUiConfigurationGateway,
     private val otherSettingsGateway: OtherSettingsGateway,
@@ -178,12 +173,7 @@ class ReadBookViewModel(
     @Volatile private var composePageContext: ReaderPageContext? = null
     private var composeProgressJob: Job? = null
     private var readBookSyncJob: Job? = null
-    private val _readAloudProgress = MutableStateFlow(
-        activeReadAloudProgress(
-            isPlaying = ReadBook.isCurrentBookReadAloud && BaseReadAloudService.isPlay(),
-            currentProgress = BaseReadAloudService.currentProgress,
-        )
-    )
+    private val _readAloudProgress = MutableStateFlow<Int?>(null)
     val readAloudProgress = _readAloudProgress.asStateFlow()
     private suspend fun emitEffectWhenSubscribed(effect: ReadBookEffect) {
         _effects.subscriptionCount.first { it > 0 }
@@ -277,97 +267,7 @@ class ReadBookViewModel(
         },
     ) }
 
-    // --- AI 域（摘要 / 净化 / 重写 / 预设）---
-
-    private val aiHost = object : ReadAiDelegate.Host {
-        override val activeSheet: ReadBookSheet? get() = _uiState.value.activeSheet
-
-        override val chapterName: String get() = _uiState.value.chapterName
-
-        override fun setActiveSheet(sheet: ReadBookSheet?) {
-            _uiState.update { it.withSheet(sheet) }
-        }
-
-        override fun closeReadMenu() {
-            this@ReadBookViewModel.closeReadMenu()
-        }
-
-        override fun showToast(message: String) {
-            _effects.tryEmit(ReadBookEffect.ShowToast(message))
-        }
-
-        override fun reloadChapterAfterContentProcessChanged(
-            bookUrl: String,
-            chapterIndex: Int,
-        ) {
-            contentProcessDelegate.reloadCurrentChapter(bookUrl, chapterIndex)
-        }
-
-        override suspend fun findChapter(bookUrl: String, chapterIndex: Int): BookChapter? =
-            bookRepository.getChapter(bookUrl, chapterIndex)
-
-        override suspend fun listChapters(bookUrl: String): List<BookChapter> =
-            bookRepository.getChapters(bookUrl)
-
-        override val translationStatus: TranslationChapterStatus
-            get() = _uiState.value.translationStatus
-
-        override fun updateTranslationStatus(status: TranslationChapterStatus) {
-            _uiState.update { it.copy(translationStatus = status) }
-        }
-    }
-
-    private val aiDelegate by lazy { ReadAiDelegate(
-        context = context,
-        scope = viewModelScope,
-        host = aiHost,
-        generateChapterSummaryUseCase = generateChapterSummaryUseCase,
-        cleanSelectedTextUseCase = cleanSelectedTextUseCase,
-        aiTextFactoryUseCase = aiTextFactoryUseCase,
-        saveBookContentProcessUseCase = saveBookContentProcessUseCase,
-        aiArtifactGateway = aiArtifactGateway,
-        aiPromptPresetGateway = aiPromptPresetGateway,
-    ) }
-
-    val aiState get() = aiDelegate.uiState
-    // --- 高亮规则域 ---
-
-    private val highlightRuleDelegate by lazy { ReadHighlightRuleDelegate(
-        context = context,
-        scope = viewModelScope,
-        host = object : ReadHighlightRuleDelegate.Host {
-            override fun showToast(message: String) {
-                _effects.tryEmit(ReadBookEffect.ShowToast(message))
-            }
-
-            override fun notifyRulesChanged() {
-                _effects.tryEmit(
-                    ReadBookEffect.UpdateReaderConfig(
-                        setOf(
-                            ConfigUpdateAction.UpdateChapterStyle,
-                            ConfigUpdateAction.ReloadContent,
-                        )
-                    )
-                )
-            }
-        },
-        highlightRuleRepository = highlightRuleRepository,
-        uploadRepository = uploadRepository,
-    ) }
-
     val highlightRuleState get() = highlightRuleDelegate.uiState
-
-    // --- 多角色分配域 ---
-
-    private val readAloudCastDelegate by lazy { ReadAloudCastDelegate(
-        context = context,
-        scope = viewModelScope,
-        aiCastUseCase = aiCastAssignUseCase,
-        aiSceneUseCase = aiSceneAssignUseCase,
-        reloadChapter = { contentProcessDelegate.reloadCurrentChapter() },
-        sendIntent = { onIntent(it) },
-        emitToast = { _effects.tryEmit(ReadBookEffect.ShowToast(it)) },
-    ) }
 
     // --- 正文编辑域 ---
 
@@ -487,9 +387,7 @@ class ReadBookViewModel(
         bookSourceRepository = bookSourceRepository,
         readSettingsRepository = readSettingsRepository,
         backupSettingsGateway = backupSettingsGateway,
-        changeSourceSettingsGateway = changeSourceSettingsGateway,
         downloadCacheSettingsGateway = downloadCacheSettingsGateway,
-        changeBookSourceUseCase = changeBookSourceUseCase,
         getReadingProgressUseCase = getReadingProgressUseCase,
         uploadReadingProgressUseCase = uploadReadingProgressUseCase,
     )
@@ -532,46 +430,6 @@ class ReadBookViewModel(
 
     /** 日夜切换冷却期内不再弹提醒；光线传感器回调在 RouteScreen 里先问这个再发 intent。 */
     fun isDayNightSwitchCoolingDown(): Boolean = styleDelegate.isDayNightSwitchCoolingDown()
-
-    // --- 朗读域（无自持状态，朗读设置字段仍在 ReadBookUiState）---
-
-    private val readAloudDelegate by lazy { ReadAloudDelegate(
-        context = context,
-        scope = viewModelScope,
-        host = object : ReadAloudDelegate.Host {
-            override val uiState: ReadBookUiState get() = _uiState.value
-
-            override val preDownloadNum: Int get() = _readPreferences.value.preDownloadNum
-
-            override val systemTtsEngines: List<TextToSpeech.EngineInfo> get() = sysEngines
-
-            override fun updateState(transform: (ReadBookUiState) -> ReadBookUiState) {
-                _uiState.update(transform)
-            }
-
-            override fun emitEffect(effect: ReadBookEffect) {
-                _effects.tryEmit(effect)
-            }
-
-            override suspend fun emitEffectAwait(effect: ReadBookEffect) {
-                _effects.emit(effect)
-            }
-
-            override fun openReadMenuRoute(route: ReadBookMenuRoute) {
-                this@ReadBookViewModel.openReadMenuRoute(route)
-            }
-
-            override fun publishReadAloudProgress(chapterStart: Int) {
-                _readAloudProgress.value = chapterStart
-            }
-        },
-        readSettingsRepository = readSettingsRepository,
-        readAloudSettingsRepository = readAloudSettingsRepository,
-        readAloudSessionStore = readAloudSessionStore,
-        httpTtsRepository = httpTtsRepository,
-        aiProfileGateway = aiProfileGateway,
-        syncReadAloudVoicesUseCase = syncReadAloudVoicesUseCase,
-    ) }
 
     // --- 菜单按钮配置域（无自持状态，按钮列表仍在 menuConfig）---
 
@@ -668,9 +526,7 @@ class ReadBookViewModel(
         if (deferredReaderFeaturesStarted) return
         deferredReaderFeaturesStarted = true
         buttonConfigDelegate.refresh()
-        readAloudDelegate.collectPreferences()
         bookmarkDelegate.start()
-        execute { readAloudDelegate.syncConfiguredTtsVoices() }
     }
 
     /**
@@ -892,13 +748,6 @@ class ReadBookViewModel(
                 publishSeek()
             }
 
-            is ReadBookIntent.ToggleReadAloud -> {
-                if (!ReadBook.isCurrentBookReadAloud) {
-                    readAloudDelegate.openDefaultInterface()
-                }
-                _effects.tryEmit(ReadBookEffect.ToggleReadAloud)
-            }
-
             is ReadBookIntent.ToggleAutoPage -> _effects.tryEmit(ReadBookEffect.ToggleAutoPage)
             is ReadBookIntent.StopAutoPage -> _effects.tryEmit(ReadBookEffect.StopAutoPage)
             is ReadBookIntent.RefreshCurrentChapter -> refreshCurrentChapter()
@@ -918,12 +767,6 @@ class ReadBookViewModel(
                 _uiState.update { it.copy(reSegment = false) }
             }
             is ReadBookIntent.ToggleTranslation -> toggleTranslation()
-            ReadBookIntent.OpenAiChat -> aiDelegate.openAiChat(_effects::tryEmit)
-            is ReadBookIntent.OpenChapterSummary -> aiDelegate.openChapterSummary()
-            is ReadBookIntent.OpenAiCurrentChapterRewrite -> aiDelegate.openAiCurrentChapterRewrite()
-            is ReadBookIntent.RetryChapterSummary -> aiDelegate.retryChapterSummary()
-            is ReadBookIntent.SetChapterSummaryReasoningLevel ->
-                aiDelegate.setChapterSummaryReasoningLevel(intent.level)
             is ReadBookIntent.LoadContentProcesses -> contentProcessDelegate.load()
             is ReadBookIntent.ToggleContentProcess ->
                 contentProcessDelegate.toggle(intent.id, intent.enabled)
@@ -931,47 +774,10 @@ class ReadBookViewModel(
                 contentProcessDelegate.requestDelete(intent.item)
             is ReadBookIntent.ConfirmDeleteContentProcess -> contentProcessDelegate.confirmDelete()
             is ReadBookIntent.DismissDeleteContentProcess -> contentProcessDelegate.dismissDelete()
-            is ReadBookIntent.SelectAiRewritePreset -> aiDelegate.selectAiRewritePreset(intent.presetId)
-            is ReadBookIntent.SetAiRewriteTemporaryInstruction ->
-                aiDelegate.setAiRewriteTemporaryInstruction(intent.instruction)
-            is ReadBookIntent.SelectAiRewriteHistory ->
-                aiDelegate.selectAiRewriteHistory(intent.artifactId)
-            is ReadBookIntent.GenerateAiTextRewrite -> aiDelegate.generateSelectedAiTextRewrite()
-            is ReadBookIntent.RetryAiTextRewrite -> aiDelegate.retryAiTextRewrite()
-            is ReadBookIntent.SetAiTextRewriteReasoningLevel ->
-                aiDelegate.setAiTextRewriteReasoningLevel(intent.level)
-            is ReadBookIntent.ConfirmAiTextRewrite -> aiDelegate.confirmAiTextRewrite()
-            is ReadBookIntent.OpenAiRewritePresetConfig -> aiDelegate.openAiRewritePresetConfig()
-            is ReadBookIntent.CloseAiRewritePresetConfig -> aiDelegate.closeAiRewritePresetConfig()
-            is ReadBookIntent.AddAiRewritePreset -> aiDelegate.startAddAiRewritePreset()
-            is ReadBookIntent.EditAiRewritePreset -> aiDelegate.startEditAiRewritePreset(intent.preset)
-            is ReadBookIntent.SetAiRewritePresetName ->
-                aiDelegate.setAiRewritePresetName(intent.name)
-            is ReadBookIntent.SetAiRewritePresetInstruction ->
-                aiDelegate.setAiRewritePresetInstruction(intent.instruction)
-            is ReadBookIntent.SaveAiRewritePreset -> aiDelegate.saveAiRewritePreset()
-            is ReadBookIntent.CancelAiRewritePresetEdit -> aiDelegate.clearAiRewritePresetDraft()
-            is ReadBookIntent.RequestDeleteAiRewritePreset ->
-                aiDelegate.requestDeleteAiRewritePreset(intent.preset)
-            is ReadBookIntent.ConfirmDeleteAiRewritePreset -> aiDelegate.deleteAiRewritePreset()
-            is ReadBookIntent.DismissDeleteAiRewritePreset ->
-                aiDelegate.dismissDeleteAiRewritePreset()
-            is ReadBookIntent.ChangeSourceBook -> changeTo(intent.book)
-            is ReadBookIntent.ChangeSource -> changeTo(intent.book, intent.toc)
-            is ReadBookIntent.AddSourceAsNewBook -> addToBookshelf(intent.book, intent.toc)
             is ReadBookIntent.OpenChapterResult -> {
                 ReadBook.saveReadingAnchorBeforeChapterJump(intent.index, intent.chapterPos)
                 openChapter(intent.index, intent.chapterPos)
             }
-            is ReadBookIntent.SourceEditResult -> {
-                upBookSource()
-                _uiState.update { state ->
-                    state.copy(pendingEditedSource = intent.sourceUrl.takeIf {
-                        state.findSheet<ReadBookSheet.ChangeBookSource>() != null
-                    })
-                }
-            }
-            is ReadBookIntent.SourceEditHandled -> _uiState.update {
                 if (it.pendingEditedSource == intent.sourceUrl) it.copy(pendingEditedSource = null) else it
             }
             is ReadBookIntent.ReplaceRuleResult -> replaceRuleDelegate.rulesChanged()
@@ -1032,8 +838,6 @@ class ReadBookViewModel(
                 ) {
                     _uiState.update { it.withSheet(intent.sheet) }
                     contentProcessDelegate.load()
-                } else if (intent.sheet is ReadBookSheet.AiRewritePresetConfig) {
-                    aiDelegate.openAiRewritePresetConfig()
                 } else {
                     _uiState.update { it.withSheet(intent.sheet) }
                 }
@@ -1149,11 +953,6 @@ class ReadBookViewModel(
                 }
             }
 
-            is ReadBookIntent.MenuChangeSource -> handleChangeSource()
-            is ReadBookIntent.MenuBookChangeSource -> {
-                _uiState.update { it.withSheet(ReadBookSheet.ChangeBookSource) }
-            }
-            is ReadBookIntent.MenuChapterChangeSource -> handleChapterChangeSource()
             is ReadBookIntent.MenuSettingReplace -> {
                 closeReadMenu()
                 _effects.tryEmit(ReadBookEffect.MenuSettingReplace)
@@ -1321,109 +1120,10 @@ class ReadBookViewModel(
                 )
             )
 
-            is ReadBookIntent.MediaButtonPressed -> {
-                if (intent.play) {
-                    _effects.tryEmit(ReadBookEffect.ToggleReadAloud)
-                } else {
-                    ReadBook.readAloud(!BaseReadAloudService.pause)
-                }
-            }
+            is ReadBookIntent.MediaButtonPressed -> Unit
 
-            is ReadBookIntent.TtsProgress -> readAloudDelegate.updateProgress(intent.chapterStart)
-            is ReadBookIntent.ReadAloudAction -> readAloudDelegate.openDefaultInterface()
             is ReadBookIntent.ConfirmAddCurrentBookToBookshelf -> addCurrentBookToBookshelfAndFinish()
             is ReadBookIntent.ExitWithoutAddingCurrentBookToBookshelf -> removeCurrentNotShelfBookAndFinish()
-
-            is ReadBookIntent.ShowReadAloudConfig -> readAloudDelegate.openConfigSheet()
-            is ReadBookIntent.OpenPreDownloadNumPicker ->
-                readAloudDelegate.openPreDownloadNumPicker()
-            is ReadBookIntent.OpenPreSynthesisConcurrencyPicker ->
-                readAloudDelegate.openPreSynthesisConcurrencyPicker()
-            is ReadBookIntent.OpenParagraphIntervalPicker ->
-                readAloudDelegate.openParagraphIntervalPicker()
-            is ReadBookIntent.OpenCacheCleanTimePicker ->
-                readAloudDelegate.openCacheCleanTimePicker()
-            is ReadBookIntent.ApplyPreDownloadNum ->
-                readAloudDelegate.applyPreDownloadNum(intent.value)
-            is ReadBookIntent.ApplyPreSynthesisConcurrency ->
-                readAloudDelegate.applyPreSynthesisConcurrency(intent.value)
-            is ReadBookIntent.ApplyAudioCacheCleanTime ->
-                readAloudDelegate.applyAudioCacheCleanTime(intent.value)
-            is ReadBookIntent.ApplyParagraphInterval ->
-                readAloudDelegate.applyParagraphInterval(intent.value)
-            is ReadBookIntent.SetReadAloudIgnoreAudioFocus ->
-                readAloudDelegate.setIgnoreAudioFocus(intent.value)
-            is ReadBookIntent.SetReadAloudPauseOnPhoneCall ->
-                readAloudDelegate.setPauseOnPhoneCall(intent.value)
-            is ReadBookIntent.SetReadAloudWakeLock -> readAloudDelegate.setWakeLock(intent.value)
-            is ReadBookIntent.SetReadAloudKeepOnExit ->
-                readAloudDelegate.setKeepOnExit(intent.value)
-            is ReadBookIntent.SetShowReadAloudCapsule ->
-                readAloudDelegate.setShowCapsule(intent.value)
-            is ReadBookIntent.SetCapsuleAutoCollapse ->
-                readAloudDelegate.setCapsuleAutoCollapse(intent.value)
-            ReadBookIntent.ResetReadAloudCapsulePosition ->
-                readAloudDelegate.resetCapsulePosition()
-            is ReadBookIntent.SetReadAloudCapsulePosition ->
-                readAloudDelegate.setCapsulePosition(intent.x, intent.y)
-            is ReadBookIntent.SetReadAloudMediaButtonPerNext ->
-                readAloudDelegate.setMediaButtonPerNext(intent.value)
-            is ReadBookIntent.SetReadAloudContentSplitMode ->
-                readAloudDelegate.setContentSplitMode(intent.value)
-            is ReadBookIntent.SetReadAloudSystemMediaCompat ->
-                readAloudDelegate.setSystemMediaCompat(intent.value)
-            is ReadBookIntent.SetReadAloudAndroidMediaControl ->
-                readAloudDelegate.setAndroidMediaControl(intent.value)
-            is ReadBookIntent.SetReadAloudStreamAudio ->
-                readAloudDelegate.setStreamAudio(intent.value)
-            is ReadBookIntent.ReadAloudPrevParagraph -> readAloudDelegate.prevParagraph()
-            is ReadBookIntent.ReadAloudTogglePause -> _effects.tryEmit(ReadBookEffect.ToggleReadAloud)
-            is ReadBookIntent.ReadAloudStop -> readAloudDelegate.stop()
-            is ReadBookIntent.ReadAloudNextParagraph -> readAloudDelegate.nextParagraph()
-            is ReadBookIntent.ReadAloudPrevChapter -> readAloudDelegate.prevChapter()
-            is ReadBookIntent.ReadAloudNextChapter -> readAloudDelegate.nextChapter()
-            ReadBookIntent.BackToSpeakingPosition -> readAloudDelegate.backToSpeakingPosition()
-            ReadBookIntent.ReadAloudFromHere -> ReadBook.readAloud()
-            is ReadBookIntent.SetReadAloudTtsTimer -> readAloudDelegate.setTtsTimer(intent.value)
-            is ReadBookIntent.SetReadAloudTimerMode ->
-                readAloudDelegate.setTimerMode(ReadAloudTimerMode.fromStorage(intent.value))
-
-            is ReadBookIntent.SetReadAloudTimerChapters -> readAloudDelegate.setTimerChapters(intent.value)
-            is ReadBookIntent.SetFinishCurrentChapterAfterTimer -> readAloudDelegate.setFinishCurrentChapterAfterTimer(
-                intent.value
-            )
-            is ReadBookIntent.SetReadAloudTtsFollowSys ->
-                readAloudDelegate.setTtsFollowSys(intent.value)
-            is ReadBookIntent.SetReadAloudTtsSpeechRate ->
-                readAloudDelegate.setTtsSpeechRate(intent.value)
-            is ReadBookIntent.SetSpeechAnalysisMode -> readAloudDelegate.setSpeechAnalysisMode(intent.value)
-            is ReadBookIntent.SetSpeechAnalysisReasoningLevel -> readAloudDelegate.setSpeechAnalysisReasoningLevel(intent.value)
-            is ReadBookIntent.SetUseMultiSpeaker ->
-                readAloudDelegate.setUseMultiSpeaker(intent.value)
-            is ReadBookIntent.SetMultiRoleCast ->
-                readAloudDelegate.setMultiRoleCast(intent.value)
-            is ReadBookIntent.SetBgmAssign -> readAloudDelegate.setBgmAssign(intent.value)
-            is ReadBookIntent.SetBgmVolume -> readAloudDelegate.setBgmVolume(intent.value)
-            is ReadBookIntent.ConfirmRoleCast -> readAloudCastDelegate.confirm(intent)
-            is ReadBookIntent.CreateRoleCast -> readAloudCastDelegate.create(intent)
-            ReadBookIntent.OpenAiCastDialog,
-            ReadBookIntent.OpenAiSceneDialog, ReadBookIntent.CancelAiCast,
-            is ReadBookIntent.StartAiCast, is ReadBookIntent.DeleteChapterCastAssignments,
-            is ReadBookIntent.UnassignRoleCast, is ReadBookIntent.SetBgmScene,
-            is ReadBookIntent.ClearBgmScene, is ReadBookIntent.UpdateBgmScene,
-            is ReadBookIntent.DeleteBgmScene -> readAloudCastDelegate.onCastIntent(intent)
-            is ReadBookIntent.SetReadAloudConfigTab -> readAloudDelegate.setConfigTab(intent.tab)
-            is ReadBookIntent.SetDefaultReadAloudInterface ->
-                readAloudDelegate.setDefaultInterface(intent.value)
-            is ReadBookIntent.OpenSystemTtsSettings -> readAloudDelegate.openSystemTtsSettings()
-            is ReadBookIntent.ClearTtsCache -> readAloudDelegate.clearTtsCache()
-            ReadBookIntent.OpenTtsEnginesAndVoices -> readAloudDelegate.openTtsEnginesAndVoices()
-            ReadBookIntent.OpenTtsCache -> readAloudDelegate.openTtsCache()
-            ReadBookIntent.OpenBookVoiceCasting -> readAloudDelegate.openBookVoiceCasting()
-            is ReadBookIntent.OpenReadAloudSubPage ->
-                readAloudDelegate.openReadAloudSubPage(intent.page)
-            ReadBookIntent.OpenReadAloudPlayer -> readAloudDelegate.openPlayer()
-            ReadBookIntent.OpenClassicReadAloudControls -> readAloudDelegate.openClassicControls()
 
             is ReadBookIntent.SelectFont -> styleDelegate.selectFont(intent.path)
             is ReadBookIntent.SelectTitleFont -> styleDelegate.selectTitleFont(intent.path)
@@ -1493,18 +1193,6 @@ class ReadBookViewModel(
 
             is ReadBookIntent.ToggleDayNight -> styleDelegate.toggleDayNight()
             // Text action menu
-            is ReadBookIntent.TextActionAloud -> {
-                when (readAloudSettingsRepository.currentSettings.contentSelectSpeakMode) {
-                    1 -> when {
-                        intent.chapterPosition != null -> _effects.tryEmit(
-                            ReadBookEffect.TextActionAloudPosition(intent.chapterPosition)
-                        )
-                        else -> _effects.tryEmit(ReadBookEffect.TextActionSpeak(intent.text))
-                    }
-                    else -> _effects.tryEmit(ReadBookEffect.TextActionSpeak(intent.text))
-                }
-            }
-
             is ReadBookIntent.TextActionBookmark -> bookmarkDelegate.openEditor(intent.bookmark)
 
             is ReadBookIntent.OpenMarking -> markingDelegate.openFromMenu(intent.selection)
@@ -1570,29 +1258,6 @@ class ReadBookViewModel(
 
             is ReadBookIntent.TextActionDict -> {
                 _uiState.update { it.withSheet(ReadBookSheet.Dict(intent.text)) }
-            }
-
-            is ReadBookIntent.OpenAiTextClean -> {
-                aiDelegate.openAiTextClean(
-                    text = intent.text,
-                    chapterIndex = intent.chapterIndex,
-                    chapterPosition = intent.chapterPosition,
-                )
-            }
-
-            is ReadBookIntent.RetryAiTextClean -> aiDelegate.retryAiTextClean()
-            is ReadBookIntent.SetAiTextCleanReasoningLevel ->
-                aiDelegate.setAiTextCleanReasoningLevel(intent.level)
-            is ReadBookIntent.ConfirmAiTextClean -> aiDelegate.confirmAiTextClean()
-
-            is ReadBookIntent.OpenAiTextRewrite -> {
-                viewModelScope.launch {
-                    aiDelegate.openAiTextRewrite(
-                        text = intent.text,
-                        chapterIndex = intent.chapterIndex,
-                        chapterPosition = intent.chapterPosition,
-                    )
-                }
             }
 
             is ReadBookIntent.ApplySimulatedReading -> {
@@ -1820,37 +1485,9 @@ class ReadBookViewModel(
         viewModelScope.launch {
             // 听书播放界面的「经典控制」返回阅读界面时，直接落到经典朗读控制页。
             // 播放界面盖上来后阅读器子树已销毁，只能靠这条通道把意图带回存活的 ViewModel。
-            ReadAloudControlsRequestBus.events.collect {
-                onIntent(ReadBookIntent.OpenClassicReadAloudControls)
-            }
         }
         viewModelScope.launch {
             var previousStatus: ReadAloudSessionStatus? = null
-            readAloudDelegate.readerSessions.collect { (session, ownsReader) ->
-                val status = session.status
-                val info = session.playback
-                _uiState.update { state ->
-                    state.copy(
-                        isReadAloudRunning = ownsReader && status != ReadAloudSessionStatus.Idle,
-                        isReadAloudPaused = ownsReader && status == ReadAloudSessionStatus.Paused,
-                        readAloudFollow = !ownsReader || session.followReadAloudPosition,
-                        readAloudEngineName = info.engineName,
-                        readAloudCharacterName = info.characterName,
-                        readAloudRoleType = info.roleType,
-                        readAloudChapterPosition = info.chapterPosition,
-                        readAloudChapterLength = info.chapterLength,
-                        readAloudTtsTimer = session.timerMinutes,
-                    )
-                }
-                if (previousStatus != null && previousStatus != status &&
-                    (status == ReadAloudSessionStatus.Idle ||
-                        status == ReadAloudSessionStatus.Paused)
-                ) {
-                    _readAloudProgress.value = null
-                    _effects.tryEmit(ReadBookEffect.UpAloudState)
-                }
-                previousStatus = status
-            }
         }
         viewModelScope.launch {
             eventFlow<Int>(EventBus.READ_ALOUD_DS).collect { minute ->
@@ -1875,18 +1512,8 @@ class ReadBookViewModel(
             }
         }
         viewModelScope.launch {
-            eventFlow<Boolean>(EventBus.MEDIA_BUTTON).collect { play ->
-                if (play) {
-                    _effects.tryEmit(ReadBookEffect.ToggleReadAloud)
-                } else {
-                    ReadBook.readAloud(!BaseReadAloudService.pause)
-                }
-            }
         }
         viewModelScope.launch {
-            eventFlowSticky<Int>(EventBus.TTS_PROGRESS).collect { chapterStart ->
-                readAloudDelegate.updateProgress(chapterStart)
-            }
         }
     }
 
@@ -2077,7 +1704,7 @@ class ReadBookViewModel(
     private fun syncFromReadBook(current: ReadBookUiState): ReadBookUiState {
         val book = ReadBook.book
         val chapterInput = ReadBook.readerChapterInputWindow.current
-        val translationStatus = aiDelegate.observeChapterTranslation(book, ReadBook.durChapterIndex)
+        val translationStatus = TranslationChapterStatus.Idle
         return current.copy(
             book = book,
             bookSource = ReadBook.bookSource,
@@ -2251,18 +1878,7 @@ class ReadBookViewModel(
         }
     }
 
-    private fun stopReadAloudForClose() {
-        if (closeReadBookKeepReadAloud || !ReadBook.isCurrentBookReadAloud) {
-            return
-        }
-        // 「退出阅读时继续后台朗读」：读的是持久设置，不依赖本次退出来源
-        // （标题栏关闭、返回手势、后台按钮走的是同一个 closeReadBook）。
-        if (readAloudSettingsRepository.currentSettings.keepReadAloudOnExit) {
-            return
-        }
-        ReadAloud.stop(context)
-        _uiState.update { it.copy(isReadAloudRunning = false, isReadAloudPaused = false) }
-    }
+    private fun stopReadAloudForClose() = Unit
 
     private fun addCurrentBookToBookshelfAndFinish() {
         val book = ReadBook.book ?: return removeCurrentNotShelfBookAndFinish()
@@ -2460,15 +2076,7 @@ class ReadBookViewModel(
 
     private fun openReadMenuRoute(route: ReadBookMenuRoute) {
         _uiState.update {
-            it.withMenuRoute(route, resetStack = true).copy(
-                readAloudTtsTimer = if (
-                    route == ReadBookMenuRoute.ReadAloud && BaseReadAloudService.isRun
-                ) {
-                    BaseReadAloudService.timeMinute.coerceAtLeast(0)
-                } else {
-                    it.readAloudTtsTimer
-                },
-            )
+            it.withMenuRoute(route, resetStack = true)
         }
     }
 
@@ -2663,7 +2271,6 @@ class ReadBookViewModel(
 
     /** 关闭浮层前通知各业务域，再恢复被编辑面板收起的菜单。 */
     private fun dismissActiveSheet() {
-        aiDelegate.onSheetDismissed(_uiState.value.activeSheet)
         when (_uiState.value.activeSheet) {
             is ReadBookSheet.HighlightRuleConfig -> highlightRuleDelegate.onSheetDismissed()
             is ReadBookSheet.Marking -> markingDelegate.onSheetDismissed()
@@ -2704,9 +2311,6 @@ class ReadBookViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        if (ReadBook.isCurrentBookReadAloud && BaseReadAloudService.pause) {
-            ReadAloud.stop(context)
-        }
         readerSession.detach()
     }
 

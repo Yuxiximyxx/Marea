@@ -87,7 +87,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import io.legado.app.R
-import io.legado.app.feature.explore.ExploreMainRoute
 import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleEndPadding
 import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleSize
 import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleSlot
@@ -99,7 +98,6 @@ import io.legado.app.ui.main.bookshelf.BookshelfViewModel
 import io.legado.app.ui.main.home.HomeRouteScreen
 import io.legado.app.ui.main.my.MyRouteScreen
 import io.legado.app.ui.main.my.PrefClickEvent
-import io.legado.app.ui.main.rss.RssRouteScreen
 import dev.dsh.glasskit.GlassDiag
 import dev.dsh.glasskit.LocalMareaBlurMode
 import dev.dsh.glasskit.MAREA_BLUR_LIQUID
@@ -145,13 +143,7 @@ fun MainScreen(
     effects: kotlinx.coroutines.flow.Flow<MainEffect>,
     useRail: Boolean,
     /** 听书胶囊的形变状态：胶囊要排在悬浮底栏同一行，需要把锚点上报给同一个进度源。 */
-    readAloudMorph: ReadAloudMorphState?,
-    homePlaybackCapsuleEnabled: Boolean,
-    capsuleAnchorPreview: io.legado.app.domain.model.PlaybackCapsuleState?,
     onOpenSettings: () -> Unit,
-    onNavigateToChat: () -> Unit,
-    onNavigateToSearch: (String?) -> Unit,
-    onNavigateToScopedSearch: (String) -> Unit,
     onNavigateToRemoteImport: () -> Unit,
     onNavigateToLocalImport: () -> Unit,
     onNavigateToCache: (Long) -> Unit,
@@ -159,23 +151,9 @@ fun MainScreen(
     onOpenBookshelfBook: (BookShelfItem, String?) -> Unit,
     onNavigateToBackupSettings: () -> Unit,
     onNavigateToBookInfo: (name: String, author: String, bookUrl: String, origin: String?, coverPath: String?, sharedCoverKey: String?) -> Unit,
-    onNavigateToExploreShow: (title: String?, sourceUrl: String, exploreUrl: String?) -> Unit,
     onNavigateToSourceLogin: (type: io.legado.app.ui.login.SourceLoginType, sourceUrl: String) -> Unit,
-    onNavigateToBookSourceManage: () -> Unit,
     onNavigateToReplaceRules: () -> Unit,
     onNavigateToBookSourceEdit: (String?) -> Unit,
-    onNavigateToRssSourceManage: () -> Unit,
-    onNavigateToRssSourceEdit: (String?) -> Unit,
-    onNavigateToRssSort: (sourceUrl: String, sortUrl: String?, key: String?) -> Unit,
-    onNavigateToRssRead: (
-        title: String?,
-        origin: String,
-        link: String?,
-        openUrl: String?,
-        startPage: Boolean
-    ) -> Unit,
-    onNavigateToRssFavorites: () -> Unit,
-    onNavigateToRuleSub: () -> Unit,
     onNavigateToReadRecord: () -> Unit,
     onNavigateToReadRecordOverview: () -> Unit,
     onNavigateToHighlightTagRule: () -> Unit,
@@ -345,20 +323,6 @@ fun MainScreen(
                         onNavigationRailWidthChanged(with(density) { it.width.toDp() })
                     },
                     state = miuixNavState,
-                    header = {
-                        FloatingActionButton(
-                            modifier = Modifier
-                                .align(Alignment.Start)
-                                .padding(start = NavigationRailDefaults.ExpandedItemHorizontalMargin),
-                            onClick = { onNavigateToSearch(null) },
-                        ) {
-                            AppIcon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                tint = Color.White
-                            )
-                        }
-                    }
                 ) {
                     destinations.forEachIndexed { index, destination ->
                         val selected = pagerState.targetPage == index
@@ -435,16 +399,6 @@ fun MainScreen(
                             contentDescription = stringResource(
                                 if (expanded) R.string.collapse else R.string.expand
                             ),
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        ExtendedFloatingActionButton(
-                            modifier = Modifier.padding(start = 20.dp),
-                            onClick = { onNavigateToSearch(null) },
-                            expanded = expanded,
-                            icon = { AppIcon(Icons.Default.Search, contentDescription = null) },
-                            text = { AppText(stringResource(R.string.search)) }
                         )
                     }
                 }
@@ -652,7 +606,6 @@ fun MainScreen(
                                         sharedCoverKey,
                                     )
                                 },
-                                onOpenExploreShow = onNavigateToExploreShow,
                                 onOpenBackupSettings = onNavigateToBackupSettings,
                                 onNavigateToReadRecord = onNavigateToReadRecord,
                                 onNavigateToReadRecordOverview = onNavigateToReadRecordOverview,
@@ -680,7 +633,6 @@ fun MainScreen(
                                         sharedCoverKey
                                     )
                                 },
-                                onNavigateToSearch = { query -> onNavigateToSearch(query) },
                                 onNavigateToRemoteImport = onNavigateToRemoteImport,
                                 onNavigateToLocalImport = onNavigateToLocalImport,
                                 onNavigateToCache = onNavigateToCache,
@@ -689,52 +641,11 @@ fun MainScreen(
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
 
-                                MainDestination.Explore -> ExploreMainRoute(
-                                onOpenExploreShow = onNavigateToExploreShow,
-                                    onBookClick = { book, sharedCoverKey ->
-                                        onNavigateToBookInfo(
-                                            book.name,
-                                            book.author,
-                                            book.bookUrl,
-                                            book.origin,
-                                            book.coverUrl,
-                                            sharedCoverKey,
-                                        )
-                                    },
-                                onOpenLogin = { sourceUrl ->
-                                    onNavigateToSourceLogin(
-                                        io.legado.app.ui.login.SourceLoginType.BookSource,
-                                        sourceUrl,
-                                    )
-                                },
-                                onOpenEdit = onNavigateToBookSourceEdit,
-                                onOpenSearch = onNavigateToScopedSearch,
-                            )
-                            MainDestination.Rss -> RssRouteScreen(
-                                onOpenSort = { sourceUrl, sortUrl, key ->
-                                    onNavigateToRssSort(sourceUrl, sortUrl, key)
-                                },
-                                onOpenRead = { title, origin, link, openUrl, startPage ->
-                                    onNavigateToRssRead(title, origin, link, openUrl, startPage)
-                                },
-                                onOpenFavorites = onNavigateToRssFavorites,
-                                onOpenRuleSub = onNavigateToRuleSub,
-                                onOpenLogin = { sourceUrl ->
-                                    onNavigateToSourceLogin(
-                                        io.legado.app.ui.login.SourceLoginType.RssSource,
-                                        sourceUrl,
-                                    )
-                                },
-                                onOpenSourceEdit = onNavigateToRssSourceEdit,
-                                onOpenSourceManage = onNavigateToRssSourceManage,
-                            )
                             MainDestination.My -> MyRouteScreen(
                                 onOpenSettings = onOpenSettings,
-                                onNavigateToChat = onNavigateToChat,
                                 onNavigate = { event ->
                                     when (event) {
                                         PrefClickEvent.OpenBookCacheManage -> onNavigateToBookCacheManage()
-                                        PrefClickEvent.OpenBookSourceManage -> onNavigateToBookSourceManage()
                                         PrefClickEvent.OpenReplaceRules -> onNavigateToReplaceRules()
                                         PrefClickEvent.OpenReadRecord -> onNavigateToReadRecord()
                                         PrefClickEvent.OpenDictRule -> onNavigateToDictRule()
@@ -750,28 +661,9 @@ fun MainScreen(
                 }
 
                 if (useFloatingBottomBar) {
-                    var readAloudCapsuleShown by remember { mutableStateOf(false) }
-                    var playbackControlsExpanded by rememberSaveable { mutableStateOf(false) }
-                    val expansion by animateFloatAsState(
-                        targetValue = if (playbackControlsExpanded && readAloudCapsuleShown) 1f else 0f,
-                        animationSpec = spring(
-                            dampingRatio = 1f,
-                            stiffness = 260f,
-                            visibilityThreshold = 0.0001f
-                        ),
-                        label = "homePlaybackControls",
-                    )
+                    val expansion = 0f
                     FloatingNavigationContainer(modifier = Modifier.align(Alignment.BottomCenter)) {
-                        val gap = ReadAloudBarCapsuleEndPadding
-                        val capsuleReserve by animateDpAsState(
-                            targetValue = if (readAloudCapsuleShown) ReadAloudBarCapsuleSize + gap else 0.dp,
-                            // 入场前立即留出空间；退场后逐步归还，避免停播时导航宽度跳变。
-                            animationSpec = if (readAloudCapsuleShown) snap() else spring(
-                                dampingRatio = 1f,
-                                stiffness = 260f
-                            ),
-                            label = "homePlaybackReserve",
-                        )
+                        val capsuleReserve = 0.dp
                         val navigationAvailableWidth =
                             (maxWidth - capsuleReserve).coerceAtLeast(0.dp)
                         // 保留原导航项的自然宽度和居中位置，不把没有胶囊的底栏拉满。
@@ -780,12 +672,7 @@ fun MainScreen(
                                 .coerceAtMost(navigationAvailableWidth)
                         val navigationStartInset =
                             (navigationAvailableWidth - normalNavigationWidth) / 2
-                        val expandedCapsuleWidth = (maxWidth - ReadAloudBarCapsuleSize - gap)
-                            .coerceAtLeast(ReadAloudBarCapsuleSize)
-                        val capsuleWidth = ReadAloudBarCapsuleSize +
-                                (expandedCapsuleWidth - ReadAloudBarCapsuleSize) * expansion
-                        val navigationWidth = normalNavigationWidth +
-                                (ReadAloudBarCapsuleSize.coerceAtMost(maxWidth) - normalNavigationWidth) * expansion
+                        val navigationWidth = normalNavigationWidth
                         FloatingBottomBar(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
@@ -793,7 +680,7 @@ fun MainScreen(
                                 .width(navigationWidth),
                             compactProgress = expansion,
                             expandedWidth = normalNavigationWidth,
-                            onRestoreNavigation = { playbackControlsExpanded = false },
+                            onRestoreNavigation = {},
                             selectedIndex = { pagerState.targetPage },
                             onSelected = { index ->
                                 destinations.getOrNull(index)?.let { destination ->
@@ -824,7 +711,7 @@ fun MainScreen(
                                     mainUiState.selectedCustomIconPath(destination)
                                 val destinationLabel = stringResource(destination.labelId)
                                 FloatingBottomBarItem(
-                                    enabled = !playbackControlsExpanded && expansion <= 0.05f,
+                                    enabled = expansion <= 0.05f,
                                     onClick = {
                                         handleMainDestinationClick(index, destination)
                                     },
@@ -857,22 +744,6 @@ fun MainScreen(
                             }
                         }
                         // 打开听书播放页：与阅读器共用同一条全局请求通道。
-                        ReadAloudBarCapsuleSlot(
-                            enabled = homePlaybackCapsuleEnabled,
-                            onOpenPlayer = { ReadAloudPlayerOverlayBus.request(it) },
-                            morph = readAloudMorph,
-                            anchorPreview = capsuleAnchorPreview,
-                            // 与悬浮底栏共用同一份 backdrop，液态玻璃开关一致。
-                            backdrop = floatingBarBackdrop,
-                            isBlurEnabled = floatingGlassEnabled,
-                            controlsExpanded = playbackControlsExpanded,
-                            expansion = expansion,
-                            width = capsuleWidth,
-                            expandedWidth = expandedCapsuleWidth,
-                            onControlsExpandedChange = { playbackControlsExpanded = it },
-                            onOccupiedWidthChanged = { readAloudCapsuleShown = it > 0 },
-                            modifier = Modifier.align(Alignment.BottomEnd),
-                        )
                     }
                 }
             }

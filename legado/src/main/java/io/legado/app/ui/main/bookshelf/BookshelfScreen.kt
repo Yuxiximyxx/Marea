@@ -176,7 +176,6 @@ fun BookshelfRouteScreen(
     onScrollToTopRequestHandled: (Long) -> Unit = {},
     onBookClick: (BookShelfItem, String?) -> Unit,
     onBookLongClick: (book: BookShelfItem, sharedCoverKey: String?) -> Unit,
-    onNavigateToSearch: (String) -> Unit,
     onNavigateToRemoteImport: () -> Unit,
     onNavigateToLocalImport: () -> Unit,
     onNavigateToCache: (Long) -> Unit,
@@ -210,7 +209,6 @@ fun BookshelfRouteScreen(
         onScrollToTopRequestHandled = onScrollToTopRequestHandled,
         onBookClick = onBookClick,
         onBookLongClick = onBookLongClick,
-        onNavigateToSearch = onNavigateToSearch,
         onNavigateToRemoteImport = onNavigateToRemoteImport,
         onNavigateToLocalImport = onNavigateToLocalImport,
         onNavigateToCache = onNavigateToCache,
@@ -235,7 +233,6 @@ fun BookshelfScreen(
     onScrollToTopRequestHandled: (Long) -> Unit = {},
     onBookClick: (BookShelfItem, String?) -> Unit,
     onBookLongClick: (book: BookShelfItem, sharedCoverKey: String?) -> Unit,
-    onNavigateToSearch: (String) -> Unit,
     onNavigateToRemoteImport: () -> Unit,
     onNavigateToLocalImport: () -> Unit,
     onNavigateToCache: (Long) -> Unit,
@@ -566,20 +563,8 @@ fun BookshelfScreen(
             onIntent = onIntent,
         )
     }
-    val onSearchClick = {
-        if (uiState.settings.bookshelfSearchActionDirectToSearch) {
-            onNavigateToSearch(uiState.searchKey.trim())
-        } else {
-            toggleShelfFilter()
-        }
-    }
-    val onSearchLongClick = {
-        if (uiState.settings.bookshelfSearchActionDirectToSearch) {
-            toggleShelfFilter()
-        } else {
-            onNavigateToSearch(uiState.searchKey.trim())
-        }
-    }
+    val onSearchClick = { toggleShelfFilter() }
+    val onSearchLongClick = { toggleShelfFilter() }
 
     AppScaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -599,11 +584,7 @@ fun BookshelfScreen(
                 onSearchClick = onSearchClick,
                 onSearchLongClick = onSearchLongClick,
                 onSearchQueryChange = { onIntent(BookshelfIntent.SetSearchKey(it)) },
-                onSearchSubmit = { rawQuery ->
-                    rawQuery.trim()
-                        .takeIf { it.isNotEmpty() }
-                        ?.let(onNavigateToSearch)
-                },
+                onSearchSubmit = { },
                 onClearSearch = { onIntent(BookshelfIntent.SetSearchKey("")) },
                 onExitEditMode = exitEditMode,
                 actions = {
@@ -1084,7 +1065,6 @@ fun BookshelfScreen(
                                 onDragStarted = {},
                                 onMoveBook = { _, _, _ -> },
                                 onDragFinished = {},
-                                onGlobalSearch = { onNavigateToSearch(uiState.searchKey.trim()) },
                                 onBookClick = openBook,
                                 onBookLongClick = onBookLongClick,
                                 onLockedBookClick = requestBookUnlock,
@@ -1170,8 +1150,7 @@ fun BookshelfScreen(
                                             onDragFinished = {
                                                 if (isSelectedGroup) onIntent(BookshelfIntent.FinishDragging)
                                             },
-                                            onGlobalSearch = { onNavigateToSearch(uiState.searchKey.trim()) },
-                                            onBookClick = openBook,
+                                                        onBookClick = openBook,
                                             onBookLongClick = onBookLongClick,
                                             onLockedBookClick = requestBookUnlock,
                                             isCurrentPage = isSelectedGroup,
@@ -1657,7 +1636,6 @@ fun BookshelfPage(
     onDragStarted: (ImmutableList<BookUiItem>) -> Unit,
     onMoveBook: (fromIndex: Int, toIndex: Int, currentBooks: ImmutableList<BookUiItem>) -> Unit,
     onDragFinished: () -> Unit,
-    onGlobalSearch: () -> Unit,
     onBookClick: (BookShelfItem, String?) -> Unit,
     onBookLongClick: (BookShelfItem, String?) -> Unit,
     /** 点击处于脱敏状态的私密书籍：请求验证，验证通过后自动打开阅读 */
@@ -1677,9 +1655,7 @@ fun BookshelfPage(
                         top = paddingValues.calculateTopPadding(),
                         bottom = 120.dp
                     ),
-                message = stringResource(R.string.bookshelf_empty_global_search),
-                buttonText = stringResource(R.string.global_search),
-                onButtonClick = onGlobalSearch
+                message = stringResource(R.string.no_book_found_bookshelf),
             )
         } else if (!uiState.isInitialLoading) {
             EmptyMessage(
