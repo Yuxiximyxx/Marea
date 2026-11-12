@@ -85,7 +85,9 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             optimization {
-                enable = true
+                // 实验分支：Legado 依赖树含 Cronet 等，R8 优化会因框架缺类失败；
+                // 按实验口径（CHANGELOG exp.1）关闭 R8 优化保行为保真，正式线 main 不受影响
+                enable = false
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
