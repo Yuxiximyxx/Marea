@@ -1,5 +1,7 @@
 package dev.dsh.miuixbrowser
 
+import dev.dsh.glasskit.glassBar
+
 import android.app.Activity
 import android.os.Build
 import android.content.Intent

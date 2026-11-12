@@ -94,6 +94,7 @@ import io.legado.app.ui.main.AndroidPlatformCapabilities
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.ui.main.readerSharedBounds
 import io.legado.app.ui.replace.ReplaceEditRoute
+import io.legado.app.ui.theme.mareaMaterialOverride
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.LocalAppUiConfiguration
 import io.legado.app.ui.widget.components.text.AppText
@@ -211,11 +212,13 @@ fun ReadBookRouteScreen(
     val effectsReady = remember(viewModel) { CompletableDeferred<Unit>() }
     val menuBackdrop = rememberLayerBackdrop()
     val menuHazeState = remember { HazeState() }
-    val useMenuHazeSource = state.menuConfig.readMenuTopBarBlurMode == ReadMenuBlurMode.Haze ||
-            state.menuConfig.readMenuBottomBarBlurMode == ReadMenuBlurMode.Haze ||
+    // exp.7：菜单模糊模式按 Marea 材质档位覆写后，再决定正文是否作 Haze 采样源
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
+    val useMenuHazeSource = menuConfig.readMenuTopBarBlurMode == ReadMenuBlurMode.Haze ||
+            menuConfig.readMenuBottomBarBlurMode == ReadMenuBlurMode.Haze ||
             (
-                    !state.menuConfig.readMenuFloatingBottomBar &&
-                            state.menuConfig.readMenuBottomBarBlurMode == ReadMenuBlurMode.LiquidGlass
+                    !menuConfig.readMenuFloatingBottomBar &&
+                            menuConfig.readMenuBottomBarBlurMode == ReadMenuBlurMode.LiquidGlass
                     )
     val canHandleBack = isTopRoute
 

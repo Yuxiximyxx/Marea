@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import dev.dsh.glasskit.ProvideMareaBlurMode
 import io.legado.app.BuildConfig
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.Theme
@@ -94,15 +96,31 @@ abstract class BaseComposeActivity(
                     startTime = themeSettings.eyeProtectionStartTime,
                     endTime = themeSettings.eyeProtectionEndTime,
                 )
+                // exp.7 沉浸：与 SyncWindowBackground 同口径的全幅底色层。
+                // Miuix Scaffold / 子页内容按 systemBars inset 让位时，导航条下方
+                // 露出的不再是窗口背景（宿主主题的动态色），而是页面底色本身；
+                // transparent 宿主（文件关联跳板）不画，保持透出。
+                val pageBackground = if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
+                    MiuixTheme.colorScheme.surface
+                } else {
+                    LegadoTheme.colorScheme.background
+                }
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .then(
+                            if (transparent) Modifier
+                            else Modifier.background(pageBackground)
+                        )
                         .eyeProtectionColorFilter(
                             enabled = eyeProtectionActive,
                             intensity = themeSettings.colorTemperature,
                         )
                 ) {
-                    Content()
+                    // exp.7：Marea 材质档位注入 Legado 组合根（落盘桥，见 glasskit）
+                    ProvideMareaBlurMode {
+                        Content()
+                    }
                 }
             }
         }

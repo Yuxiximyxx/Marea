@@ -95,6 +95,8 @@ import io.legado.app.ui.main.home.HomeRouteScreen
 import io.legado.app.ui.main.my.MyRouteScreen
 import io.legado.app.ui.main.my.PrefClickEvent
 import io.legado.app.ui.main.rss.RssRouteScreen
+import dev.dsh.glasskit.LocalMareaBlurMode
+import dev.dsh.glasskit.MAREA_BLUR_OFF
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.AppScaffold
@@ -276,6 +278,10 @@ fun MainScreen(
     val useLiquidGlass = useFloatingBottomBar &&
             mainUiState.useFloatingBottomBarLiquidGlass &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    // exp.7：悬浮底栏/听书胶囊的玻璃采样与模糊改由 Marea 材质档位总控
+    // （关档回实色；磨砂/液态档点亮采样与模糊，Legado 自身液态开关在开档时仍生效）
+    val mareaBlurMode = LocalMareaBlurMode.current
+    val floatingGlassEnabled = useLiquidGlass || mareaBlurMode != MAREA_BLUR_OFF
     val alwaysShowLabel = labelVisibilityMode == "labeled"
     val showLabel = !isUnlabeled
 
@@ -526,7 +532,7 @@ fun MainScreen(
             ) {
                 Box(
                     modifier = Modifier.then(
-                        if (useLiquidGlass) {
+                        if (floatingGlassEnabled) {
                             Modifier
                                 .hazeSource(hazeState)
                                 .layerBackdrop(floatingBarBackdrop)
@@ -723,7 +729,7 @@ fun MainScreen(
                             },
                             backdrop = floatingBarBackdrop,
                             tabsCount = destinations.size,
-                            isBlurEnabled = useLiquidGlass,
+                            isBlurEnabled = floatingGlassEnabled,
                             hasCustomIcons = destinations.any { dest ->
                                 mainUiState.customIconPath(dest).isNotEmpty() ||
                                         mainUiState.selectedCustomIconPath(dest).isNotEmpty()
@@ -776,7 +782,7 @@ fun MainScreen(
                             anchorPreview = capsuleAnchorPreview,
                             // 与悬浮底栏共用同一份 backdrop，液态玻璃开关一致。
                             backdrop = floatingBarBackdrop,
-                            isBlurEnabled = useLiquidGlass,
+                            isBlurEnabled = floatingGlassEnabled,
                             controlsExpanded = playbackControlsExpanded,
                             expansion = expansion,
                             width = capsuleWidth,

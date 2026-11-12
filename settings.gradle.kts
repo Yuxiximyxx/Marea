@@ -35,6 +35,7 @@ includeBuild("miuix") {
 
 rootProject.name = "MiuixBrowser"
 include(":app")
+include(":glasskit")
 // 实验分支 exp/legado-reader：Legado 整体移植（库模块 + 其 book/rhino 子模块）
 include(":legado")
 include(":modules:book")

@@ -50,8 +50,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 279
-        versionName = "v1.8.28-exp.6"
+        versionCode = 281
+        versionName = "v1.8.28-exp.7"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
@@ -140,6 +140,8 @@ configurations.configureEach {
 dependencies {
     // 实验分支 exp/legado-reader：整体移植的 Legado 阅读器（库模块）
     implementation(project(":legado"))
+    // exp.7：共享玻璃原语（glassBar / Marea 材质档位桥），legado 模块同依赖这一份
+    implementation(project(":glasskit"))
     implementation(libs.kotlinx.collections.immutable)
     coreLibraryDesugaring(libs.desugar)
     // 宿主 LegadoReaderHostActivity 的编译面（Nav3 / Koin / AppCompat）

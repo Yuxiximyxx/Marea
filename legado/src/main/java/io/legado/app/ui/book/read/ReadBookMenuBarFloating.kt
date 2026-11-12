@@ -57,6 +57,7 @@ import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.menuItem.MenuItemIcon
 import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenu
 import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenuItem
+import io.legado.app.ui.theme.mareaMaterialOverride
 import io.legado.app.ui.widget.components.reader.readerMenuLiquidGlassAvailable
 
 @Composable
@@ -68,9 +69,11 @@ internal fun FloatingIconRow(
     onIntent: (ReadBookIntent) -> Unit,
     backdrop: Backdrop?,
 ) {
+    // exp.7：浮动图标液态开关走 Marea 档位覆写
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val context = LocalContext.current
     val floatingIcons = remember(
-        state.menuConfig.titleBarButtons,
+        menuConfig.titleBarButtons,
         state.isLocalBook,
         state.isLocalTxt,
         state.bookSource,
@@ -107,11 +110,11 @@ internal fun FloatingIconRow(
         floatingIcons.forEach { iconDef ->
             // 按 id 记槽位：按钮列表随配置重排时，展开态不会被错配到别的按钮上
             key(iconDef.id) {
-                val customPath = remember(state.menuConfig.titleBarCustomIcons, iconDef.id) {
-                    state.menuConfig.titleBarCustomIcons[iconDef.id]
+                val customPath = remember(menuConfig.titleBarCustomIcons, iconDef.id) {
+                    menuConfig.titleBarCustomIcons[iconDef.id]
                 }
                 val isCustom = !customPath.isNullOrBlank()
-                val glassEnabled = !isCustom && state.menuConfig.readMenuFloatingIconLiquidGlass &&
+                val glassEnabled = !isCustom && menuConfig.readMenuFloatingIconLiquidGlass &&
                         readerMenuLiquidGlassAvailable(backdrop)
                 var expandedMenu by remember { mutableStateOf(false) }
                 Box {
@@ -119,7 +122,7 @@ internal fun FloatingIconRow(
                         onClick = iconDef.onClick,
                         colors = colors,
                         backdrop = backdrop,
-                        menuConfig = state.menuConfig,
+                        menuConfig = menuConfig,
                         glassEnabled = glassEnabled,
                         iconStyle = 1,
                         selected = iconDef.isActive,

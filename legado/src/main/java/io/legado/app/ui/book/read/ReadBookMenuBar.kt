@@ -97,6 +97,7 @@ import io.legado.app.ui.widget.components.reader.ReaderMenuPlacement
 import io.legado.app.ui.widget.components.reader.ReaderMenuTintStyle
 import io.legado.app.ui.widget.components.reader.ReaderMenuVisualState
 import io.legado.app.ui.widget.components.reader.readerMenuHazeEffect
+import io.legado.app.ui.theme.mareaMaterialOverride
 import io.legado.app.ui.widget.components.reader.readerMenuLiquidGlassAvailable
 import io.legado.app.ui.widget.components.reader.readerMenuSurfaceBrush
 import io.legado.app.ui.widget.components.settingItem.LocalSliderDragState
@@ -119,6 +120,8 @@ fun ReadBookMenuBar(
     hazeState: HazeState? = null,
     seekState: StateFlow<ReadSeekUiState>,
 ) {
+    // exp.7：菜单模糊/液态字段由 Marea 材质档位覆写（见 MareaMaterial.kt）
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val context = LocalContext.current
     val currentRoute = state.menuState.currentRoute
     val searchMenuVisible = state.isShowingSearchResult &&
@@ -169,12 +172,12 @@ fun ReadBookMenuBar(
                     titleBarMode = preferences.titleBarMode,
                     eyeProtectionActive = eyeProtectionActive,
                 )
-                if (state.menuConfig.showTitleBarIcons && state.menuConfig.titleBarIconPosition <= 1) {
+                if (menuConfig.showTitleBarIcons && menuConfig.titleBarIconPosition <= 1) {
                     FloatingIconRow(
                         state = state,
                         eyeProtectionActive = eyeProtectionActive,
                         colors = menuColors,
-                        alignment = if (state.menuConfig.titleBarIconPosition == 0) {
+                        alignment = if (menuConfig.titleBarIconPosition == 0) {
                             Alignment.Start
                         } else {
                             Alignment.End
@@ -187,13 +190,13 @@ fun ReadBookMenuBar(
         }
 
         // Vertical brightness bar (right or left side)
-        val brightnessMode = state.menuConfig.showBrightnessView
-        val brightnessVwPos = state.menuConfig.brightnessVwPos
+        val brightnessMode = menuConfig.showBrightnessView
+        val brightnessVwPos = menuConfig.brightnessVwPos
         val brightnessIsLeft = brightnessVwPos == "0"
         val brightnessShape = RoundedCornerShape(40.dp)
         val useBrightnessHaze = readMenuBottomBarHazeEnabled(
             hazeState = hazeState,
-            menuConfig = state.menuConfig,
+            menuConfig = menuConfig,
             isFloating = false,
         )
         val brightnessVisualState = ReaderMenuVisualState(
@@ -230,7 +233,7 @@ fun ReadBookMenuBar(
                             state = hazeState,
                             colors = menuColors,
                             shape = brightnessShape,
-                            menuConfig = state.menuConfig,
+                            menuConfig = menuConfig,
                             visualState = brightnessVisualState,
                         )
                     } else {
@@ -241,30 +244,30 @@ fun ReadBookMenuBar(
                         Color.Transparent
                     } else {
                         menuColors.background.copy(
-                            alpha = state.menuConfig.readMenuBlurAlpha.coerceIn(0, 100) / 100f
+                            alpha = menuConfig.readMenuBlurAlpha.coerceIn(0, 100) / 100f
                         )
                     },
                     contentColor = LegadoTheme.colorScheme.onSurface,
                 ) {
                     BrightnessBar(
-                        brightness = state.menuConfig.readBrightness,
+                        brightness = menuConfig.readBrightness,
                         onBrightnessChange = { value ->
                             onIntent(ReadBookIntent.SetBrightness(value))
                         },
-                        brightnessAuto = state.menuConfig.brightnessAuto,
+                        brightnessAuto = menuConfig.brightnessAuto,
                         onToggleAuto = {
-                            onIntent(ReadBookIntent.ToggleBrightnessAuto(!state.menuConfig.brightnessAuto))
+                            onIntent(ReadBookIntent.ToggleBrightnessAuto(!menuConfig.brightnessAuto))
                         },
                         onTogglePosition = {
                             onIntent(ReadBookIntent.UpdateConfig(ConfigUpdate.BrightnessVwPos(if (brightnessIsLeft) "1" else "0")))
                         },
                         vertical = true,
                         colors = menuColors,
-                        menuConfig = state.menuConfig,
+                        menuConfig = menuConfig,
                         backdrop = backdrop,
                         buttonGlassEnabled = readMenuBottomBarButtonLiquidGlassEnabled(
                             backdrop = backdrop,
-                            menuConfig = state.menuConfig,
+                            menuConfig = menuConfig,
                         ),
                         glassThumbEnabled = false,
                         onBrightnessPreview = onBrightnessPreview,
@@ -307,14 +310,14 @@ fun ReadBookMenuBar(
                 },
             ) {
                 if (state.menuVisible &&
-                    state.menuConfig.showTitleBarIcons &&
-                    state.menuConfig.titleBarIconPosition >= 2
+                    menuConfig.showTitleBarIcons &&
+                    menuConfig.titleBarIconPosition >= 2
                 ) {
                     FloatingIconRow(
                         state = state,
                         eyeProtectionActive = eyeProtectionActive,
                         colors = menuColors,
-                        alignment = if (state.menuConfig.titleBarIconPosition == 2) {
+                        alignment = if (menuConfig.titleBarIconPosition == 2) {
                             Alignment.Start
                         } else {
                             Alignment.End
@@ -367,6 +370,8 @@ private fun ReadBookMenuSurface(
     onBrightnessPreview: (Int) -> Unit,
     seekState: StateFlow<ReadSeekUiState>,
 ) {
+    // exp.7：同 ReadBookMenuBar，底栏模糊/液态字段走 Marea 档位覆写
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val route = when (contentTarget) {
         ReadBookMenuContent.Search -> ReadBookMenuRoute.Main
         is ReadBookMenuContent.Route -> contentTarget.route
@@ -396,7 +401,7 @@ private fun ReadBookMenuSurface(
     } else {
         560.dp
     }
-    val isFloating = state.menuConfig.readMenuFloatingBottomBar
+    val isFloating = menuConfig.readMenuFloatingBottomBar
     val orientation = LocalConfiguration.current.orientation
     val currentNavBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
     var lastValidNavBarHeightValue by rememberSaveable(orientation) { mutableFloatStateOf(currentNavBarHeight.value) }
@@ -416,7 +421,7 @@ private fun ReadBookMenuSurface(
         if (expanded && !isFloating) 0.dp else floatingHorizontalMargin
     val mainBottomMargin =
         if (expanded && !isFloating) 0.dp else floatingBottomMargin
-    val mainCorner = state.menuConfig.readMenuBottomCornerRadius.dp
+    val mainCorner = menuConfig.readMenuBottomCornerRadius.dp
     val mainWidth = (screenWidth - mainHorizontalMargin * 2).coerceAtLeast(0.dp)
     val surfaceWidth = if (expanded) {
         if (isFloating && !dialogLikeRoute) mainWidth
@@ -447,22 +452,22 @@ private fun ReadBookMenuSurface(
         RoundedCornerShape(topStart = mainCorner, topEnd = mainCorner)
     }
 
-    val bottomBarBorderWidth = state.menuConfig.readMenuBorderWidth
-    val bottomBarBorderColor = readMenuBorderColor(state.menuConfig)
+    val bottomBarBorderWidth = menuConfig.readMenuBorderWidth
+    val bottomBarBorderColor = readMenuBorderColor(menuConfig)
     val extendSurfaceToNavigationBar = !isFloating && !dialogLikeRoute
     val useLiquidGlass = readMenuBottomBarLiquidGlassEnabled(
         backdrop = backdrop,
-        menuConfig = state.menuConfig,
+        menuConfig = menuConfig,
         isFloating = isFloating,
     )
     val useHaze = readMenuBottomBarHazeEnabled(
         hazeState = hazeState,
-        menuConfig = state.menuConfig,
+        menuConfig = menuConfig,
         isFloating = isFloating,
     )
     val useBottomBarButtonGlass = readMenuBottomBarButtonLiquidGlassEnabled(
         backdrop = backdrop,
-        menuConfig = state.menuConfig,
+        menuConfig = menuConfig,
     )
     val useLens = useLiquidGlass && isFloating && mainCorner > 0.dp
     val bottomBarVisualState = ReaderMenuVisualState(
@@ -471,15 +476,15 @@ private fun ReadBookMenuSurface(
             useHaze -> ReaderMenuEffect.Haze
             else -> ReaderMenuEffect.None
         },
-        tintStyle = state.menuConfig.readMenuBottomBarBlurStyle.toReaderMenuTintStyle(),
+        tintStyle = menuConfig.readMenuBottomBarBlurStyle.toReaderMenuTintStyle(),
         styleEnabled = route == ReadBookMenuRoute.Main && !isFloating,
         tintAllowed = route == ReadBookMenuRoute.Main,
         tintFill = false,
     )
-    val bottomBarMenuTintColor = readMenuTintColor(state.menuConfig)
+    val bottomBarMenuTintColor = readMenuTintColor(menuConfig)
         .takeIf { bottomBarVisualState.useTint }
     val isSliderDragging = LocalSliderDragState.current?.isDragging == true
-    val menuSurfaceAlpha = state.menuConfig.readMenuBlurAlpha.coerceIn(0, 100)
+    val menuSurfaceAlpha = menuConfig.readMenuBlurAlpha.coerceIn(0, 100)
     // 拖动时降低不透明度（≤30%），露出背后排版以便实时预览；透明度变化带过渡动画
     val dragMenuAlpha = menuSurfaceAlpha.coerceAtMost(30)
     val animatedSurfaceAlpha by animateFloatAsState(
@@ -496,7 +501,7 @@ private fun ReadBookMenuSurface(
         animationSpec = tween(durationMillis = 200),
         label = "ReadMenuFillAlpha",
     )
-    val bottomBarTextColor = readMenuTextColor(state.menuConfig)
+    val bottomBarTextColor = readMenuTextColor(menuConfig)
     val surfaceWindowInsetSides = when {
         isFloating || extendSurfaceToNavigationBar -> WindowInsetsSides.Horizontal
         else -> WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
@@ -537,7 +542,7 @@ private fun ReadBookMenuSurface(
                         shape = surfaceShape,
                         useTopBarStyle = false,
                         useLens = useLens,
-                        menuConfig = state.menuConfig,
+                        menuConfig = menuConfig,
                         surfaceAlphaOverride = animatedSurfaceAlpha.roundToInt(),
                     )
                 } else {
@@ -550,7 +555,7 @@ private fun ReadBookMenuSurface(
                         state = hazeState,
                         colors = colors,
                         shape = surfaceShape,
-                        menuConfig = state.menuConfig,
+                        menuConfig = menuConfig,
                         visualState = bottomBarVisualState,
                         blurRadiusDp = if (expanded) 32 else null,
                         surfaceAlphaOverride = animatedSurfaceAlpha.roundToInt(),
@@ -679,8 +684,8 @@ private fun ReadBookMenuSurface(
                                     onIntent(ReadBookIntent.ToggleDayNight)
                                 },
                                 onPageChanged = onReadStylePageChanged,
-                                readMenuCustomIcons = state.menuConfig.readMenuCustomIcons,
-                                bottomBarButtons = state.menuConfig.bottomBarButtons,
+                                readMenuCustomIcons = menuConfig.readMenuCustomIcons,
+                                bottomBarButtons = menuConfig.bottomBarButtons,
                                 preferences = preferences,
                                 eyeProtectionEnabled = eyeProtectionActive,
                                 onIntent = onIntent,

@@ -2,6 +2,17 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.7] - 2026-11-13
+
+Legado 阅读器整体移植实验线第七版：Legado 界面接入 Marea 材质切换 + Legado 全界面导航条沉浸。
+
+- 材质总控：新增共享小模块 glasskit（app 与 legado 同依赖一份）——Marea 材质档位（mafari_settings/blur_mode：0 MIUIX 磨砂 / 1 液态 / 2 关）经落盘桥注入 Legado 各宿主组合根（BaseComposeActivity、LegadoReaderHostActivity），切档实时跟随；浏览器原有的 Modifier.glassBar 一并下沉到该模块（app 侧改为引用同一份，行为不变）。档位语义为总开关：关档 Legado 主要浮层一律回实色，Legado 自身的同名模糊设置在这批表面上让位。
+- 阅读菜单（ReadMenu）：顶栏、底栏、浮动图标的模糊模式按档位一一映射（关→无、磨砂→Haze、液态→液态玻璃，液态档同时点亮顶/底栏与浮动图标的液态玻璃按钮）；正文 Haze 采样源随覆写后的模式开关。
+- 主界面栏面：AppScaffold 的顶栏 Haze/液态采样改为档位总控（关档不提供 LocalHazeState/LocalTopBarBackdrop、磨砂档内容改画到顶栏之后以供采样）；书架悬浮底栏与听书胶囊的采样与模糊同理由档位点亮/关闭。
+- 弹层：AppModalBottomSheet（阅读内目录/设置类弹层的共用组件）关档为原实色 surfaceContainer，开档转 0.88 半透明玻璃色。限制：该弹层在 Miuix 引擎下是独立窗口，无法跨窗口采样背景，只能到半透明色层为止，不做假模糊。
+- 导航条沉浸：BaseComposeActivity 组合根补全幅页面底色层（与窗口背景同步同口径：Miuix 引擎取 surface、否则取 Legado background；透明跳板宿主除外），Scaffold 按 inset 让位时导航条下方露页面底色而非窗口背景；LegadoReaderHostActivity 同步补全幅底色层并关 navigationBarContrastEnforced（此前该宿主无窗口背景同步，露出的是主题动态色，与页面底色异色成带）。阅读页正文背景为阅读底色自绘全幅，不受影响。
+- 发版前照例过 materialkolor 全引用闭合门禁（tools/check_materialkolor_closure.py）。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.6] - 2026-11-12
 
 Legado 阅读器整体移植实验线第六版：了结开书崩溃的最后一层——miuix 源码与 MaterialKolor 的配色库布局错位。

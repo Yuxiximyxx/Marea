@@ -10,7 +10,11 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,7 +33,11 @@ import androidx.navigation3.ui.NavDisplay
 import io.legado.app.domain.gateway.AppUiConfigurationGateway
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
+import dev.dsh.glasskit.ProvideMareaBlurMode
 import io.legado.app.ui.theme.AppTheme
+import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.theme.ThemeResolver
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import io.legado.app.ui.book.info.BookInfoRouteScreen
 import io.legado.app.ui.book.info.BookInfoViewModel
 import io.legado.app.ui.book.info.edit.BookInfoEditScreen
@@ -117,6 +125,9 @@ class LegadoReaderHostActivity : AppCompatActivity() {
         CrashCapture.install(this)
         // 与 Legado 自家宿主 BaseComposeActivity 对齐：阅读页按 edge-to-edge 布局
         enableEdgeToEdge()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         val uri: Uri? = intent?.getStringExtra(EXTRA_URI)?.let { runCatching { Uri.parse(it) }.getOrNull() }
             ?: intent?.data
         Diag.log("legado-host: create uri=$uri")
@@ -154,7 +165,25 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                 val uiConfiguration by appUiConfigurationGateway.configuration
                     .collectAsStateWithLifecycle(appUiConfigurationGateway.currentConfiguration)
                 AppTheme(configuration = uiConfiguration) {
-                    LegadoReaderNav(bookUrl = book.bookUrl)
+                    // exp.7 沉浸：本宿主没有 BaseComposeActivity 的窗口背景同步，
+                    // 未绘制区露的是主题动态色、与 Legado 页面底色异色成带；
+                    // 补一层与 Legado 宿主同口径的全幅页面底色（阅读页正文背景
+                    // 自绘于其上，不受影响），并注入 Marea 材质档位。
+                    val pageBackground =
+                        if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
+                            MiuixTheme.colorScheme.surface
+                        } else {
+                            LegadoTheme.colorScheme.background
+                        }
+                    ProvideMareaBlurMode {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(pageBackground)
+                        ) {
+                            LegadoReaderNav(bookUrl = book.bookUrl)
+                        }
+                    }
                 }
             }
             Diag.log("legado-host: content set")

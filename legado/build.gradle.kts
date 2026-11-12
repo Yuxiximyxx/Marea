@@ -189,6 +189,8 @@ dependencies {
     implementation("com.materialkolor:material-color-utilities-android:5.0.1")
     implementation(libs.haze.core)
     implementation(libs.haze.blur)
+    // exp.7：Marea 材质档位桥 + 共享 glassBar（dev.dsh.glasskit），与 app 同一份实现
+    implementation(project(":glasskit"))
     implementation(libs.miuix.ui.android)
     implementation(libs.miuix.preference.android)
     implementation(libs.miuix.icons.android)

@@ -72,6 +72,7 @@ import io.legado.app.ui.widget.components.reader.ReaderMenuPlacement
 import io.legado.app.ui.widget.components.reader.ReaderMenuTintStyle
 import io.legado.app.ui.widget.components.reader.ReaderMenuVisualState
 import io.legado.app.ui.widget.components.reader.readerMenuHazeEffect
+import io.legado.app.ui.theme.mareaMaterialOverride
 import io.legado.app.ui.widget.components.reader.readerMenuLiquidGlassAvailable
 import io.legado.app.ui.widget.components.reader.readerMenuSurfaceBrush
 import io.legado.app.ui.widget.components.settingItem.LocalSliderDragState
@@ -88,11 +89,12 @@ internal fun MenuTitleBar(
     titleBarMode: String,
     eyeProtectionActive: Boolean,
 ) {
-
-    val topBarBorderWidth = state.menuConfig.readMenuBorderWidth
-    val topBarBorderColor = readMenuBorderColor(state.menuConfig)
+    // exp.7：顶栏模糊/液态字段由 Marea 材质档位覆写（见 MareaMaterial.kt）
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
+    val topBarBorderWidth = menuConfig.readMenuBorderWidth
+    val topBarBorderColor = readMenuBorderColor(menuConfig)
     val isSliderDragging = LocalSliderDragState.current?.isDragging == true
-    val topBarSurfaceAlpha = state.menuConfig.readMenuBlurAlpha.coerceIn(0, 100)
+    val topBarSurfaceAlpha = menuConfig.readMenuBlurAlpha.coerceIn(0, 100)
     val dragTopBarAlpha = topBarSurfaceAlpha.coerceAtMost(30)
     val animatedTopBarAlpha by animateFloatAsState(
         targetValue = if (isSliderDragging) dragTopBarAlpha.toFloat() else topBarSurfaceAlpha.toFloat(),
@@ -100,22 +102,22 @@ internal fun MenuTitleBar(
         label = "ReadMenuTopBarAlpha",
     )
     val topBarAlpha = animatedTopBarAlpha / 100f
-    val useTopBarBlur = readMenuTopBarHazeEnabled(hazeState, state.menuConfig)
+    val useTopBarBlur = readMenuTopBarHazeEnabled(hazeState, menuConfig)
     val topBarVisualState = ReaderMenuVisualState(
         effect = if (useTopBarBlur) ReaderMenuEffect.Haze else ReaderMenuEffect.None,
-        tintStyle = state.menuConfig.readMenuTopBarBlurStyle.toReaderMenuTintStyle(),
+        tintStyle = menuConfig.readMenuTopBarBlurStyle.toReaderMenuTintStyle(),
         styleEnabled = true,
         tintAllowed = true,
         tintFill = true,
     )
-    val topBarTintColor = readMenuTintColor(state.menuConfig)
+    val topBarTintColor = readMenuTintColor(menuConfig)
         .takeIf { topBarVisualState.useTint }
         ?: colors.background
-    val titleTextColor = readMenuTextColor(state.menuConfig)
+    val titleTextColor = readMenuTextColor(menuConfig)
     val labelStyle = LegadoTheme.typography.labelSmallEmphasized.copy(
         shadow = menuTextShadow
     )
-    val useTitleCapsule = state.menuConfig.readMenuTopBarTitleCapsule
+    val useTitleCapsule = menuConfig.readMenuTopBarTitleCapsule
 
     Column(
         modifier = Modifier
@@ -127,8 +129,8 @@ internal fun MenuTitleBar(
                         visualState = topBarVisualState,
                         placement = ReaderMenuPlacement.Top,
                         baseColor = colors.background,
-                        tintColor = readMenuTintColor(state.menuConfig),
-                        blurRadius = state.menuConfig.readMenuBlurRadius,
+                        tintColor = readMenuTintColor(menuConfig),
+                        blurRadius = menuConfig.readMenuBlurRadius,
                         surfaceAlpha = animatedTopBarAlpha.roundToInt(),
                     )
                 } else {
@@ -231,7 +233,7 @@ internal fun MenuTitleBar(
                 onIntent = onIntent,
                 backdrop = backdrop,
                 eyeProtectionActive = eyeProtectionActive,
-                merged = state.menuConfig.readMenuTopBarMergeButtons,
+                merged = menuConfig.readMenuTopBarMergeButtons,
             )
         }
 
@@ -330,18 +332,19 @@ private fun MenuTitleGlassButton(
     customIconPath: String? = null,
     selected: Boolean = false,
 ) {
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     ReadMenuGlassButtonSurface(
         onClick = onClick,
         colors = colors,
         backdrop = backdrop,
-        menuConfig = state.menuConfig,
-        glassEnabled = readMenuTopBarButtonLiquidGlassEnabled(backdrop, state.menuConfig),
-        iconStyle = state.menuConfig.titleBarIconStyle,
+        menuConfig = menuConfig,
+        glassEnabled = readMenuTopBarButtonLiquidGlassEnabled(backdrop, menuConfig),
+        iconStyle = menuConfig.titleBarIconStyle,
         modifier = modifier,
         onLongClick = onLongClick,
         selected = selected,
-        menuBorderEnabled = state.menuConfig.readMenuBorderWidth > 0 &&
-                state.menuConfig.readMenuTopBarTitleCapsule,
+        menuBorderEnabled = menuConfig.readMenuBorderWidth > 0 &&
+                menuConfig.readMenuTopBarTitleCapsule,
         contentDescription = contentDescription,
     ) { tint ->
         if (customIconPath.isNullOrBlank()) {
@@ -497,13 +500,14 @@ private fun RowScope.TitleCapsuleGlassLayout(
     titleTextColor: Color,
 ) {
     val pillShape = RoundedCornerShape(50)
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val glassEnabled = readerMenuLiquidGlassAvailable(backdrop)
-            && state.menuConfig.readMenuTopBarLiquidGlassButtons
-    val iconStyle = state.menuConfig.titleBarIconStyle
+            && menuConfig.readMenuTopBarLiquidGlassButtons
+    val iconStyle = menuConfig.titleBarIconStyle
     val border = when {
-        state.menuConfig.readMenuBorderWidth > 0 -> BorderStroke(
-            state.menuConfig.readMenuBorderWidth.dp,
-            Color(readMenuBorderColor(state.menuConfig)),
+        menuConfig.readMenuBorderWidth > 0 -> BorderStroke(
+            menuConfig.readMenuBorderWidth.dp,
+            Color(readMenuBorderColor(menuConfig)),
         )
 
         iconStyle == 2 -> BorderStroke(
@@ -528,7 +532,7 @@ private fun RowScope.TitleCapsuleGlassLayout(
                         useTopBarStyle = true,
                         useLens = false,
                         blurRadius = 32.dp,
-                        menuConfig = state.menuConfig,
+                        menuConfig = menuConfig,
                     )
                 } else {
                     val containerColor = when (iconStyle) {
@@ -831,8 +835,9 @@ private fun MenuTitleBarMergedGlassButton(
     itemContent: @Composable (ReadMenuActionDef) -> Unit,
 ) {
     val pillShape = RoundedCornerShape(50)
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val tint = LegadoTheme.colorScheme.onSurfaceVariant
-    val iconStyle = state.menuConfig.titleBarIconStyle
+    val iconStyle = menuConfig.titleBarIconStyle
 
     Box {
         Row(
@@ -848,7 +853,7 @@ private fun MenuTitleBarMergedGlassButton(
                             useLens = true,
                             blurRadius = 32.dp,
                             interactive = true,
-                            menuConfig = state.menuConfig,
+                            menuConfig = menuConfig,
                         )
                     } else {
                         val containerColor = when (iconStyle) {
@@ -860,12 +865,12 @@ private fun MenuTitleBarMergedGlassButton(
                 )
                 .then(
                     when {
-                        state.menuConfig.readMenuBorderWidth > 0 &&
-                                state.menuConfig.readMenuTopBarTitleCapsule ->
+                        menuConfig.readMenuBorderWidth > 0 &&
+                                menuConfig.readMenuTopBarTitleCapsule ->
                             Modifier.border(
                                 BorderStroke(
-                                    state.menuConfig.readMenuBorderWidth.dp,
-                                    Color(readMenuBorderColor(state.menuConfig)),
+                                    menuConfig.readMenuBorderWidth.dp,
+                                    Color(readMenuBorderColor(menuConfig)),
                                 ),
                                 pillShape,
                             )
@@ -906,11 +911,12 @@ private fun RowScope.TitleBarActionButtons(
     merged: Boolean,
 ) {
     val context = LocalContext.current
-    val customIcons = state.menuConfig.titleBarCustomIcons
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
+    val customIcons = menuConfig.titleBarCustomIcons
     val actions = remember(
         context,
-        state.menuConfig.titleBarActions,
-        state.menuConfig.titleBarCompact,
+        menuConfig.titleBarActions,
+        menuConfig.titleBarCompact,
         state.isLocalBook,
         state.isLocalTxt,
         state.bookSource,
@@ -975,7 +981,7 @@ private fun RowScope.TitleBarActionButtons(
             state = state,
             colors = colors,
             backdrop = backdrop,
-            glassEnabled = readMenuTopBarButtonLiquidGlassEnabled(backdrop, state.menuConfig),
+            glassEnabled = readMenuTopBarButtonLiquidGlassEnabled(backdrop, menuConfig),
             actions = actions,
             itemContent = itemContent,
         )

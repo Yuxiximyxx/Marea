@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kyant.backdrop.Backdrop
 import io.legado.app.R
 import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.theme.mareaMaterialOverride
 import io.legado.app.ui.widget.components.AppVerticalSlider
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.ceil
@@ -65,6 +66,8 @@ internal fun MenuBottomBar(
     seekState: StateFlow<ReadSeekUiState>,
 ) {
     // 只在本作用域收集定位流：翻页/拖动进度条不会再把整屏拖起来重组（见 ReadSeekUiState）。
+    // exp.7：菜单配置的模糊/液态字段走 Marea 档位覆写
+    val menuConfig = state.menuConfig.mareaMaterialOverride()
     val seek by seekState.collectAsStateWithLifecycle()
     val seekMax = seek.seekMax.coerceAtLeast(0)
     val sliderMax = seekMax.toFloat().coerceAtLeast(1f)
@@ -135,20 +138,20 @@ internal fun MenuBottomBar(
             .padding(top = 8.dp, bottom = contentBottomPadding)
             .animateContentSize(),
     ) {
-        if (state.menuConfig.showBrightnessView == "1") {
+        if (menuConfig.showBrightnessView == "1") {
             BrightnessBar(
-                brightness = state.menuConfig.readBrightness,
+                brightness = menuConfig.readBrightness,
                 onBrightnessChange = { value ->
                     onIntent(ReadBookIntent.SetBrightness(value))
                 },
-                brightnessAuto = state.menuConfig.brightnessAuto,
+                brightnessAuto = menuConfig.brightnessAuto,
                 onToggleAuto = {
-                    onIntent(ReadBookIntent.ToggleBrightnessAuto(!state.menuConfig.brightnessAuto))
+                    onIntent(ReadBookIntent.ToggleBrightnessAuto(!menuConfig.brightnessAuto))
                 },
                 onTogglePosition = {},
                 vertical = false,
                 colors = colors,
-                menuConfig = state.menuConfig,
+                menuConfig = menuConfig,
                 backdrop = backdrop,
                 buttonGlassEnabled = buttonGlassEnabled,
                 glassThumbEnabled = buttonGlassEnabled,
@@ -158,7 +161,7 @@ internal fun MenuBottomBar(
         }
 
         // Seek bar row: prev + slider + next
-        AnimatedVisibility(visible = state.menuConfig.readSliderMode != "1") {
+        AnimatedVisibility(visible = menuConfig.readSliderMode != "1") {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -172,7 +175,7 @@ internal fun MenuBottomBar(
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
                     colors = colors,
                     backdrop = backdrop,
-                    menuConfig = state.menuConfig,
+                    menuConfig = menuConfig,
                     glassEnabled = buttonGlassEnabled,
                     contentDescription = stringResource(R.string.previous_chapter),
                 )
@@ -201,7 +204,7 @@ internal fun MenuBottomBar(
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
                     colors = colors,
                     backdrop = backdrop,
-                    menuConfig = state.menuConfig,
+                    menuConfig = menuConfig,
                     glassEnabled = buttonGlassEnabled,
                     contentDescription = stringResource(R.string.next_chapter),
                 )
@@ -214,8 +217,8 @@ internal fun MenuBottomBar(
         // isActive 是这里的快照，开关态必须进 key 列表，否则点击后高亮不刷新
         val toolButtons = remember(
             context,
-            state.menuConfig.bottomBarButtons,
-            state.menuConfig.readMenuCustomIcons,
+            menuConfig.bottomBarButtons,
+            menuConfig.readMenuCustomIcons,
             state.isLocalBook,
             state.isLocalTxt,
             state.bookSource,
@@ -234,8 +237,8 @@ internal fun MenuBottomBar(
                 onIntent = onIntent,
             )
         }
-        val itemsPerRow = state.menuConfig.readMenuIconItemsPerRow
-        val rowCount = state.menuConfig.readMenuIconRowCount
+        val itemsPerRow = menuConfig.readMenuIconItemsPerRow
+        val rowCount = menuConfig.readMenuIconRowCount
         val pageSize = (itemsPerRow * rowCount).coerceAtLeast(1)
         val pageCount = ceil(toolButtons.size / pageSize.toFloat()).roundToInt().coerceAtLeast(1)
         val pagerState = rememberPagerState(pageCount = { pageCount })

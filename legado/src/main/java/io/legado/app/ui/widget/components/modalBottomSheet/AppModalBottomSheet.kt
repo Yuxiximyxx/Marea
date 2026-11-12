@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import dev.dsh.glasskit.LocalMareaBlurMode
+import dev.dsh.glasskit.MAREA_BLUR_OFF
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.LocalLegadoThemeColors
 import io.legado.app.ui.theme.ProvideAppContentColor
@@ -59,7 +61,15 @@ fun AppModalBottomSheet(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colorScheme = LocalLegadoThemeColors.current.colorScheme
-    val sheetContainerColor = LegadoTheme.colorScheme.surfaceContainer
+    // exp.7：弹层跟随 Marea 材质档位——关档为原实色；开档（磨砂/液态）转半透明
+    // 玻璃色。弹层在 Miuix 引擎下是独立窗口、无法跨窗口采样背景，此处只能到
+    // 半透明色层为止，不做假模糊。
+    val mareaBlurMode = LocalMareaBlurMode.current
+    val sheetContainerColor = if (mareaBlurMode == MAREA_BLUR_OFF) {
+        LegadoTheme.colorScheme.surfaceContainer
+    } else {
+        LegadoTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+    }
     val sheetContentColor = LegadoTheme.colorScheme.onSurface
     val sheetDragHandleColor = LegadoTheme.colorScheme.onSurfaceVariant
 

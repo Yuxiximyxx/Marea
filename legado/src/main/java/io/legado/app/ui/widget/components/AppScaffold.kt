@@ -24,6 +24,10 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazeState
+import dev.dsh.glasskit.LocalMareaBlurMode
+import dev.dsh.glasskit.MAREA_BLUR_LIQUID
+import dev.dsh.glasskit.MAREA_BLUR_MIUIX
+import dev.dsh.glasskit.MAREA_BLUR_OFF
 import dev.chrisbanes.haze.hazeSource
 import io.legado.app.domain.model.settings.hasBackgroundImage
 import io.legado.app.ui.theme.LegadoTheme
@@ -65,10 +69,19 @@ fun AppScaffold(
     val themeSettings = configuration.theme
     val hasImageBg = themeSettings.hasBackgroundImage(isDark)
     val hazeState = remember { HazeState() }
-    val liquidGlassEnabled = configuration.theme.topBarButtonStyle == "liquid"
+    // exp.7：顶栏玻璃（Haze 磨砂 / 液态采样）改由 Marea 材质档位总控：
+    // 关档一律回实色；磨砂档点亮 Haze；液态档点亮顶栏液态采样。
+    // Legado 自身的 enableBlur / topBarButtonStyle 在开档时仍可叠加生效。
+    val mareaBlurMode = LocalMareaBlurMode.current
+    val mareaGlassActive = mareaBlurMode != MAREA_BLUR_OFF
+    val liquidGlassEnabled = mareaGlassActive &&
+        (configuration.theme.topBarButtonStyle == "liquid" || mareaBlurMode == MAREA_BLUR_LIQUID)
+    val hazeEnabled = mareaGlassActive &&
+        (themeSettings.enableBlur || mareaBlurMode == MAREA_BLUR_MIUIX)
     val composeEngine = LegadoTheme.composeEngine
     val contentDrawsBehindBars =
-        alwaysDrawBehindBars || themeSettings.enableBlur || themeSettings.enableProgressiveBlur
+        alwaysDrawBehindBars || themeSettings.enableBlur || themeSettings.enableProgressiveBlur ||
+            mareaBlurMode == MAREA_BLUR_MIUIX
 
     val containerColor = if (hasImageBg) {
         Color.Transparent
@@ -93,7 +106,7 @@ fun AppScaffold(
     )
 
     CompositionLocalProvider(
-        LocalHazeState provides if (themeSettings.enableBlur) hazeState else null,
+        LocalHazeState provides if (hazeEnabled) hazeState else null,
         LocalTopBarBackdrop provides if (liquidGlassEnabled) topBarBackdrop else null,
     ) {
         when {
