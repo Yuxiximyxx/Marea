@@ -74,6 +74,7 @@ import io.legado.app.domain.gateway.PlaybackCapsuleGateway
 import io.legado.app.domain.model.PlaybackCapsuleSource
 import io.legado.app.domain.model.PlaybackCapsuleState
 import io.legado.app.help.LocalNetworkAccess
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.coroutine.Coroutine
@@ -146,6 +147,9 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
     }
 
     companion object {
+        /** exp.10：Marea 入口传入的空间（0 普通 / 1 隐私），见 [io.legado.app.help.MareaSpace]。 */
+        const val EXTRA_MAREA_SPACE = "marea_space"
+
         private const val KEY_RESTORE_READ_ROUTE = "restoreReadRoute"
         private const val KEY_RESTORE_READ_BOOK_URL = "restoreReadBookUrl"
         private const val KEY_RESTORE_READ_ALOUD = "restoreReadAloud"
@@ -382,6 +386,8 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         restoredReadBookRoute = savedInstanceState?.restoreReadBookRoute()
             ?: navRouteTracker.lastReadBookRoute()
         super.onCreate(savedInstanceState)
+        // exp.10：空间先于一切路由判定落位，书架首帧即是对应空间的书。
+        applyMareaSpaceFrom(intent)
 
         if (checkStartupRoute()) return
         val shouldAutoCheckUpdate = startupUpdateCheckGate.consume(
@@ -441,8 +447,20 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         }
     }
 
+    /**
+     * exp.10：入口带了空间 extra 就应用到 [MareaSpace]（无 extra 的拉起不动当前空间，
+     * 回落其持久化的上次空间）。onResume 时若本实例 intent 仍带 extra 则重申一次——
+     * 多实例/回栈场景下避免另一个实例改过空间后，本实例回来展示串空间的书架。
+     */
+    private fun applyMareaSpaceFrom(intent: Intent?) {
+        if (intent?.hasExtra(EXTRA_MAREA_SPACE) == true) {
+            MareaSpace.applySpace(intent.getIntExtra(EXTRA_MAREA_SPACE, MareaSpace.NORMAL))
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        applyMareaSpaceFrom(intent)
         requestLocalNetworkPermissionIfBlocked()
         if (isPlaybackOverlayVisible) {
             // 阅读器在 ON_RESUME 里会按自己的菜单状态重设系统栏（可能重新隐藏），
@@ -466,6 +484,8 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // exp.10：存活实例被另一空间的入口再次拉起时，先切空间再处理路由。
+        applyMareaSpaceFrom(intent)
         if (intent.getBooleanExtra(MainIntent.EXTRA_OPEN_READ_ALOUD_PLAYER, false)) {
             ReadAloudPlayerOverlayBus.request()
             return

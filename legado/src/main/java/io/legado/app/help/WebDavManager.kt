@@ -89,6 +89,12 @@ class WebDavManager(
                 AppConfigStore.observeString(PreferKey.webDavPassword).drop(1),
                 AppConfigStore.observeString(PreferKey.webDavDir).drop(1),
                 AppConfigStore.observeString(PreferKey.webDavDeviceName).drop(1),
+                // exp.10：隐私空间那份 WebDAV 配置变更也要触发重读/刷新。
+                AppConfigStore.observeString(PreferKey.webDavUrlPrivate).drop(1),
+                AppConfigStore.observeString(PreferKey.webDavAccountPrivate).drop(1),
+                AppConfigStore.observeString(PreferKey.webDavPasswordPrivate).drop(1),
+                AppConfigStore.observeString(PreferKey.webDavDirPrivate).drop(1),
+                AppConfigStore.observeString(PreferKey.webDavDeviceNamePrivate).drop(1),
             ).debounce(100).collect {
                 configFlow.value = readConfig()
                 refresh()

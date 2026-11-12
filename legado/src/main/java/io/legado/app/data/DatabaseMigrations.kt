@@ -22,7 +22,19 @@ object DatabaseMigrations {
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
             migration_82_83, migration_98_99, migration_99_100,
             migration_102_103, migration_123_124, migration_124_125, migration_127_128,
+            migration_133_134,
         )
+    }
+
+    /**
+     * 133 → 134（exp.10）：books 加 Marea 空间归属列 space（0=普通空间，1=隐私空间）。
+     * 存量书一律默认 0——升级后全部留在普通空间书架，不丢书、不串架；
+     * 此后从隐私空间导入的书才落 1。
+     */
+    private val migration_133_134 = object : Migration(133, 134) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE books ADD COLUMN space INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     /**

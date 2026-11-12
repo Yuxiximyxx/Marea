@@ -14,6 +14,8 @@ internal val alwaysIgnoredPreferenceKeys = setOf(
     PreferKey.backupPath,
     PreferKey.defaultBookTreeUri,
     PreferKey.webDavDeviceName,
+    // exp.10：隐私空间的设备名同属设备专属量，一样不进备份。
+    PreferKey.webDavDeviceNamePrivate,
     PreferKey.launcherIcon,
     PreferKey.bitmapCacheSize,
     PreferKey.webServiceWakeLock,

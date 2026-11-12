@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.storage.ImportOldData
 import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
@@ -146,6 +147,8 @@ fun BackupConfigScreen(
     snackbarHostState: SnackbarHostState,
 ) {
     val settings = state.settings
+    // exp.10：WebDAV 配置按 Marea 空间各存一份，分组标题带空间字样防配错账号。
+    val mareaSpace by MareaSpace.spaceFlow.collectAsStateWithLifecycle()
     val scrollBehavior = GlassTopAppBarDefaults.defaultScrollBehavior()
     AppScaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -166,7 +169,15 @@ fun BackupConfigScreen(
             ),
         ) {
             item {
-                SplicedColumnGroup(title = stringResource(R.string.web_dav_set)) {
+                SplicedColumnGroup(
+                    title = stringResource(
+                        if (mareaSpace == MareaSpace.PRIVATE) {
+                            R.string.web_dav_set_private_space
+                        } else {
+                            R.string.web_dav_set_normal_space
+                        }
+                    )
+                ) {
                     InputSettingItem(
                         title = stringResource(R.string.web_dav_url),
                         description = stringResource(R.string.web_dav_url_s),

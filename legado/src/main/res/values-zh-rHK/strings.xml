@@ -111,6 +111,8 @@
     <string name="ps_auto_download">更新書輯時自動下載最新章節</string>
     <string name="backup_restore">備份與還原</string>
     <string name="web_dav_set">WebDav 設定</string>
+    <string name="web_dav_set_normal_space">WebDav 設定（普通空間）</string>
+    <string name="web_dav_set_private_space">WebDav 設定（私密空間）</string>
     <string name="web_dav_set_import_old">WebDav 設定/還原舊版本數據</string>
     <string name="backup">備份</string>
     <string name="restore">還原</string>

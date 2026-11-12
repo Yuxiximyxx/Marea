@@ -2,6 +2,16 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.10] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十版：exp.9 两项真机未过的返工 + Legado 书架按 Marea 空间分架。
+
+- 返工一·导航条沉浸：exp.9 改绑页面背景角色后，书架/我的主页底部黑带仍在。逐层定位确认犯病仅限带悬浮底栏的两个一级页（二级页、阅读页无此结构、均正常）：MainScreen 的 AppScaffold 依 contentWindowInsets 底部算出的 bottomPadding 把内容根整体抬离窗口底沿，露出的那条带只剩 scaffold Surface 一层兜底——exp.7、exp.9 改的窗口背景、组合根底色层、容器色都不是实际呈现层。修法落在容器层：AppScaffold 传 alwaysDrawBehindBars 把 padding 交回 MainScreen，悬浮模式下内容根不再让出底部，改由本层以页面底色（Miuix 引擎绑 background、MD3 绑 Legado background，与内层页 scaffold 容器同色）全幅铺到窗口底沿，悬浮底栏位置与旧结构一致；经典底栏/侧栏模式保持原 padding 不变。另加 MainImmersion Diag（引擎、页面底色 ARGB、scaffold bottomPadding，落 marea_glass_diag.log）供复验取证。
+- 返工二·悬浮底栏材质：真机上磨砂/液态两档肉眼无区别。实查 exp.9 只切了 isBlurEnabled/isLiquidGlass 开关，模糊半径、tint、透镜仍走 Legado 自家弱参数（blur 8dp / tint 40% / lens 24），两档共用一套；采样源经查已注册（pager 内容挂 layerBackdrop、底栏 drawBackdrop 消费同一 backdrop），不是空采样。本版按 glasskit glassBar 的分档口径接管参数：磨砂 blur 24dp + tint 0.40，液态 blur 3dp + tint 0.12 + lens(18dp, 40dp，含深度效果与色差，与 glassBar 液态分支同参），关档仍实色。取证：glasskit 新增 GlassDiag（Logcat MareaGlass + filesDir/marea_glass_diag.log，随诊断日志导出打包），BlurBridge 记档位初值与变化、MainBottomBar 记档位与所走分支、FloatingBottomBar 记实际生效参数，切档是否生效可从日志直接判读。
+- 空间分架：books 表加 space 列（0=普通空间、1=隐私空间），数据库 133→134 迁移，存量书一律默认归普通空间，不丢书、不串架。书架、分组计数、书架内搜索、本地导入、缓存管理等书架面查询一律按当前空间过滤（BookDao 空间谓词 + MareaSpace.spaceFlow 注入，切换空间自动重查，单本读写与后台更新检查不过滤）；新书导入按到达时的当前空间落架，已有书重新导入不搬家。空间由 Marea 入口传入：浏览器菜单进书架带当前空间（MainActivity 的 EXTRA_MAREA_SPACE，onCreate/onNewIntent/onResume 均重申），阅读宿主按既有 EXTRA_SPACE 在导入前应用空间；无 extra 的入口回落到持久化的上次空间、默认普通。空间与 Legado 自身的 isPrivate 私密书（PrivateReadGate）是两套语义，互不借用。
+- WebDAV 按空间双份：隐私空间的 WebDAV 五项（地址、账号、密码、目录、设备名）改存 _private 后缀键，普通空间沿用原键、存量配置不迁移；设置页读写（toBackupSettings/toPrefMap）与同步取配置（WebDavManager.readConfig）都按当前空间选键，隐私空间未配置时回空、绝不回落普通空间账号；空间切换时丢弃旧空间的授权状态（AppWebDav.invalidateConfig），进度同步也只作用于当前空间的书。备份里隐私空间密码与普通空间同等对待：导出 AES 加密、恢复解密，隐私设备名同列不进备份。备份与同步设置页的 WebDAV 分组标题带当前空间字样（普通空间 / 隐私空间），防配错账号。
+- 发版前照例过 materialkolor 全引用闭合门禁（tools/check_materialkolor_closure.py）并做关键类抽查。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.8] - 2026-11-13
 
 Legado 阅读器整体移植实验线第八版：瘦身（小乐拍板不等转正、现在就做）。

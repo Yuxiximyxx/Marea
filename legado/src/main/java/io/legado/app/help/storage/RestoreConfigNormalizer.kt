@@ -20,7 +20,8 @@ internal fun normalizeConfigMap(
         if (!keyIsNotIgnore(key)) return@forEach
         if (key == PreferKey.showBrightnessView || key == PreferKey.brightnessVwPos) return@forEach
         when (key) {
-            PreferKey.webDavPassword -> {
+            // exp.10：隐私空间 WebDAV 密码与普通空间同口径解密/兜底。
+            PreferKey.webDavPassword, PreferKey.webDavPasswordPrivate -> {
                 val password = decryptWebDavPassword(value.toString())
                     ?: value.toString().takeIf { !hasLocalWebDavPassword }
                 password?.let { finalMap[key] = it }

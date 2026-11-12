@@ -6,8 +6,11 @@ import io.legado.app.data.dao.BookGroupDao
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.data.model.BookChapterCacheInfo
+import io.legado.app.help.MareaSpace
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 
@@ -17,7 +20,11 @@ class BookCacheManageRepository(
     private val bookGroupDao: BookGroupDao,
 ) {
 
-    fun flowBooks(): Flow<List<Book>> = bookDao.flowAll().flowOn(Dispatchers.IO)
+    // exp.10：缓存管理列表按 Marea 当前空间过滤
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun flowBooks(): Flow<List<Book>> = MareaSpace.spaceFlow
+        .flatMapLatest { space -> bookDao.flowAll(space) }
+        .flowOn(Dispatchers.IO)
 
     fun flowSelectableGroups(): Flow<List<BookGroup>> =
         bookGroupDao.flowSelect().flowOn(Dispatchers.IO)

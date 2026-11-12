@@ -130,6 +130,14 @@ class LegadoReaderHostActivity : AppCompatActivity() {
         }
         val uri: Uri? = intent?.getStringExtra(EXTRA_URI)?.let { runCatching { Uri.parse(it) }.getOrNull() }
             ?: intent?.data
+        // exp.10：带空间 extra 的入口（书架/下载列表/打开文件四处均经 intent() 传入）
+        // 先把空间应用到 Legado 侧，导入落架与后续阅读都按该空间；外部 VIEW 直达
+        // 无此 extra，不动当前空间（回落 MareaSpace 持久化的上次空间）。
+        if (intent?.hasExtra(EXTRA_SPACE) == true) {
+            val space = intent.getIntExtra(EXTRA_SPACE, io.legado.app.help.MareaSpace.NORMAL)
+            io.legado.app.help.MareaSpace.applySpace(space)
+            Diag.log("legado-host: apply space=$space")
+        }
         Diag.log("legado-host: create uri=$uri")
         if (uri == null) {
             Diag.log("legado-host: no uri, finish")

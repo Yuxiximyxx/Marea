@@ -87,6 +87,12 @@ data class Book(
     // 真正的敏感信息（本地密码及其派生凭据）另有排除规则，见 BackupConfig。
     @ColumnInfo(defaultValue = "0")
     var isPrivate: Boolean = false,
+    // exp.10：Marea 空间归属（0=普通空间，1=隐私空间），导入时按到达空间落位、
+    // 存量书迁移默认 0。与上面的 isPrivate 是两套语义：isPrivate 是 Legado 内部的
+    // 单本私密标记（走 PrivateReadGate），space 是 Marea 入口划分的书架隔离维度，
+    // 书架 / 搜索 / 分组计数查询按当前空间过滤。
+    @ColumnInfo(defaultValue = "0")
+    var space: Int = 0,
     // 最新章节标题
     var latestChapterTitle: String? = null,
     // 最新章节标题更新时间

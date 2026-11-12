@@ -288,7 +288,10 @@ object Backup {
                 )
                 && BackupConfig.keyIsNotIgnore(key, true)
             ) {
-                val finalValue = if (key == PreferKey.webDavPassword) {
+                // exp.10：隐私空间的 WebDAV 密码同等待遇，备份里绝不明文。
+                val finalValue = if (key == PreferKey.webDavPassword ||
+                    key == PreferKey.webDavPasswordPrivate
+                ) {
                     aes.runCatching { encryptBase64(value.toString()) }.getOrDefault(value.toString())
                 } else value
 

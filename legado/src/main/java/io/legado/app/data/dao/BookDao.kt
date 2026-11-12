@@ -14,9 +14,12 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.ShelfBookSummary
 import io.legado.app.domain.model.CacheableBook
 import io.legado.app.domain.model.PrivateBookFacts
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.book.isNotShelf
 import io.legado.app.ui.main.bookshelf.BookShelfItem
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
 data class GroupBookCount(
@@ -33,51 +36,62 @@ private const val PUBLIC_GROUP_MASK =
 private const val PUBLIC_BOOK_FILTER =
     "(`group` = 0 OR (`group` & $PRIVATE_GROUP_MASK) = 0)"
 
+// exp.10：书架面查询（分组列表 / 搜索 / 分组计数 / 分组预览）一律带 `space = :space`
+// 谓词按 Marea 当前空间过滤，空间值由分发方法与 Repository 层经
+// MareaSpace.spaceFlow.flatMapLatest 注入，切换空间时正在收集的流自动重查。
+// 按 bookUrl 的单本读写、后台更新检查、Legado 自身私密书判定不走这条过滤。
+
 @Dao
 interface BookDao {
 
     @Query("UPDATE books SET disableReadRecord = :disabled WHERE bookUrl = :bookUrl")
     fun setReadRecordDisabled(bookUrl: String, disabled: Boolean)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowByGroup(groupId: Long): Flow<List<Book>> {
-        return when (groupId) {
-            BookGroup.IdRoot -> flowRoot()
-            BookGroup.IdAll -> flowAll()
-            BookGroup.IdLocal -> flowLocal()
-            BookGroup.IdAudio -> flowAudio()
-            BookGroup.IdNetNone -> flowNetNoGroup()
-            BookGroup.IdLocalNone -> flowLocalNoGroup()
-            BookGroup.IdManga -> flowManga()
-            BookGroup.IdText -> flowText()
-            BookGroup.IdError -> flowUpdateError()
-            BookGroup.IdUnread -> flowUnread()
-            BookGroup.IdReading -> flowReading()
-            BookGroup.IdReadFinished -> flowReadFinished()
-            BookGroup.IdReadFinishedUpdate -> flowReadFinishedUpdate()
-            BookGroup.IdReadFinishedComplete -> flowReadFinishedComplete()
-            else -> flowByUserGroup(groupId)
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            when (groupId) {
+                BookGroup.IdRoot -> flowRoot(space)
+                BookGroup.IdAll -> flowAll(space)
+                BookGroup.IdLocal -> flowLocal(space)
+                BookGroup.IdAudio -> flowAudio(space)
+                BookGroup.IdNetNone -> flowNetNoGroup(space)
+                BookGroup.IdLocalNone -> flowLocalNoGroup(space)
+                BookGroup.IdManga -> flowManga(space)
+                BookGroup.IdText -> flowText(space)
+                BookGroup.IdError -> flowUpdateError(space)
+                BookGroup.IdUnread -> flowUnread(space)
+                BookGroup.IdReading -> flowReading(space)
+                BookGroup.IdReadFinished -> flowReadFinished(space)
+                BookGroup.IdReadFinishedUpdate -> flowReadFinishedUpdate(space)
+                BookGroup.IdReadFinishedComplete -> flowReadFinishedComplete(space)
+                else -> flowByUserGroup(groupId, space)
+            }
         }.map { list ->
             list.filterNot { it.isNotShelf }
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowBookShelfByGroup(groupId: Long): Flow<List<BookShelfItem>> {
-        return when (groupId) {
-            BookGroup.IdRoot -> flowBookShelfRoot()
-            BookGroup.IdAll -> flowBookShelf()
-            BookGroup.IdLocal -> flowBookShelfLocal()
-            BookGroup.IdAudio -> flowBookShelfAudio()
-            BookGroup.IdNetNone -> flowBookShelfNetNoGroup()
-            BookGroup.IdLocalNone -> flowBookShelfLocalNoGroup()
-            BookGroup.IdManga -> flowBookShelfManga()
-            BookGroup.IdText -> flowBookShelfText()
-            BookGroup.IdError -> flowBookShelfUpdateError()
-            BookGroup.IdUnread -> flowBookShelfUnread()
-            BookGroup.IdReading -> flowBookShelfReading()
-            BookGroup.IdReadFinished -> flowBookShelfReadFinished()
-            BookGroup.IdReadFinishedUpdate -> flowBookShelfReadFinishedUpdate()
-            BookGroup.IdReadFinishedComplete -> flowBookShelfReadFinishedComplete()
-            else -> flowBookShelfByUserGroup(groupId)
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            when (groupId) {
+                BookGroup.IdRoot -> flowBookShelfRoot(space)
+                BookGroup.IdAll -> flowBookShelf(space)
+                BookGroup.IdLocal -> flowBookShelfLocal(space)
+                BookGroup.IdAudio -> flowBookShelfAudio(space)
+                BookGroup.IdNetNone -> flowBookShelfNetNoGroup(space)
+                BookGroup.IdLocalNone -> flowBookShelfLocalNoGroup(space)
+                BookGroup.IdManga -> flowBookShelfManga(space)
+                BookGroup.IdText -> flowBookShelfText(space)
+                BookGroup.IdError -> flowBookShelfUpdateError(space)
+                BookGroup.IdUnread -> flowBookShelfUnread(space)
+                BookGroup.IdReading -> flowBookShelfReading(space)
+                BookGroup.IdReadFinished -> flowBookShelfReadFinished(space)
+                BookGroup.IdReadFinishedUpdate -> flowBookShelfReadFinishedUpdate(space)
+                BookGroup.IdReadFinishedComplete -> flowBookShelfReadFinishedComplete(space)
+                else -> flowBookShelfByUserGroup(groupId, space)
+            }
         }.map { list ->
             list.filterNot { it.isNotShelf }
         }
@@ -89,10 +103,11 @@ interface BookDao {
         and type & ${BookType.local} = 0
         and ($PUBLIC_GROUP_MASK & `group`) = 0
         and $PUBLIC_BOOK_FILTER
+        AND space = :space
         and (select show from book_groups where groupId = ${BookGroup.IdNetNone}) != 1
         """
     )
-    fun flowRoot(): Flow<List<Book>>
+    fun flowRoot(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -125,13 +140,14 @@ interface BookDao {
         and type & ${BookType.local} = 0
         and ($PUBLIC_GROUP_MASK & `group`) = 0
         and $PUBLIC_BOOK_FILTER
+        AND space = :space
         and (select show from book_groups where groupId = ${BookGroup.IdNetNone}) != 1
         """
     )
-    fun flowBookShelfRoot(): Flow<List<BookShelfItem>>
+    fun flowBookShelfRoot(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books order by durChapterTime desc")
-    fun flowAll(): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space order by durChapterTime desc")
+    fun flowAll(space: Int): Flow<List<Book>>
 
     @Query("SELECT * FROM books")
     suspend fun getAll(): List<Book>
@@ -164,13 +180,14 @@ interface BookDao {
         wordCount
     FROM books
     WHERE $PUBLIC_BOOK_FILTER
+    AND space = :space
     ORDER BY durChapterTime DESC
 """
     )
-    fun flowBookShelf(): Flow<List<BookShelfItem>>
+    fun flowBookShelf(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books WHERE type & ${BookType.audio} > 0")
-    fun flowAudio(): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space AND type & ${BookType.audio} > 0")
+    fun flowAudio(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -201,12 +218,13 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.audio} > 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfAudio(): Flow<List<BookShelfItem>>
+    fun flowBookShelfAudio(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books WHERE type & ${BookType.local} > 0")
-    fun flowLocal(): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space AND type & ${BookType.local} > 0")
+    fun flowLocal(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -237,17 +255,18 @@ interface BookDao {
         FROM books 
         WHERE type & ${BookType.local} > 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfLocal(): Flow<List<BookShelfItem>>
+    fun flowBookShelfLocal(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
-        select * from books where type & ${BookType.audio} = 0 and type & ${BookType.local} = 0
+        select * from books where space = :space AND type & ${BookType.audio} = 0 and type & ${BookType.local} = 0
         and ((SELECT sum(groupId) FROM book_groups where groupId > 0) & `group`) = 0
         """
     )
-    fun flowNetNoGroup(): Flow<List<Book>>
+    fun flowNetNoGroup(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -279,17 +298,18 @@ interface BookDao {
         where type & ${BookType.audio} = 0 and type & ${BookType.local} = 0
         and ($PUBLIC_GROUP_MASK & `group`) = 0
         and $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfNetNoGroup(): Flow<List<BookShelfItem>>
+    fun flowBookShelfNetNoGroup(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
-        select * from books where type & ${BookType.local} > 0
+        select * from books where space = :space AND type & ${BookType.local} > 0
         and ((SELECT sum(groupId) FROM book_groups where groupId > 0) & `group`) = 0
         """
     )
-    fun flowLocalNoGroup(): Flow<List<Book>>
+    fun flowLocalNoGroup(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -321,12 +341,13 @@ interface BookDao {
         where type & ${BookType.local} > 0
         and ($PUBLIC_GROUP_MASK & `group`) = 0
         and $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfLocalNoGroup(): Flow<List<BookShelfItem>>
+    fun flowBookShelfLocalNoGroup(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books WHERE (`group` & :group) > 0")
-    fun flowByUserGroup(group: Long): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space AND (`group` & :group) > 0")
+    fun flowByUserGroup(group: Long, space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -357,14 +378,15 @@ interface BookDao {
         FROM books 
         WHERE (`group` & :group) > 0
         AND ((SELECT isPrivate FROM book_groups WHERE groupId = :group) = 1 OR $PUBLIC_BOOK_FILTER)
+        AND space = :space
         """
     )
-    fun flowBookShelfByUserGroup(group: Long): Flow<List<BookShelfItem>>
+    fun flowBookShelfByUserGroup(group: Long, space: Int): Flow<List<BookShelfItem>>
 
     @Query(
-        "SELECT * FROM books WHERE name like '%'||:key||'%' or author like '%'||:key||'%' or originName like '%'||:key||'%'"
+        "SELECT * FROM books WHERE space = :space AND (name like '%'||:key||'%' or author like '%'||:key||'%' or originName like '%'||:key||'%')"
     )
-    fun flowSearch(key: String): Flow<List<Book>>
+    fun flowSearch(key: String, space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -396,12 +418,13 @@ interface BookDao {
         WHERE (name like '%'||:key||'%' or author like '%'||:key||'%' or originName like '%'||:key||'%'
             or kind like '%'||:key||'%' or customTag like '%'||:key||'%')
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfSearch(key: String): Flow<List<BookShelfItem>>
+    fun flowBookShelfSearch(key: String, space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books where type & ${BookType.updateError} > 0 order by durChapterTime desc")
-    fun flowUpdateError(): Flow<List<Book>>
+    @Query("SELECT * FROM books where space = :space AND type & ${BookType.updateError} > 0 order by durChapterTime desc")
+    fun flowUpdateError(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -432,13 +455,14 @@ interface BookDao {
         FROM books 
         where type & ${BookType.updateError} > 0 
         and $PUBLIC_BOOK_FILTER
+        AND space = :space
         order by durChapterTime desc
         """
     )
-    fun flowBookShelfUpdateError(): Flow<List<BookShelfItem>>
+    fun flowBookShelfUpdateError(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("""SELECT * FROM books WHERE durChapterIndex = 0 AND durChapterPos = 0""")
-    fun flowUnread(): Flow<List<Book>>
+    @Query("""SELECT * FROM books WHERE space = :space AND durChapterIndex = 0 AND durChapterPos = 0""")
+    fun flowUnread(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -469,12 +493,13 @@ interface BookDao {
         FROM books 
         WHERE durChapterIndex = 0 AND durChapterPos = 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfUnread(): Flow<List<BookShelfItem>>
+    fun flowBookShelfUnread(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("""SELECT * FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1""")
-    fun flowReadFinished(): Flow<List<Book>>
+    @Query("""SELECT * FROM books WHERE space = :space AND totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1""")
+    fun flowReadFinished(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -505,14 +530,15 @@ interface BookDao {
         FROM books 
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfReadFinished(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinished(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
-        """SELECT * FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 1"""
+        """SELECT * FROM books WHERE space = :space AND totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 1"""
     )
-    fun flowReadFinishedUpdate(): Flow<List<Book>>
+    fun flowReadFinishedUpdate(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -543,14 +569,15 @@ interface BookDao {
         FROM books 
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 1
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfReadFinishedUpdate(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinishedUpdate(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
-        """SELECT * FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 0"""
+        """SELECT * FROM books WHERE space = :space AND totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 0"""
     )
-    fun flowReadFinishedComplete(): Flow<List<Book>>
+    fun flowReadFinishedComplete(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -581,12 +608,13 @@ interface BookDao {
         FROM books 
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfReadFinishedComplete(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinishedComplete(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("""SELECT * FROM books WHERE totalChapterNum > 0 AND durChapterIndex > 0 AND durChapterIndex < totalChapterNum - 1""")
-    fun flowReading(): Flow<List<Book>>
+    @Query("""SELECT * FROM books WHERE space = :space AND totalChapterNum > 0 AND durChapterIndex > 0 AND durChapterIndex < totalChapterNum - 1""")
+    fun flowReading(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -617,12 +645,13 @@ interface BookDao {
         FROM books 
         WHERE totalChapterNum > 0 AND durChapterIndex > 0 AND durChapterIndex < totalChapterNum - 1
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfReading(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReading(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books WHERE type & ${BookType.image} > 0")
-    fun flowManga(): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space AND type & ${BookType.image} > 0")
+    fun flowManga(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -653,12 +682,13 @@ interface BookDao {
         FROM books 
         WHERE type & ${BookType.image} > 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfManga(): Flow<List<BookShelfItem>>
+    fun flowBookShelfManga(space: Int): Flow<List<BookShelfItem>>
 
-    @Query("SELECT * FROM books WHERE type & ${BookType.text} > 0")
-    fun flowText(): Flow<List<Book>>
+    @Query("SELECT * FROM books WHERE space = :space AND type & ${BookType.text} > 0")
+    fun flowText(space: Int): Flow<List<Book>>
 
     @Query(
         """
@@ -689,9 +719,10 @@ interface BookDao {
         FROM books 
         WHERE type & ${BookType.text} > 0
         AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowBookShelfText(): Flow<List<BookShelfItem>>
+    fun flowBookShelfText(space: Int): Flow<List<BookShelfItem>>
 
     @Query("SELECT * FROM books WHERE (`group` & :group) > 0")
     fun getBooksByGroup(group: Long): List<Book>
@@ -862,65 +893,83 @@ interface BookDao {
 
     // ── Group preview / count queries (DB-level, replaces in-memory buildGroupPreviewState) ──
 
-    @Query("SELECT COUNT(*) FROM books WHERE $PUBLIC_BOOK_FILTER")
-    fun flowAllBookShelfCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM books WHERE $PUBLIC_BOOK_FILTER AND space = :space")
+    fun flowAllBookShelfCount(space: Int): Flow<Int>
 
     @Query(
         """
         SELECT ${BookGroup.IdAll} AS groupId, COUNT(*) AS count FROM books WHERE $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdRoot}, COUNT(*) FROM books
             WHERE type & ${BookType.text} > 0 AND type & ${BookType.local} = 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
             AND (SELECT show FROM book_groups WHERE groupId = ${BookGroup.IdNetNone}) != 1
         UNION ALL SELECT ${BookGroup.IdLocal}, COUNT(*) FROM books WHERE type & ${BookType.local} > 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdAudio}, COUNT(*) FROM books WHERE type & ${BookType.audio} > 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdNetNone}, COUNT(*) FROM books
             WHERE type & ${BookType.audio} = 0 AND type & ${BookType.local} = 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         UNION ALL SELECT ${BookGroup.IdLocalNone}, COUNT(*) FROM books
             WHERE type & ${BookType.local} > 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         UNION ALL SELECT ${BookGroup.IdManga}, COUNT(*) FROM books WHERE type & ${BookType.image} > 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdText}, COUNT(*) FROM books WHERE type & ${BookType.text} > 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdError}, COUNT(*) FROM books WHERE type & ${BookType.updateError} > 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdUnread}, COUNT(*) FROM books WHERE durChapterIndex = 0 AND durChapterPos = 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdReading}, COUNT(*) FROM books WHERE totalChapterNum > 0 AND durChapterIndex > 0 AND durChapterIndex < totalChapterNum - 1 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdReadFinished}, COUNT(*) FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdReadFinishedUpdate}, COUNT(*) FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 1 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         UNION ALL SELECT ${BookGroup.IdReadFinishedComplete}, COUNT(*) FROM books WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 0 AND $PUBLIC_BOOK_FILTER
+        AND space = :space
         """
     )
-    fun flowSystemGroupCounts(): Flow<List<GroupBookCount>>
+    fun flowSystemGroupCounts(space: Int): Flow<List<GroupBookCount>>
 
     @Query(
         """
         SELECT COUNT(*) FROM books
         WHERE (`group` & :groupId) > 0
         AND ((SELECT isPrivate FROM book_groups WHERE groupId = :groupId) = 1 OR $PUBLIC_BOOK_FILTER)
+        AND space = :space
         """
     )
-    fun flowUserGroupBookCount(groupId: Long): Flow<Int>
+    fun flowUserGroupBookCount(groupId: Long, space: Int): Flow<Int>
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowGroupPreview(groupId: Long): Flow<List<BookShelfItem>> {
-        return when (groupId) {
-            BookGroup.IdRoot -> flowBookShelfRootPreview()
-            BookGroup.IdAll -> flowBookShelfPreview()
-            BookGroup.IdLocal -> flowBookShelfLocalPreview()
-            BookGroup.IdAudio -> flowBookShelfAudioPreview()
-            BookGroup.IdNetNone -> flowBookShelfNetNoGroupPreview()
-            BookGroup.IdLocalNone -> flowBookShelfLocalNoGroupPreview()
-            BookGroup.IdManga -> flowBookShelfMangaPreview()
-            BookGroup.IdText -> flowBookShelfTextPreview()
-            BookGroup.IdError -> flowBookShelfUpdateErrorPreview()
-            BookGroup.IdUnread -> flowBookShelfUnreadPreview()
-            BookGroup.IdReading -> flowBookShelfReadingPreview()
-            BookGroup.IdReadFinished -> flowBookShelfReadFinishedPreview()
-            BookGroup.IdReadFinishedUpdate -> flowBookShelfReadFinishedUpdatePreview()
-            BookGroup.IdReadFinishedComplete -> flowBookShelfReadFinishedCompletePreview()
-            else -> flowBookShelfPreviewByUserGroup(groupId)
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            when (groupId) {
+                BookGroup.IdRoot -> flowBookShelfRootPreview(space)
+                BookGroup.IdAll -> flowBookShelfPreview(space)
+                BookGroup.IdLocal -> flowBookShelfLocalPreview(space)
+                BookGroup.IdAudio -> flowBookShelfAudioPreview(space)
+                BookGroup.IdNetNone -> flowBookShelfNetNoGroupPreview(space)
+                BookGroup.IdLocalNone -> flowBookShelfLocalNoGroupPreview(space)
+                BookGroup.IdManga -> flowBookShelfMangaPreview(space)
+                BookGroup.IdText -> flowBookShelfTextPreview(space)
+                BookGroup.IdError -> flowBookShelfUpdateErrorPreview(space)
+                BookGroup.IdUnread -> flowBookShelfUnreadPreview(space)
+                BookGroup.IdReading -> flowBookShelfReadingPreview(space)
+                BookGroup.IdReadFinished -> flowBookShelfReadFinishedPreview(space)
+                BookGroup.IdReadFinishedUpdate -> flowBookShelfReadFinishedUpdatePreview(space)
+                BookGroup.IdReadFinishedComplete -> flowBookShelfReadFinishedCompletePreview(space)
+                else -> flowBookShelfPreviewByUserGroup(groupId, space)
+            }
         }.map { list ->
             list.filterNot { it.isNotShelf }
         }
@@ -936,11 +985,12 @@ interface BookDao {
             ifnull(customIntro, ifnull(listIntro, intro)) as intro, kind, customTag, wordCount
         FROM books
         WHERE $PUBLIC_BOOK_FILTER
+        AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -954,12 +1004,13 @@ interface BookDao {
         WHERE type & ${BookType.text} > 0 AND type & ${BookType.local} = 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
             AND (SELECT show FROM book_groups WHERE groupId = ${BookGroup.IdNetNone}) != 1
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfRootPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfRootPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -972,11 +1023,12 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.local} > 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfLocalPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfLocalPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -989,11 +1041,12 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.audio} > 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfAudioPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfAudioPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1007,11 +1060,12 @@ interface BookDao {
         WHERE type & ${BookType.audio} = 0 AND type & ${BookType.local} = 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfNetNoGroupPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfNetNoGroupPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1025,11 +1079,12 @@ interface BookDao {
         WHERE type & ${BookType.local} > 0
             AND ($PUBLIC_GROUP_MASK & `group`) = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfLocalNoGroupPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfLocalNoGroupPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1042,11 +1097,12 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.image} > 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfMangaPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfMangaPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1059,11 +1115,12 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.text} > 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfTextPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfTextPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1076,11 +1133,12 @@ interface BookDao {
         FROM books
         WHERE type & ${BookType.updateError} > 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfUpdateErrorPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfUpdateErrorPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1093,11 +1151,12 @@ interface BookDao {
         FROM books
         WHERE durChapterIndex = 0 AND durChapterPos = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfUnreadPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfUnreadPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1110,11 +1169,12 @@ interface BookDao {
         FROM books
         WHERE totalChapterNum > 0 AND durChapterIndex > 0 AND durChapterIndex < totalChapterNum - 1
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfReadingPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadingPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1127,11 +1187,12 @@ interface BookDao {
         FROM books
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfReadFinishedPreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinishedPreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1144,11 +1205,12 @@ interface BookDao {
         FROM books
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 1
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfReadFinishedUpdatePreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinishedUpdatePreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1161,11 +1223,12 @@ interface BookDao {
         FROM books
         WHERE totalChapterNum > 0 AND durChapterIndex >= totalChapterNum - 1 AND canUpdate = 0
             AND $PUBLIC_BOOK_FILTER
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfReadFinishedCompletePreview(): Flow<List<BookShelfItem>>
+    fun flowBookShelfReadFinishedCompletePreview(space: Int): Flow<List<BookShelfItem>>
 
     @Query(
         """
@@ -1178,11 +1241,12 @@ interface BookDao {
         FROM books
         WHERE (`group` & :groupId) > 0
             AND ((SELECT isPrivate FROM book_groups WHERE groupId = :groupId) = 1 OR $PUBLIC_BOOK_FILTER)
+            AND space = :space
         ORDER BY durChapterTime DESC
         LIMIT 10
         """
     )
-    fun flowBookShelfPreviewByUserGroup(groupId: Long): Flow<List<BookShelfItem>>
+    fun flowBookShelfPreviewByUserGroup(groupId: Long, space: Int): Flow<List<BookShelfItem>>
 
     // ---------- 私密书籍标记 ----------
     // 私密判定取并集：books.isPrivate = 1（单本标记）∪ 所属私密分组。

@@ -22,6 +22,7 @@ import io.legado.app.exception.NoBooksDirException
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.exception.TocEmptyException
 import io.legado.app.help.AppWebDav
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.addType
@@ -272,7 +273,9 @@ object LocalBook {
                 author = nameAuthor.second,
                 originName = fileName,
                 latestChapterTime = updateTime,
-                order = appDb.bookDao.minOrder - 1
+                order = appDb.bookDao.minOrder - 1,
+                // exp.10：新书按到达时的 Marea 当前空间落架；已有书重新导入不搬家
+                space = MareaSpace.currentSpace
             )
             upBookInfo(book)
             book.upKind()
@@ -352,6 +355,8 @@ object LocalBook {
             origin = BookType.localTag,
             latestChapterTime = directory.lastModified,
             order = appDb.bookDao.minOrder - 1,
+            // exp.10：同 importFile，按 Marea 当前空间落架
+            space = MareaSpace.currentSpace,
         )
         book.type = BookType.local or BookType.image
         book.origin = BookType.localTag

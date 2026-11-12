@@ -88,6 +88,13 @@ object PreferKey {
     const val webDavAccount = "web_dav_account"
     const val webDavPassword = "web_dav_password"
     const val webDavDir = "webDavDir"
+
+    // exp.10：隐私空间的 WebDAV 配置各存一份（普通空间仍用上面原键，存量不迁移）；
+    // 读写口径见 FeatureSettingsRepositories 的 toBackupSettings / toPrefMap。
+    const val webDavUrlPrivate = "web_dav_url_private"
+    const val webDavAccountPrivate = "web_dav_account_private"
+    const val webDavPasswordPrivate = "web_dav_password_private"
+    const val webDavDirPrivate = "webDavDir_private"
     const val webServiceAutoStart = "webServiceAutoStart"
     const val enableCustomExport = "enableCustomExport"
     const val exportToWebDav = "webDavCacheBackup"
@@ -174,6 +181,7 @@ object PreferKey {
     const val readAloudTimerChapters = "readAloudTimerChapters"
     const val noAnimScrollPage = "noAnimScrollPage"
     const val webDavDeviceName = "webDavDeviceName"
+    const val webDavDeviceNamePrivate = "webDavDeviceName_private"
     const val webServiceWakeLock = "webServiceWakeLock"
     const val audioPlayWakeLock = "audioPlayWakeLock"
     const val readAloudWakeLock = "readAloudWakeLock"

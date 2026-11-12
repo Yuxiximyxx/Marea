@@ -20,12 +20,14 @@ import io.legado.app.domain.model.settings.LabSettings
 import io.legado.app.domain.model.settings.OtherSettings
 import io.legado.app.domain.model.settings.ThemeSettings
 import io.legado.app.domain.model.settings.TranslationSettings
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.config.AppConfigStore
 import io.legado.app.help.config.compatDsBoolean
 import io.legado.app.help.config.compatDsFloat
 import io.legado.app.help.config.compatDsInt
 import io.legado.app.help.config.compatDsString
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -135,8 +137,11 @@ class BackupSettingsRepository : BackupSettingsGateway {
     override val currentSettings: BackupSettings
         get() = AppConfigStore.preferences.toBackupSettings()
 
-    override val settings: Flow<BackupSettings> = AppConfigStore.preferencesFlow
-        .map { it.toBackupSettings() }
+    // exp.10：空间切换也要让设置页刷新到新空间的 WebDAV 配置，故把 spaceFlow 并入。
+    override val settings: Flow<BackupSettings> = combine(
+        AppConfigStore.preferencesFlow,
+        MareaSpace.spaceFlow,
+    ) { prefs, _ -> prefs.toBackupSettings() }
         .distinctUntilChanged()
 
     override suspend fun update(transform: (BackupSettings) -> BackupSettings) {
@@ -253,33 +258,55 @@ internal fun TranslationSettings.toPrefMap(): Map<String, Any?> = mapOf(
     PreferKey.llmRetryCount to retryCount,
 )
 
-internal fun Preferences.toBackupSettings(): BackupSettings = BackupSettings(
-    webDavUrl = compatDsString(PreferKey.webDavUrl).orEmpty(),
-    webDavAccount = compatDsString(PreferKey.webDavAccount).orEmpty(),
-    webDavPassword = compatDsString(PreferKey.webDavPassword).orEmpty(),
-    webDavDir = compatDsString(PreferKey.webDavDir) ?: "legado",
-    webDavDeviceName = compatDsString(PreferKey.webDavDeviceName).orEmpty(),
-    syncBookProgress = compatDsBoolean(PreferKey.syncBookProgress) ?: true,
-    syncBookProgressPlus = compatDsBoolean(PreferKey.syncBookProgressPlus) ?: false,
-    autoCheckNewBackup = compatDsBoolean(PreferKey.autoCheckNewBackup) ?: true,
-    onlyLatestBackup = compatDsBoolean(PreferKey.onlyLatestBackup) ?: true,
-    backupSyncMode = compatDsString(PreferKey.backupSyncMode) ?: "both",
-    backupPath = compatDsString(PreferKey.backupPath),
-)
+/**
+ * exp.10：WebDAV 五项按 Marea 当前空间选键——普通空间用原键、隐私空间用 _private 键。
+ * 隐私空间没配过时回空（webDavDir 回默认 "legado"），绝不回落普通空间的账号，
+ * 否则两个空间会在同一 WebDAV 账号上互相覆盖备份/进度。
+ */
+private class WebDavKeys(privateSpace: Boolean) {
+    val url = if (privateSpace) PreferKey.webDavUrlPrivate else PreferKey.webDavUrl
+    val account = if (privateSpace) PreferKey.webDavAccountPrivate else PreferKey.webDavAccount
+    val password = if (privateSpace) PreferKey.webDavPasswordPrivate else PreferKey.webDavPassword
+    val dir = if (privateSpace) PreferKey.webDavDirPrivate else PreferKey.webDavDir
+    val deviceName =
+        if (privateSpace) PreferKey.webDavDeviceNamePrivate else PreferKey.webDavDeviceName
+}
 
-internal fun BackupSettings.toPrefMap(): Map<String, Any?> = mapOf(
-    PreferKey.webDavUrl to webDavUrl,
-    PreferKey.webDavAccount to webDavAccount,
-    PreferKey.webDavPassword to webDavPassword,
-    PreferKey.webDavDir to webDavDir,
-    PreferKey.webDavDeviceName to webDavDeviceName,
-    PreferKey.syncBookProgress to syncBookProgress,
-    PreferKey.syncBookProgressPlus to syncBookProgressPlus,
-    PreferKey.autoCheckNewBackup to autoCheckNewBackup,
-    PreferKey.onlyLatestBackup to onlyLatestBackup,
-    PreferKey.backupSyncMode to backupSyncMode,
-    PreferKey.backupPath to backupPath,
-)
+internal fun Preferences.toBackupSettings(): BackupSettings {
+    val webDavKeys = WebDavKeys(MareaSpace.isPrivate)
+    return BackupSettings(
+        webDavUrl = compatDsString(webDavKeys.url).orEmpty(),
+        webDavAccount = compatDsString(webDavKeys.account).orEmpty(),
+        webDavPassword = compatDsString(webDavKeys.password).orEmpty(),
+        webDavDir = compatDsString(webDavKeys.dir) ?: "legado",
+        webDavDeviceName = compatDsString(webDavKeys.deviceName).orEmpty(),
+        syncBookProgress = compatDsBoolean(PreferKey.syncBookProgress) ?: true,
+        syncBookProgressPlus = compatDsBoolean(PreferKey.syncBookProgressPlus) ?: false,
+        autoCheckNewBackup = compatDsBoolean(PreferKey.autoCheckNewBackup) ?: true,
+        onlyLatestBackup = compatDsBoolean(PreferKey.onlyLatestBackup) ?: true,
+        backupSyncMode = compatDsString(PreferKey.backupSyncMode) ?: "both",
+        backupPath = compatDsString(PreferKey.backupPath),
+    )
+}
+
+internal fun BackupSettings.toPrefMap(): Map<String, Any?> {
+    // 写回同样按当前空间选键：设置页编辑的永远是当前空间那份 WebDAV 配置；
+    // 其余非 WebDAV 备份项不分空间、仍写原键。
+    val webDavKeys = WebDavKeys(MareaSpace.isPrivate)
+    return mapOf(
+        webDavKeys.url to webDavUrl,
+        webDavKeys.account to webDavAccount,
+        webDavKeys.password to webDavPassword,
+        webDavKeys.dir to webDavDir,
+        webDavKeys.deviceName to webDavDeviceName,
+        PreferKey.syncBookProgress to syncBookProgress,
+        PreferKey.syncBookProgressPlus to syncBookProgressPlus,
+        PreferKey.autoCheckNewBackup to autoCheckNewBackup,
+        PreferKey.onlyLatestBackup to onlyLatestBackup,
+        PreferKey.backupSyncMode to backupSyncMode,
+        PreferKey.backupPath to backupPath,
+    )
+}
 
 internal fun Preferences.toAppShellSettings(): AppShellSettings = AppShellSettings(
     themeMode = compatDsString(PreferKey.themeMode) ?: "0",

@@ -8,9 +8,12 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.domain.gateway.BookSearchGateway
 import io.legado.app.domain.model.BookSearchScope
 import io.legado.app.domain.usecase.BookShelfKey
+import io.legado.app.help.MareaSpace
 import io.legado.app.ui.main.bookshelf.BookShelfItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -49,18 +52,26 @@ class SearchRepositoryImpl(
     override val enabledGroups: Flow<List<String>> = appDb.bookSourceDao.flowEnabledGroups()
     override val enabledSources: Flow<List<BookSourcePart>> = appDb.bookSourceDao.flowEnabled()
 
-    override val bookshelfKeys: Flow<Set<BookShelfKey>> = appDb.bookDao.flowBookShelf().map { books ->
+    // exp.10：「已在书架」判定同样按当前空间——另一空间有同名书不算本空间已入架
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override val bookshelfKeys: Flow<Set<BookShelfKey>> = MareaSpace.spaceFlow
+        .flatMapLatest { space -> appDb.bookDao.flowBookShelf(space) }
+        .map { books ->
         books.filterNot { it.isNotShelf }
             .map { book -> BookShelfKey(book.name, book.author, book.bookUrl) }
             .toSet()
     }
 
+    // exp.10：书架内搜索按 Marea 当前空间过滤，空间切换时自动重查
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun searchBookshelf(query: String): Flow<List<BookShelfItem>> {
         val keyword = query.trim()
         return if (keyword.isBlank()) {
             flowOf(emptyList())
         } else {
-            appDb.bookDao.flowBookShelfSearch(keyword)
+            MareaSpace.spaceFlow.flatMapLatest { space ->
+                appDb.bookDao.flowBookShelfSearch(keyword, space)
+            }
         }
     }
 

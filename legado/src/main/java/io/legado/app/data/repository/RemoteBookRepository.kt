@@ -8,6 +8,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.Server
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfigStore
@@ -18,7 +19,9 @@ import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.remote.RemoteBook
 import io.legado.app.model.remote.RemoteBookWebDav
 import io.legado.app.utils.isContentScheme
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 
 class RemoteBookRepository(
     private val appDb: AppDatabase
@@ -123,8 +126,12 @@ class RemoteBookRepository(
         return book
     }
 
+    // exp.10：远程书列表与本地书的对照按 Marea 当前空间过滤
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowLocalBooks(): Flow<List<Book>> {
-        return appDb.bookDao.flowLocal()
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            appDb.bookDao.flowLocal(space)
+        }
     }
 
     fun flowServers(): Flow<List<Server>> {

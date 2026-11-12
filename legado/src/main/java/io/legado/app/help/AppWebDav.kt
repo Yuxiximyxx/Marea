@@ -165,6 +165,18 @@ object AppWebDav {
     }
 
     /**
+     * exp.10：Marea 空间切换时丢弃已应用的配置与授权。WebDAV 配置按空间各存一份，
+     * 旧空间的 authorization 留着会把新空间的同步动作打到旧账号上；清空后下次
+     * [ensureConfigured] / [upConfig] 会按新空间配置重新初始化。
+     */
+    fun invalidateConfig() {
+        appliedConfig = null
+        authorization = null
+        defaultBookWebDav = null
+        _configState.value = WebDavConfigState.Idle
+    }
+
+    /**
      * 进度同步等入口在打开菜单时调用：配置齐备但本次进程尚未初始化成功时补一次。
      *
      * 等价于上游 `onPrepareOptionsMenu` 每次开菜单都重算 `AppWebDav.isOk` 的效果，
@@ -454,7 +466,9 @@ object AppWebDav {
         bookProgressFiles.forEach {
             map[it.displayName] = it
         }
-        appDb.bookDao.all.forEach { book ->
+        // exp.10：进度同步只作用于当前 Marea 空间的书，另一空间的书名不外发、
+        // 进度也不被这边的账号覆盖。
+        appDb.bookDao.all.filter { it.space == MareaSpace.currentSpace }.forEach { book ->
             val progressFileName = getProgressFileName(book.name, book.author)
             val webDavFile = map[progressFileName]
             webDavFile ?: return@forEach

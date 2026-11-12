@@ -185,6 +185,8 @@
     <string name="backup_error">Backup failed</string>
     <string name="restore_error">Restore failed</string>
     <string name="web_dav_set">WebDAV settings</string>
+    <string name="web_dav_set_normal_space">WebDAV settings (Normal space)</string>
+    <string name="web_dav_set_private_space">WebDAV settings (Private space)</string>
     <string name="web_dav_set_import_old">WebDAV settings • Import legacy data</string>
     <string name="backup">Backup</string>
     <string name="restore">Restore</string>

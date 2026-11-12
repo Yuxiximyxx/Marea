@@ -8,9 +8,12 @@ import io.legado.app.data.dao.GroupBookCount
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.ShelfBookSummary
+import io.legado.app.help.MareaSpace
 import io.legado.app.ui.main.bookshelf.BookShelfItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.withContext
 
 class BookRepository(
@@ -31,8 +34,10 @@ class BookRepository(
         return bookChapterDao.getChapterListFlow(bookUrl)
     }
 
+    // exp.10：全量书列表（缓存管理 / 阅读记录总览消费）同样按 Marea 当前空间过滤
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun getAllBooks(): Flow<List<Book>> {
-        return bookDao.flowAll()
+        return MareaSpace.spaceFlow.flatMapLatest { space -> bookDao.flowAll(space) }
     }
 
     suspend fun getBookCoverByNameAndAuthor(bookName: String, bookAuthor: String): String? {
@@ -87,16 +92,26 @@ class BookRepository(
         return bookDao.flowBookShelfByGroup(groupId)
     }
 
+    // exp.10：分组计数按 Marea 当前空间过滤，空间切换时自动重查（下同）
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowSystemGroupCounts(): Flow<List<GroupBookCount>> {
-        return bookDao.flowSystemGroupCounts()
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            bookDao.flowSystemGroupCounts(space)
+        }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowAllBookShelfCount(): Flow<Int> {
-        return bookDao.flowAllBookShelfCount()
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            bookDao.flowAllBookShelfCount(space)
+        }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun flowUserGroupBookCount(groupId: Long): Flow<Int> {
-        return bookDao.flowUserGroupBookCount(groupId)
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            bookDao.flowUserGroupBookCount(groupId, space)
+        }
     }
 
     fun flowGroupPreview(groupId: Long): Flow<List<BookShelfItem>> {

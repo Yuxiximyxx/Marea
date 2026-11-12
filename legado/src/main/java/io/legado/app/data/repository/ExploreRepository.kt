@@ -6,12 +6,15 @@ import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.rule.ExploreKind
 import io.legado.app.domain.gateway.ExploreBooksGateway
+import io.legado.app.help.MareaSpace
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.clearExploreKindsCache
 import io.legado.app.help.source.exploreKinds
 import io.legado.app.model.webBook.WebBook
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
@@ -30,8 +33,12 @@ class ExploreRepositoryImpl(
     private val appDb: AppDatabase
 ) : ExploreRepository, ExploreBooksGateway {
 
+    // exp.10：发现页的「已在书架」集合按 Marea 当前空间过滤
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getBookshelfItems(): Flow<List<SearchBook>> {
-        return appDb.bookDao.flowBookShelf().map { books ->
+        return MareaSpace.spaceFlow.flatMapLatest { space ->
+            appDb.bookDao.flowBookShelf(space)
+        }.map { books ->
             books.filterNot { it.isNotShelf }
                 .map {
                     SearchBook(

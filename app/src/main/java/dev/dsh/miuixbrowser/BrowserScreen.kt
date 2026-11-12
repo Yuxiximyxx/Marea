@@ -1784,12 +1784,17 @@ fun BrowserScreen(
                                 // 与它的设置都在其 MainNavGraph 内，与阅读宿主共用同一
                                 // Legado 数据库，不会出现两份书）。Marea 自研
                                 // TxtBookshelf 保留代码、不再接入口（回退保留口径）。
-                                Diag.log("legado-main: open from browser menu")
+                                // exp.10：带上 Marea 当前空间，Legado 书架按空间分架。
+                                val legadoSpace = if (PrivacyMode.active) 1 else 0
+                                Diag.log("legado-main: open from browser menu space=$legadoSpace")
                                 runCatching {
                                     context.startActivity(
                                         Intent(
                                             context,
                                             io.legado.app.ui.main.MainActivity::class.java,
+                                        ).putExtra(
+                                            io.legado.app.ui.main.MainActivity.EXTRA_MAREA_SPACE,
+                                            legadoSpace,
                                         ),
                                     )
                                 }.onFailure {

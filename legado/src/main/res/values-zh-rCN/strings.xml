@@ -155,6 +155,8 @@
     <string name="backup_error">备份出错</string>
     <string name="restore_error">恢复出错</string>
     <string name="web_dav_set">WebDav 设置</string>
+    <string name="web_dav_set_normal_space">WebDav 设置（普通空间）</string>
+    <string name="web_dav_set_private_space">WebDav 设置（隐私空间）</string>
     <string name="web_dav_set_import_old">WebDav 设置 • 导入旧版本数据</string>
     <string name="backup">备份</string>
     <string name="restore">恢复</string>
