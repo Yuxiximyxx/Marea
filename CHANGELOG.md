@@ -2,6 +2,21 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.13] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十三版：去 MD3 第二片——阅读菜单与阅读弹层、通用设置行核心、书架管理页整页，行为与回调不变。
+
+- 呈现环境：阅读主界面（ReadBookRouteScreen）在主题覆写层内整体包一层 MiuixSurface，菜单栏、阅读弹层、选词/标注选单、搜索浮条在非 Miuix 引擎下也补齐 Miuix 主题环境（覆写后的菜单配色照常跟随）；底部 Snackbar 单独包裹。菜单顶/底栏的玻璃材质（glasskit 档位桥与 mareaMaterialOverride 参数、模糊/采样逻辑）一律未动，只换栏内控件。
+- 阅读菜单：顶/底栏的容器 Surface、搜索结果底栏的图标/文本/竖分割线、搜索浮条图标、翻译中胶囊换 Miuix 对应物（Surface 参数同名直换，胶囊去掉 MD3 的 tonalElevation）；菜单与选单内的横/竖分割线换 Miuix Divider。
+- 阅读弹层：各 sheet 内的图标/文本/图标按钮换 Miuix（自动翻页的速度按钮由 MD3 FilledTonalIconButton 换 Miuix IconButton 并显式给 tonal 底色）；离线缓存（DownloadSheet）与自定义翻页键（PageKeyConfigSheet）两个弹窗由 MD3 AlertDialog+OutlinedTextField+TextButton 换成项目已收敛的 AppAlertDialog（Miuix WindowDialog）+AppTextField，确认/重置/取消语义逐项不变（解析失败不关弹窗、重置只清输入不关闭、按键码录入逻辑原样）；主题页的长按提示 Tooltip 家族（TooltipBox/PlainTooltip/位置提供器）换 Miuix 同名实现；弹层容器 AppModalBottomSheet 本体不动（exp.7 既定限制：Miuix 引擎下独立窗口无法跨窗采样，维持同色半透明）。
+- 通用行核心收敛：SettingItem 去除 MD3 ListItem，行本体改 foundation Row+Miuix Icon+AppText，语义（role/状态描述/开关状态/disabled）、点击/长按/下拉菜单/展开区的行为逐项保留；SettingCard 去除 material 分支的 GlassCard，只保留 Miuix BasicComponent（原双引擎中的 miuix 分支），卡片底色/圆角参数与 exp.12 设置行家族同口径不再生效。阅读弹层与设置页共用同一行核心，自此都走 Miuix。
+- 竖向滑杆 AppVerticalSlider（阅读菜单亮度竖条唯一在用）：Miuix 有等价横向 Slider 且原双引擎的 miuix 分支本就用它，MD3 分支删除、只留 Miuix 实现（旋转竖向化做法不变），不属自造。
+- 书架管理页：整页纳入 MiuixSurface 包裹（MainNavGraph 的 MainRouteCache 入口，exp.12 时只随组件层跟随）；页内删除确认的复选框、导出范围的单选按钮、操作行竖分割线换项目已收敛的 AppCheckbox/AppRadioButton 与 Miuix 分割线。
+- 盘点（范围：ui/book/read + BookshelfManageScreen + SettingItem/SettingCard）：替换前 23 个文件 import material3、组件符号 30 项（Icon×11 文件、Text×8、Surface×3、Snackbar 家族、AlertDialog/OutlinedTextField/TextButton 各 2 文件、Tooltip 家族、Divider 家族、DatePicker 家族、Checkbox/RadioButton/ListItem 等）；替换后只剩 2 个文件的 2 类保留项（见下）。
+- 点名保留 MD3（逐个说明，不悄悄留）：①拟真阅读的日期选择 DatePicker——本地 Miuix 源码树没有日历型日期选择器（只有 NumberPicker 数字滚轮），用滚轮拼年月日要自造月份天数/闰年联动与交互、属重写行为，按口径不自造，保留 MD3 实现（其宿主弹窗已是 Miuix 的 AppAlertDialog）。②ReadBookColorTheme 的 ColorScheme 类型——那是主题层配色数据类（LegadoTheme 配色的载体类型，与 ThemeComponents 同层），不是界面组件，主题映射本身不在去 MD3 范围。③主题设置页 ThemeConfigScreen 的连接式切换组与预览卡、脚手架 AppScaffold、玻璃顶栏家族仍按 exp.12 点名留待后续分片。
+- 数据库、空间分架、WebDAV、阅读正文/翻页/进度锚点与菜单呼出动画均未动。
+- 发版前照例过 materialkolor 全引用闭合门禁（tools/check_materialkolor_closure.py）并做关键类抽查。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.12] - 2026-11-13
 
 Legado 阅读器整体移植实验线第十二版：去 MD3 第一片——书架页与设置主界面的组件换 Miuix，行为与回调不变。
