@@ -38,4 +38,12 @@ sealed interface AppRoute : NavKey {
 
     /** TXT 阅读器书架（fork.27），空间按进入时的隐私模式状态取 */
     data object Bookshelf : AppRoute
+
+    /** TXT 阅读设置页（fork.28）：阅读器设置的统一落点，从书架页齿轮进入 */
+    @Serializable
+    data object TxtReaderSettings : AppRoute
+
+    /** TXT 目录规则页（fork.28）：阅读设置下的独立页，与阅读器内管理共用数据 */
+    @Serializable
+    data object TxtTocRules : AppRoute
 }

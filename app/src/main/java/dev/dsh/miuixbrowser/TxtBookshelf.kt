@@ -41,10 +41,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.glass.Settings
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 import java.text.SimpleDateFormat
@@ -163,7 +167,7 @@ private fun shelfDisplayName(context: Context, uri: Uri): String {
  * 长按移除书架记录；右上角/底部「添加书籍」走系统选择器多选加书。
  */
 @Composable
-fun BookshelfScreen(space: Int, onBack: () -> Unit) {
+fun BookshelfScreen(space: Int, onBack: () -> Unit, onOpenReaderSettings: () -> Unit) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val scope = rememberCoroutineScope()
@@ -205,10 +209,19 @@ fun BookshelfScreen(space: Int, onBack: () -> Unit) {
                     LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onBack)
                 },
                 actions = {
-                    TextButton(
-                        text = "添加书籍",
-                        onClick = { addLauncher.launch(arrayOf("text/plain")) },
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onOpenReaderSettings) {
+                            Icon(
+                                imageVector = MiuixIcons.Glass.Settings,
+                                contentDescription = "阅读设置",
+                                tint = MiuixTheme.colorScheme.onSurface,
+                            )
+                        }
+                        TextButton(
+                            text = "添加书籍",
+                            onClick = { addLauncher.launch(arrayOf("text/plain")) },
+                        )
+                    }
                 },
             )
         },

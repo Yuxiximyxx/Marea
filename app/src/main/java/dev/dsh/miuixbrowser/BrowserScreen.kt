@@ -2456,6 +2456,18 @@ fun BrowserScreen(
         BookshelfScreen(
             space = if (PrivacyMode.active) 1 else 0,
             onBack = { popPage() },
+            onOpenReaderSettings = { pushPage(AppRoute.TxtReaderSettings) },
+        )
+    }
+    entry<AppRoute.TxtReaderSettings> {
+        TxtReaderSettingsScreen(
+            onBack = { popPage() },
+            onOpenTocRules = { pushPage(AppRoute.TxtTocRules) },
+        )
+    }
+    entry<AppRoute.TxtTocRules> {
+        TxtTocRulesScreen(
+            onBack = { popPage() },
         )
     }
     entry<AppRoute.AdBlockPage> {

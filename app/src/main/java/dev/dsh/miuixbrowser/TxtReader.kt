@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,7 +31,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -74,6 +79,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,6 +99,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -510,6 +517,36 @@ object TxtReaderStore {
         }
     }
 
+    private const val KEY_BRIGHTNESS = "brightness"
+
+    /** 阅读窗口亮度偏好：0..1，-1 = 跟随系统（不覆盖窗口亮度） */
+    fun brightness(context: Context): Float = runCatching {
+        uiPrefs(context).getFloat(KEY_BRIGHTNESS, -1f)
+    }.getOrDefault(-1f)
+
+    fun setBrightness(context: Context, value: Float) {
+        runCatching { uiPrefs(context).edit().putFloat(KEY_BRIGHTNESS, value).apply() }
+    }
+
+    /**
+     * 本书选用的目录规则 id（fork.28）：与进度同口径按空间分开存——
+     * 隐私空间的书选了哪条规则不落普通空间。无记录 = 「自动」，
+     * 沿用全局规则列表顺序切章。
+     */
+    fun loadTocRuleChoice(context: Context, space: Int, key: String): Long? =
+        runCatching {
+            val prefs = progressPrefs(context, space)
+            if (prefs.contains("r_$key")) prefs.getLong("r_$key", 0L) else null
+        }.getOrNull()
+
+    fun saveTocRuleChoice(context: Context, space: Int, key: String, ruleId: Long?) {
+        runCatching {
+            val editor = progressPrefs(context, space).edit()
+            if (ruleId == null) editor.remove("r_$key") else editor.putLong("r_$key", ruleId)
+            editor.apply()
+        }
+    }
+
     fun fontSize(context: Context): Float = runCatching {
         uiPrefs(context).getFloat(KEY_FONT, DEFAULT_FONT_SP)
     }.getOrDefault(DEFAULT_FONT_SP)
@@ -526,7 +563,7 @@ object TxtReaderStore {
         runCatching { uiPrefs(context).edit().putString(KEY_MODE, mode).apply() }
     }
 
-    /** 全屏阅读开关：默认开（进入阅读即沉浸），设置里可关，选择持久化 */
+    /** 全屏阅读开关：默认开（隐藏应用顶/底栏、正文全幅，系统栏保持显示），可关，选择持久化 */
     fun fullscreen(context: Context): Boolean = runCatching {
         uiPrefs(context).getBoolean(KEY_FULLSCREEN, true)
     }.getOrDefault(true)
@@ -569,6 +606,11 @@ class TxtReaderActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Diag.init(this)
+        // fork.28：全幅铺满——窗口不避让系统栏，状态栏/导航条透明常显，
+        // 内容侧用 windowInsetsPadding 给系统栏让位（与 MainActivity 同口径）
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
         val uri: Uri? = intent?.getStringExtra(EXTRA_URI)?.let { runCatching { Uri.parse(it) }.getOrNull() }
             ?: intent?.data
         if (uri == null) {
@@ -660,6 +702,14 @@ private data class TxtPage(val slices: List<TxtSlice>) {
     val startParagraph: Int get() = slices.firstOrNull()?.paragraph ?: 0
     val startChar: Int get() = slices.firstOrNull()?.startChar ?: 0
 }
+
+/** 翻页模式上报的位置信息（fork.28）：全局页码 + 本章页码（无章节时后两者为 0） */
+private data class TxtPageInfo(
+    val current: Int,
+    val total: Int,
+    val chapterCurrent: Int,
+    val chapterTotal: Int,
+)
 
 /**
  * 用 TextMeasurer 按当前字号/行高逐段逐行量高，贪心装页；段落可跨页拆分，
@@ -761,8 +811,6 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val scope = rememberCoroutineScope()
-    val view = LocalView.current
-    val clipboard = LocalClipboardManager.current
 
     var rawBytes by remember { mutableStateOf<ByteArray?>(null) }
     var loadError by remember { mutableStateOf(false) }
@@ -776,7 +824,19 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     var fontSize by remember { mutableStateOf(TxtReaderStore.fontSize(context)) }
     var readMode by remember { mutableStateOf(TxtReaderStore.readMode(context)) }
     var fullscreen by remember { mutableStateOf(TxtReaderStore.fullscreen(context)) }
-    var menuVisible by remember { mutableStateOf(!fullscreen) }
+    var panelVisible by remember { mutableStateOf(false) }
+    var ruleChoice by remember { mutableStateOf<Long?>(null) }
+    var showRulePicker by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var brightness by remember { mutableStateOf(TxtReaderStore.brightness(context)) }
+    val systemBrightness = remember {
+        runCatching {
+            Settings.System.getInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS, 128,
+            ) / 255f
+        }.getOrDefault(0.55f)
+    }
 
     // 统一位置锚点：段落 + 段内字符偏移，两种阅读模式共用（见 TxtReaderStore 注释）
     var anchorPara by remember { mutableIntStateOf(0) }
@@ -785,67 +845,15 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     var positionReady by remember { mutableStateOf(false) }
     var jumpPara by remember { mutableIntStateOf(-1) }
     var jumpSignal by remember { mutableIntStateOf(0) }
-    var pageInfo by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var pageInfo by remember { mutableStateOf<TxtPageInfo?>(null) }
 
     var showSettings by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
-    var ruleEditor by remember { mutableStateOf<RuleEditRequest?>(null) }
-    var showPaste by remember { mutableStateOf(false) }
-    var importReport by remember { mutableStateOf<String?>(null) }
-    var pendingExport by remember { mutableStateOf<String?>(null) }
 
     fun applyRules(newRules: List<TxtTocRule>) {
         tocRules = newRules
         TxtTocRules.save(appContext, newRules)
-    }
-
-    fun importRulesFromText(text: String) {
-        val result = TxtTocRules.parseImport(text, System.currentTimeMillis())
-        if (result.rules.isNotEmpty()) applyRules(tocRules + result.rules)
-        importReport = "导入完成：成功 ${result.rules.size} 条，失败 ${result.failed} 条（已追加到列表末尾）"
-        Diag.log("TxtReader rules import: ok=${result.rules.size} failed=${result.failed}")
-    }
-
-    val ruleImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { picked ->
-        if (picked != null) {
-            scope.launch {
-                val text = runCatching {
-                    withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(picked)?.use { it.readBytes() }
-                            ?.let { String(it, Charsets.UTF_8) }
-                    }
-                }.getOrNull()
-                if (text == null) {
-                    importReport = "导入失败：读不到所选文件"
-                } else {
-                    importRulesFromText(text)
-                }
-            }
-        }
-    }
-    val ruleExportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json"),
-    ) { target ->
-        val content = pendingExport
-        pendingExport = null
-        if (target != null && content != null) {
-            scope.launch {
-                val ok = runCatching {
-                    withContext(Dispatchers.IO) {
-                        context.contentResolver.openOutputStream(target)
-                            ?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
-                    }
-                }.isSuccess
-                Toast.makeText(
-                    context,
-                    if (ok) "规则已导出" else "导出失败",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-        }
     }
 
     // 读原始字节（只读一次；编码/规则变化只重新解码切章，不重新读文件）
@@ -865,6 +873,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 if (encodingChoice == null && progress?.encoding != null) {
                     encodingChoice = progress.encoding
                 }
+                ruleChoice = TxtReaderStore.loadTocRuleChoice(appContext, space, key)
                 // 打开过即入架（fork.27 书架），空间与进度同口径分开
                 TxtBookshelfStore.upsert(appContext, space, key, uri.toString(), name, bytes.size)
                 Diag.log("TxtReader: loaded ${bytes.size} bytes, progress=${progress != null}")
@@ -876,13 +885,19 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     }
 
     // 解码 + 按当前规则切章（编码或规则变化时重跑）
-    LaunchedEffect(rawBytes, encodingChoice, tocRules) {
+    LaunchedEffect(rawBytes, encodingChoice, tocRules, ruleChoice) {
         val bytes = rawBytes ?: return@LaunchedEffect
         val decoded = withContext(Dispatchers.Default) {
             TxtCodec.decode(bytes, encodingChoice)
         }
         val paragraphs = TxtCodec.paragraphsOf(decoded.text)
-        val chapters = TxtChapters.split(paragraphs, tocRules)
+        // 本书指定了单条规则时只用它切章（本书专用，忽略其全局启停）；
+        // 未指定（自动）沿用全局规则列表顺序的现行口径
+        val chosenRule = ruleChoice?.let { id -> tocRules.firstOrNull { it.id == id } }
+        val chapters = TxtChapters.split(
+            paragraphs,
+            if (chosenRule != null) listOf(chosenRule.copy(enabled = true)) else tocRules,
+        )
         book = TxtBook(
             paragraphs = paragraphs,
             chapters = chapters,
@@ -925,32 +940,44 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
         }
     }
 
-    // 全屏阅读：沉浸式隐藏系统栏；菜单呼出时临时显示（fork.27）
-    LaunchedEffect(fullscreen, menuVisible) {
+    // fork.28 全屏口径纠正：系统状态栏与导航条全程保持显示，阅读器从不
+    // 隐藏它们；「全屏」只表示隐藏应用自己的顶/底栏、正文全幅铺满，
+    // 内容靠 windowInsetsPadding 给系统栏让位（见下方布局）。
+
+    // 阅读亮度偏好 → 当前窗口亮度（-1 = 跟随系统，恢复不覆盖）
+    LaunchedEffect(brightness) {
         val window = (context as? Activity)?.window ?: return@LaunchedEffect
-        val controller = WindowCompat.getInsetsController(window, view)
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (fullscreen && !menuVisible) {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+        val attrs = window.attributes
+        attrs.screenBrightness = if (brightness >= 0f) {
+            brightness
         } else {
-            controller.show(WindowInsetsCompat.Type.systemBars())
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            val window = (context as? Activity)?.window
-            if (window != null) {
-                WindowCompat.getInsetsController(window, view)
-                    .show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
+        window.attributes = attrs
     }
 
     val currentBook = book
     val total = currentBook?.paragraphs?.size ?: 0
-    val currentChapter = currentBook?.chapters?.lastOrNull { it.paragraphIndex <= anchorPara }?.title
-    val percent = if (total > 0) anchorPara * 100 / total else 0
+    val chaptersNow = currentBook?.chapters.orEmpty()
+    val chapterIndex = chaptersNow.indexOfLast { it.paragraphIndex <= anchorPara }
+    val currentChapter = chaptersNow.getOrNull(chapterIndex)?.title
+    val chapterStartPara = chaptersNow.getOrNull(chapterIndex)?.paragraphIndex ?: 0
+    val chapterEndPara = chaptersNow.getOrNull(chapterIndex + 1)?.paragraphIndex ?: total
+    val percentText = String.format(
+        Locale.US, "%.1f%%",
+        if (total > 0) anchorPara * 100f / total else 0f,
+    )
+    // 底部信息行右侧（Legado 式）：翻页模式 = 本章第 x/y 页 + 全书百分比
+    val infoRight = when {
+        currentBook == null -> ""
+        readMode == TxtReaderStore.MODE_PAGE && pageInfo != null ->
+            if (pageInfo!!.chapterTotal > 0) {
+                "${pageInfo!!.chapterCurrent}/${pageInfo!!.chapterTotal}  $percentText"
+            } else {
+                "${pageInfo!!.current}/${pageInfo!!.total}  $percentText"
+            }
+        else -> percentText
+    }
 
     val topBar: @Composable () -> Unit = {
         SmallTopAppBar(
@@ -966,32 +993,58 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             },
         )
     }
+
+    // 全屏呼出的顶栏（Legado 式）：只留返回 + 当前章节标题，不堆按钮
+    val slimTopBar: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MiuixTheme.colorScheme.surface)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onClose)
+            Text(
+                text = currentChapter ?: name,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+    }
+
+    // 普通模式底栏：目录/设置入口与 Legado 底部信息行并成一行，不重复占高
     val bottomBar: @Composable () -> Unit = {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MiuixTheme.colorScheme.surface)
-                .navigationBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
                 text = "目录",
                 onClick = { showToc = true },
-                enabled = (currentBook?.chapters?.size ?: 0) > 0,
+                enabled = chaptersNow.isNotEmpty(),
             )
-            Spacer(Modifier.weight(1f))
             Text(
-                text = when {
-                    currentBook == null -> ""
-                    readMode == TxtReaderStore.MODE_PAGE && pageInfo != null ->
-                        "${pageInfo!!.first} / ${pageInfo!!.second} 页 · ${currentBook.encodingLabel}"
-                    else -> "${currentBook.encodingLabel} · $percent%"
-                },
+                text = currentChapter ?: "",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp),
+            )
+            Text(
+                text = infoRight,
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
-            Spacer(Modifier.weight(1f))
             TextButton(
                 text = "设置",
                 onClick = { showSettings = true },
@@ -1000,10 +1053,35 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
         }
     }
 
+    // 全屏模式底部信息行（Legado 式）：左当前章节名，右本章页码 + 全书百分比
+    val infoRow: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = currentChapter ?: name,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = infoRight,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface),
+            .background(MiuixTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.systemBars),
     ) {
         when {
             loadError -> Column(Modifier.fillMaxSize()) {
@@ -1053,8 +1131,8 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                     anchorChar = c
                                     positionReady = true
                                 },
-                                onPageInfo = { cur, tot -> pageInfo = cur to tot },
-                                onTapCenter = { menuVisible = !menuVisible },
+                                onPageInfo = { info -> pageInfo = info },
+                                onTapCenter = { panelVisible = !panelVisible },
                                 modifier = contentModifier,
                             )
                         } else {
@@ -1069,8 +1147,8 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 },
                                 jumpPara = jumpPara,
                                 jumpSignal = jumpSignal,
-                                tapToggleEnabled = fullscreen,
-                                onToggleMenu = { menuVisible = !menuVisible },
+                                tapToggleEnabled = true,
+                                onToggleMenu = { panelVisible = !panelVisible },
                                 onPosition = { p, px ->
                                     anchorPara = p
                                     anchorChar = 0
@@ -1083,12 +1161,14 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                     }
                 }
                 if (fullscreen) {
-                    content(Modifier.fillMaxSize())
-                    if (menuVisible) {
+                    Column(Modifier.fillMaxSize()) {
+                        content(Modifier.weight(1f))
+                        infoRow()
+                    }
+                    if (panelVisible) {
                         Column(Modifier.fillMaxSize()) {
-                            topBar()
+                            slimTopBar()
                             Spacer(Modifier.weight(1f))
-                            bottomBar()
                         }
                     }
                 } else {
@@ -1099,6 +1179,72 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                     }
                 }
             }
+        }
+
+        // 控制面板（Legado 式，fork.28）：亮度一行、上一章/章节进度/下一章一行、
+        // 目录/全文搜索/设置三入口一行；点按正文呼出，与快速设置面板分层
+        if (panelVisible && currentBook != null) {
+            TxtControlPanel(
+                brightness = brightness,
+                systemBrightness = systemBrightness,
+                onBrightness = { value ->
+                    brightness = value
+                    TxtReaderStore.setBrightness(appContext, value)
+                },
+                canPrevChapter = chaptersNow.isNotEmpty() &&
+                    (chapterIndex > 0 || (chapterIndex == 0 && anchorPara > chapterStartPara)),
+                canNextChapter = chaptersNow.isNotEmpty() &&
+                    chapterIndex < chaptersNow.size - 1,
+                chapterProgress = if (chapterIndex >= 0 && chapterEndPara > chapterStartPara) {
+                    (anchorPara - chapterStartPara).toFloat() /
+                        (chapterEndPara - chapterStartPara)
+                } else {
+                    0f
+                },
+                onPrevChapter = {
+                    val target = when {
+                        chapterIndex > 0 && anchorPara <= chapterStartPara ->
+                            chaptersNow[chapterIndex - 1].paragraphIndex
+                        chapterIndex >= 0 -> chapterStartPara
+                        else -> -1
+                    }
+                    if (target >= 0) {
+                        jumpPara = target
+                        jumpSignal++
+                    }
+                },
+                onNextChapter = {
+                    val next = chaptersNow.getOrNull(chapterIndex + 1)
+                    if (next != null) {
+                        jumpPara = next.paragraphIndex
+                        jumpSignal++
+                    }
+                },
+                onChapterSeek = { frac ->
+                    if (chapterIndex >= 0) {
+                        jumpPara = (chapterStartPara + frac * (chapterEndPara - chapterStartPara))
+                            .toInt()
+                            .coerceIn(
+                                chapterStartPara,
+                                (chapterEndPara - 1).coerceAtLeast(chapterStartPara),
+                            )
+                        jumpSignal++
+                    }
+                },
+                onOpenToc = {
+                    panelVisible = false
+                    showToc = true
+                },
+                onOpenSearch = {
+                    panelVisible = false
+                    showSearch = true
+                },
+                onOpenSettings = {
+                    panelVisible = false
+                    showSettings = true
+                },
+                onDismiss = { panelVisible = false },
+            )
         }
 
         // 阅读设置面板（页内覆盖层，不走系统对话框）
@@ -1185,7 +1331,6 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                         .clickable {
                                             if (fullscreen != value) {
                                                 fullscreen = value
-                                                if (!value) menuVisible = true
                                                 TxtReaderStore.setFullscreen(appContext, value)
                                             }
                                         }
@@ -1202,7 +1347,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                             }
                             Spacer(Modifier.weight(1f))
                             Text(
-                                text = "全屏时点按正文呼出菜单",
+                                text = "全屏隐藏应用顶/底栏，系统栏保持显示；点按正文呼出控制面板",
                                 fontSize = 12.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
@@ -1244,10 +1389,22 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         )
                         Spacer(Modifier.height(12.dp))
                         TextButton(
+                            text = "本书目录规则：${
+                                ruleChoice?.let { id ->
+                                    tocRules.firstOrNull { it.id == id }?.name
+                                } ?: "自动（全局顺序）"
+                            }",
+                            onClick = {
+                                showSettings = false
+                                showRulePicker = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(
                             text = "目录规则（共 ${tocRules.size} 条，启用 ${tocRules.count { it.enabled }} 条）",
                             onClick = {
                                 showSettings = false
-                                importReport = null
                                 showRules = true
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -1317,7 +1474,8 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             }
         }
 
-        // 目录规则管理（页内全屏覆盖层，fork.27）
+        // 目录规则管理（页内全屏覆盖层）：主体与「阅读设置 → 目录规则」页
+        // 共用 TxtTocRulesManager、同一份数据，此处只是快捷入口宿主
         if (showRules) {
             Column(
                 modifier = Modifier
@@ -1331,152 +1489,388 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = { showRules = false })
                     },
                 )
-                if (importReport != null) {
-                    Text(
-                        text = importReport!!,
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
+                TxtTocRulesManager(
+                    rules = tocRules,
+                    onRulesChange = ::applyRules,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        // 本书选目录规则（带本书试切预览，fork.28）
+        if (showRulePicker) {
+            val pickedBook = currentBook
+            if (pickedBook != null) {
+                TxtBookRulePickerOverlay(
+                    book = pickedBook,
+                    rules = tocRules,
+                    choice = ruleChoice,
+                    onPick = { id ->
+                        showRulePicker = false
+                        if (id != ruleChoice) {
+                            ruleChoice = id
+                            fileKey?.let { key ->
+                                TxtReaderStore.saveTocRuleChoice(appContext, space, key, id)
+                            }
+                        }
+                    },
+                    onDismiss = { showRulePicker = false },
+                )
+            }
+        }
+
+        // 全文搜索（fork.28）
+        if (showSearch) {
+            val searchBook = currentBook
+            if (searchBook != null) {
+                TxtSearchOverlay(
+                    book = searchBook,
+                    onJump = { para ->
+                        showSearch = false
+                        jumpPara = para
+                        jumpSignal++
+                    },
+                    onDismiss = { showSearch = false },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 控制面板（fork.28，Legado 式布局）：底部弹出条——亮度滑杆一行
+ * （窗口亮度、持久化阅读偏好；「跟随系统」恢复不覆盖）、上一章/下一章
+ * 夹章节进度滑杆一行（拖动在本章内定位）、目录/全文搜索/设置三入口一行。
+ * 点面板外空白收起。
+ */
+@Composable
+private fun TxtControlPanel(
+    brightness: Float,
+    systemBrightness: Float,
+    onBrightness: (Float) -> Unit,
+    canPrevChapter: Boolean,
+    canNextChapter: Boolean,
+    chapterProgress: Float,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit,
+    onChapterSeek: (Float) -> Unit,
+    onOpenToc: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var brightnessDrag by remember { mutableStateOf<Float?>(null) }
+    var chapterDrag by remember { mutableStateOf<Float?>(null) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MiuixTheme.colorScheme.surface)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "亮度",
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Slider(
+                    value = brightnessDrag
+                        ?: if (brightness >= 0f) brightness else systemBrightness,
+                    onValueChange = { brightnessDrag = it },
+                    onValueChangeFinished = {
+                        brightnessDrag?.let(onBrightness)
+                        brightnessDrag = null
+                    },
+                    valueRange = 0.05f..1f,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp),
+                )
+                TextButton(
+                    text = "跟随系统",
+                    onClick = { onBrightness(-1f) },
+                    enabled = brightness >= 0f,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    text = "上一章",
+                    onClick = onPrevChapter,
+                    enabled = canPrevChapter,
+                )
+                Slider(
+                    value = chapterDrag ?: chapterProgress.coerceIn(0f, 1f),
+                    onValueChange = { chapterDrag = it },
+                    onValueChangeFinished = {
+                        chapterDrag?.let(onChapterSeek)
+                        chapterDrag = null
+                    },
+                    valueRange = 0f..1f,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 6.dp),
+                )
+                TextButton(
+                    text = "下一章",
+                    onClick = onNextChapter,
+                    enabled = canNextChapter,
+                )
+            }
+            Row {
+                TextButton(
+                    text = "目录",
+                    onClick = onOpenToc,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "全文搜索",
+                    onClick = onOpenSearch,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "设置",
+                    onClick = onOpenSettings,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 目录规则管理主体（fork.28 抽出共用）：规则列表 + 导入/导出 + 编辑/粘贴弹层。
+ * 阅读器内覆盖层与「阅读设置 → 目录规则」独立页共用这同一份实现，
+ * 数据都走 TxtTocRules 全局存储，两处改动互通、不分叉。
+ */
+@Composable
+fun TxtTocRulesManager(
+    rules: List<TxtTocRule>,
+    onRulesChange: (List<TxtTocRule>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var ruleEditor by remember { mutableStateOf<RuleEditRequest?>(null) }
+    var showPaste by remember { mutableStateOf(false) }
+    var importReport by remember { mutableStateOf<String?>(null) }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+
+    fun importFromText(text: String) {
+        val result = TxtTocRules.parseImport(text, System.currentTimeMillis())
+        if (result.rules.isNotEmpty()) onRulesChange(rules + result.rules)
+        importReport = "导入完成：成功 ${result.rules.size} 条，失败 ${result.failed} 条（已追加到列表末尾）"
+        Diag.log("TxtReader rules import: ok=${result.rules.size} failed=${result.failed}")
+    }
+
+    val ruleImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?.let { String(it, Charsets.UTF_8) }
+                    }.getOrNull()
                 }
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(tocRules.size) { index ->
-                        val rule = tocRules[index]
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            insideMargin = PaddingValues(14.dp),
-                        ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = rule.name,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MiuixTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(
-                                                if (rule.enabled) MiuixTheme.colorScheme.primary
-                                                else MiuixTheme.colorScheme.surfaceVariant,
-                                            )
-                                            .clickable {
-                                                applyRules(
-                                                    tocRules.map {
-                                                        if (it.id == rule.id) it.copy(enabled = !it.enabled) else it
-                                                    },
-                                                )
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                                    ) {
-                                        Text(
-                                            text = if (rule.enabled) "启用" else "停用",
-                                            fontSize = 12.sp,
-                                            color = if (rule.enabled) MiuixTheme.colorScheme.onPrimary
-                                            else MiuixTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(4.dp))
+                if (text != null) importFromText(text)
+                else importReport = "读取文件失败"
+            }
+        }
+    }
+    val ruleExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val content = pendingExport
+        pendingExport = null
+        if (uri != null && content != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri, "wt")?.use {
+                            it.write(content.toByteArray(Charsets.UTF_8))
+                        }
+                        true
+                    }.getOrDefault(false)
+                }
+                Toast.makeText(context, if (ok) "规则已导出" else "导出失败", Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+    }
+
+    Box(modifier = modifier) {
+        Column(Modifier.fillMaxSize()) {
+            if (importReport != null) {
+                Text(
+                    text = importReport!!,
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(rules.size) { index ->
+                    val rule = rules[index]
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        insideMargin = PaddingValues(14.dp),
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = rule.pattern,
-                                    fontSize = 12.sp,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    maxLines = 2,
+                                    text = rule.name,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Row {
-                                    TextButton(
-                                        text = "编辑",
-                                        onClick = { ruleEditor = RuleEditRequest(rule.id, rule.name, rule.pattern) },
-                                    )
-                                    TextButton(
-                                        text = "上移",
-                                        enabled = index > 0,
-                                        onClick = {
-                                            val next = tocRules.toMutableList()
-                                            val tmp = next[index - 1]
-                                            next[index - 1] = next[index]
-                                            next[index] = tmp
-                                            applyRules(next)
-                                        },
-                                    )
-                                    TextButton(
-                                        text = "下移",
-                                        enabled = index < tocRules.size - 1,
-                                        onClick = {
-                                            val next = tocRules.toMutableList()
-                                            val tmp = next[index + 1]
-                                            next[index + 1] = next[index]
-                                            next[index] = tmp
-                                            applyRules(next)
-                                        },
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (rule.enabled) MiuixTheme.colorScheme.primary
+                                            else MiuixTheme.colorScheme.surfaceVariant,
+                                        )
+                                        .clickable {
+                                            onRulesChange(
+                                                rules.map {
+                                                    if (it.id == rule.id) {
+                                                        it.copy(enabled = !it.enabled)
+                                                    } else {
+                                                        it
+                                                    }
+                                                },
+                                            )
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                                ) {
+                                    Text(
+                                        text = if (rule.enabled) "启用" else "停用",
+                                        fontSize = 12.sp,
+                                        color = if (rule.enabled) MiuixTheme.colorScheme.onPrimary
+                                        else MiuixTheme.colorScheme.onSurface,
                                     )
                                 }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = rule.pattern,
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row {
+                                TextButton(
+                                    text = "编辑",
+                                    onClick = {
+                                        ruleEditor = RuleEditRequest(rule.id, rule.name, rule.pattern)
+                                    },
+                                )
+                                TextButton(
+                                    text = "上移",
+                                    enabled = index > 0,
+                                    onClick = {
+                                        val next = rules.toMutableList()
+                                        val tmp = next[index - 1]
+                                        next[index - 1] = next[index]
+                                        next[index] = tmp
+                                        onRulesChange(next)
+                                    },
+                                )
+                                TextButton(
+                                    text = "下移",
+                                    enabled = index < rules.size - 1,
+                                    onClick = {
+                                        val next = rules.toMutableList()
+                                        val tmp = next[index + 1]
+                                        next[index + 1] = next[index]
+                                        next[index] = tmp
+                                        onRulesChange(next)
+                                    },
+                                )
                             }
                         }
                     }
                 }
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Row {
-                        TextButton(
-                            text = "新增规则",
-                            onClick = { ruleEditor = RuleEditRequest(null, "", "") },
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            text = "从文件导入",
-                            onClick = { ruleImportLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            text = "粘贴导入",
-                            onClick = { showPaste = true },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Row {
-                        TextButton(
-                            text = "复制导出",
-                            onClick = {
-                                clipboard.setText(AnnotatedString(TxtTocRules.exportJson(tocRules)))
-                                Toast.makeText(context, "规则 JSON 已复制", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            text = "导出到文件",
-                            onClick = {
-                                pendingExport = TxtTocRules.exportJson(tocRules)
-                                ruleExportLauncher.launch("marea-toc-rules.json")
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Text(
-                        text = "导出格式与 Legado 目录规则互通（name / chapterRule 字段）；改规则后当前书目录立即按新规则重算。",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            }
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Row {
+                    TextButton(
+                        text = "新增规则",
+                        onClick = { ruleEditor = RuleEditRequest(null, "", "") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "从文件导入",
+                        onClick = {
+                            ruleImportLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "粘贴导入",
+                        onClick = { showPaste = true },
+                        modifier = Modifier.weight(1f),
                     )
                 }
+                Row {
+                    TextButton(
+                        text = "复制导出",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(TxtTocRules.exportJson(rules)))
+                            Toast.makeText(context, "规则 JSON 已复制", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "导出到文件",
+                        onClick = {
+                            pendingExport = TxtTocRules.exportJson(rules)
+                            ruleExportLauncher.launch("marea-toc-rules.json")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    text = "导出格式与 Legado 目录规则互通（name / chapterRule 字段）；改规则后当前书目录立即按新规则重算。",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                )
             }
         }
 
-        // 规则编辑（新增/编辑共用，fork.27）
+        // 规则编辑（新增/编辑共用）
         ruleEditor?.let { request ->
             TxtRuleEditorOverlay(
                 request = request,
                 onDismiss = { ruleEditor = null },
                 onDelete = if (request.id != null) {
                     {
-                        applyRules(tocRules.filter { it.id != request.id })
+                        onRulesChange(rules.filter { it.id != request.id })
                         ruleEditor = null
                     }
                 } else {
@@ -1484,27 +1878,274 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 },
                 onSave = { editedName, editedPattern ->
                     val updated = if (request.id == null) {
-                        tocRules + TxtTocRule(System.currentTimeMillis(), editedName, editedPattern, true)
+                        rules + TxtTocRule(
+                            System.currentTimeMillis(), editedName, editedPattern, true,
+                        )
                     } else {
-                        tocRules.map {
-                            if (it.id == request.id) it.copy(name = editedName, pattern = editedPattern) else it
+                        rules.map {
+                            if (it.id == request.id) {
+                                it.copy(name = editedName, pattern = editedPattern)
+                            } else {
+                                it
+                            }
                         }
                     }
-                    applyRules(updated)
+                    onRulesChange(updated)
                     ruleEditor = null
                 },
             )
         }
 
-        // 粘贴导入（fork.27）
+        // 粘贴导入
         if (showPaste) {
             TxtPasteImportOverlay(
                 onDismiss = { showPaste = false },
                 onImport = { text ->
                     showPaste = false
-                    importRulesFromText(text)
+                    importFromText(text)
                 },
             )
+        }
+    }
+}
+
+private data class TxtRulePreview(val count: Int, val samples: List<String>)
+
+/**
+ * 本书选目录规则（fork.28）：每条规则都在当前书的段落上实时试切，
+ * 显示命中章节数与前 3 条章节标题供对比挑选；「自动」= 沿用全局
+ * 规则列表顺序（卡面预览用父层已按全局口径切好的目录）。指定单条
+ * 规则时按本书专用处理——忽略该规则在全局列表里的启停状态。
+ */
+@Composable
+private fun TxtBookRulePickerOverlay(
+    book: TxtBook,
+    rules: List<TxtTocRule>,
+    choice: Long?,
+    onPick: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var previews by remember { mutableStateOf<Map<Long, TxtRulePreview>>(emptyMap()) }
+    LaunchedEffect(book, rules) {
+        previews = withContext(Dispatchers.Default) {
+            rules.associate { rule ->
+                val chapters = TxtChapters.split(
+                    book.paragraphs,
+                    listOf(rule.copy(enabled = true)),
+                )
+                rule.id to TxtRulePreview(
+                    chapters.size,
+                    chapters.take(3).map { it.title },
+                )
+            }
+        }
+    }
+
+    fun previewText(count: Int, samples: List<String>): String = when {
+        count <= 0 -> "未切出章节"
+        samples.isEmpty() -> "切出 $count 章"
+        else -> "切出 $count 章：" + samples.joinToString(" · ")
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.surface),
+    ) {
+        SmallTopAppBar(
+            title = "本书目录规则",
+            subtitle = book.name,
+            navigationIcon = {
+                LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onDismiss)
+            },
+        )
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clickable { onPick(null) },
+                    insideMargin = PaddingValues(14.dp),
+                ) {
+                    Column {
+                        Text(
+                            text = if (choice == null) "✓ 自动（全局规则顺序）" else "自动（全局规则顺序）",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = previewText(
+                                book.chapters.size,
+                                book.chapters.take(3).map { it.title },
+                            ),
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            items(rules.size) { index ->
+                val rule = rules[index]
+                val preview = previews[rule.id]
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clickable { onPick(rule.id) },
+                    insideMargin = PaddingValues(14.dp),
+                ) {
+                    Column {
+                        Text(
+                            text = buildString {
+                                if (choice == rule.id) append("✓ ")
+                                append(rule.name)
+                                if (!rule.enabled) append("（全局停用，本书仍可用）")
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (preview == null) {
+                                "试切中…"
+                            } else {
+                                previewText(preview.count, preview.samples)
+                            },
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = "预览为每条规则单独在本书上试切的结果；选定后目录立即按新规则重切，阅读位置保持不变。",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+}
+
+private data class TxtSearchHit(val paragraph: Int, val chapter: String?, val snippet: String)
+
+/**
+ * 全文搜索（fork.28）：在当前书全段落里做不区分大小写的包含匹配，
+ * 结果带命中点前后文片段与所属章节；点结果按段落锚点跳转
+ * （滚动模式跳段、翻页模式经锚点换算到对应页）。最多保留 300 条。
+ */
+@Composable
+private fun TxtSearchOverlay(
+    book: TxtBook,
+    onJump: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<TxtSearchHit>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    LaunchedEffect(query, book) {
+        val q = query.trim()
+        if (q.isEmpty()) {
+            hits = emptyList()
+            searching = false
+            return@LaunchedEffect
+        }
+        searching = true
+        delay(250)
+        hits = withContext(Dispatchers.Default) {
+            val out = ArrayList<TxtSearchHit>()
+            for ((index, para) in book.paragraphs.withIndex()) {
+                val at = para.indexOf(q, ignoreCase = true)
+                if (at < 0) continue
+                val from = (at - 18).coerceAtLeast(0)
+                val to = (at + q.length + 22).coerceAtMost(para.length)
+                val snippet = buildString {
+                    if (from > 0) append("…")
+                    append(para.substring(from, to))
+                    if (to < para.length) append("…")
+                }
+                val chapter = book.chapters
+                    .lastOrNull { it.paragraphIndex <= index }?.title
+                out.add(TxtSearchHit(index, chapter, snippet))
+                if (out.size >= 300) break
+            }
+            out
+        }
+        searching = false
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.surface),
+    ) {
+        SmallTopAppBar(
+            title = "全文搜索",
+            subtitle = book.name,
+            navigationIcon = {
+                LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onDismiss)
+            },
+        )
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            label = "搜索关键词",
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        Text(
+            text = when {
+                query.isBlank() -> "在全书段落中搜索，结果点按跳转"
+                searching -> "搜索中…"
+                hits.size >= 300 -> "命中 300+ 处（仅显示前 300 条）"
+                else -> "命中 ${hits.size} 处"
+            },
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(hits.size) { index ->
+                val hit = hits[index]
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clickable { onJump(hit.paragraph) },
+                    insideMargin = PaddingValues(14.dp),
+                ) {
+                    Column {
+                        if (hit.chapter != null) {
+                            Text(
+                                text = hit.chapter,
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                        }
+                        Text(
+                            text = hit.snippet,
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1732,7 +2373,7 @@ private fun TxtPageContent(
     jumpPara: Int,
     jumpSignal: Int,
     onPosition: (Int, Int) -> Unit,
-    onPageInfo: (Int, Int) -> Unit,
+    onPageInfo: (TxtPageInfo) -> Unit,
     onTapCenter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1776,7 +2417,24 @@ private fun TxtPageContent(
             lastPara = p.startParagraph
             lastChar = p.startChar
             onPosition(p.startParagraph, p.startChar)
-            onPageInfo(pageIndex + 1, pages.size)
+            // 本章页码（Legado 底部信息行口径）：页按其起始段落归属章节统计
+            val chIdx = book.chapters.indexOfLast { it.paragraphIndex <= p.startParagraph }
+            if (chIdx >= 0) {
+                val start = book.chapters[chIdx].paragraphIndex
+                val end = book.chapters.getOrNull(chIdx + 1)?.paragraphIndex
+                    ?: book.paragraphs.size
+                var count = 0
+                var mine = 0
+                pages.forEachIndexed { i, pg ->
+                    if (pg.startParagraph >= start && pg.startParagraph < end) {
+                        count++
+                        if (i == pageIndex) mine = count
+                    }
+                }
+                onPageInfo(TxtPageInfo(pageIndex + 1, pages.size, mine, count))
+            } else {
+                onPageInfo(TxtPageInfo(pageIndex + 1, pages.size, 0, 0))
+            }
         }
         val anim = remember { Animatable(0f) }
         fun flip(delta: Int) {
