@@ -51,7 +51,7 @@ android {
         minSdk = 33
         targetSdk = 37
         versionCode = 285
-        versionName = "v1.8.28-exp.10"
+        versionName = "v1.8.28-exp.11"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
         // exp.8 瘦身：原生库只留 arm64-v8a（仍出单个通用 APK，不用 splits）
         ndk {
