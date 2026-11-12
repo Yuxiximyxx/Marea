@@ -2207,7 +2207,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         )
                         TextButton(
                             text = if (features.tocReversed) "倒序 ✓" else "倒序",
-                            onClick = { features.setTocReversed(!features.tocReversed) },
+                            onClick = { features.updateTocReversed(!features.tocReversed) },
                         )
                     }
                 }

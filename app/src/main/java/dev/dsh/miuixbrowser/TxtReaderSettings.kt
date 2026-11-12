@@ -84,42 +84,42 @@ class TxtFeatureState(private val appContext: android.content.Context) {
     var footerBattery by mutableStateOf(TxtReaderStore.footerShow(appContext, "battery"))
         private set
 
-    fun setConvertMode(value: String) {
+    fun updateConvertMode(value: String) {
         convertMode = value
         TxtReaderStore.setConvertMode(appContext, value)
     }
 
-    fun setReflow(value: Boolean) {
+    fun updateReflow(value: Boolean) {
         reflow = value
         TxtReaderStore.setReflow(appContext, value)
     }
 
-    fun setFontFile(value: String) {
+    fun updateFontFile(value: String) {
         fontFile = value
         TxtReaderStore.setFontFile(appContext, value)
     }
 
-    fun setFontWeight(value: Int) {
+    fun updateFontWeight(value: Int) {
         fontWeight = value
         TxtReaderStore.setFontWeight(appContext, value)
     }
 
-    fun setIndentChars(value: Int) {
+    fun updateIndentChars(value: Int) {
         indentChars = value
         TxtReaderStore.setIndentChars(appContext, value)
     }
 
-    fun setJustify(value: Boolean) {
+    fun updateJustify(value: Boolean) {
         justify = value
         TxtReaderStore.setJustify(appContext, value)
     }
 
-    fun setPageAnim(value: String) {
+    fun updatePageAnim(value: String) {
         pageAnim = value
         TxtReaderStore.setPageAnim(appContext, value)
     }
 
-    fun setTocReversed(value: Boolean) {
+    fun updateTocReversed(value: Boolean) {
         tocReversed = value
         TxtReaderStore.setTocReversed(appContext, value)
     }
@@ -527,19 +527,19 @@ fun TxtReaderSettingsContent(
                                 ReaderSettingsChip(
                                     text = "平移",
                                     selected = features.pageAnim == TxtReaderStore.ANIM_SLIDE,
-                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_SLIDE) },
+                                    onClick = { features.updatePageAnim(TxtReaderStore.ANIM_SLIDE) },
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 ReaderSettingsChip(
                                     text = "覆盖",
                                     selected = features.pageAnim == TxtReaderStore.ANIM_COVER,
-                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_COVER) },
+                                    onClick = { features.updatePageAnim(TxtReaderStore.ANIM_COVER) },
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 ReaderSettingsChip(
                                     text = "上下",
                                     selected = features.pageAnim == TxtReaderStore.ANIM_VERTICAL,
-                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_VERTICAL) },
+                                    onClick = { features.updatePageAnim(TxtReaderStore.ANIM_VERTICAL) },
                                 )
                             }
                             Spacer(Modifier.height(8.dp))
@@ -547,13 +547,13 @@ fun TxtReaderSettingsContent(
                                 ReaderSettingsChip(
                                     text = "仿真",
                                     selected = features.pageAnim == TxtReaderStore.ANIM_CURL,
-                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_CURL) },
+                                    onClick = { features.updatePageAnim(TxtReaderStore.ANIM_CURL) },
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 ReaderSettingsChip(
                                     text = "无动画",
                                     selected = features.pageAnim == TxtReaderStore.ANIM_NONE,
-                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_NONE) },
+                                    onClick = { features.updatePageAnim(TxtReaderStore.ANIM_NONE) },
                                 )
                             }
                         }
@@ -622,19 +622,19 @@ fun TxtReaderSettingsContent(
                             ReaderSettingsChip(
                                 text = "不缩进",
                                 selected = features.indentChars == 0,
-                                onClick = { features.setIndentChars(0) },
+                                onClick = { features.updateIndentChars(0) },
                             )
                             Spacer(Modifier.width(8.dp))
                             ReaderSettingsChip(
                                 text = "1 字",
                                 selected = features.indentChars == 1,
-                                onClick = { features.setIndentChars(1) },
+                                onClick = { features.updateIndentChars(1) },
                             )
                             Spacer(Modifier.width(8.dp))
                             ReaderSettingsChip(
                                 text = "2 字",
                                 selected = features.indentChars == 2,
-                                onClick = { features.setIndentChars(2) },
+                                onClick = { features.updateIndentChars(2) },
                             )
                         }
                         Spacer(Modifier.height(14.dp))
@@ -653,7 +653,7 @@ fun TxtReaderSettingsContent(
                             }
                             AppSwitch(
                                 checked = features.justify,
-                                onCheckedChange = { features.setJustify(it) },
+                                onCheckedChange = { features.updateJustify(it) },
                             )
                         }
                         Spacer(Modifier.height(10.dp))
@@ -679,7 +679,7 @@ fun TxtReaderSettingsContent(
                                 }
                                 fontList = TxtFonts.list(appContext)
                                 if (imported != null) {
-                                    features.setFontFile(imported)
+                                    features.updateFontFile(imported)
                                     Toast.makeText(context, "字体已导入", Toast.LENGTH_SHORT).show()
                                 } else {
                                     Toast.makeText(
@@ -699,18 +699,18 @@ fun TxtReaderSettingsContent(
                         ReaderFontOptionRow(
                             label = "系统默认",
                             selected = features.fontFile.isBlank(),
-                            onClick = { features.setFontFile("") },
+                            onClick = { features.updateFontFile("") },
                             onDelete = null,
                         )
                         fontList.forEach { entry ->
                             ReaderFontOptionRow(
                                 label = entry.label,
                                 selected = features.fontFile == entry.fileName,
-                                onClick = { features.setFontFile(entry.fileName) },
+                                onClick = { features.updateFontFile(entry.fileName) },
                                 onDelete = {
                                     TxtFonts.delete(appContext, entry.fileName)
                                     if (features.fontFile == entry.fileName) {
-                                        features.setFontFile("")
+                                        features.updateFontFile("")
                                     }
                                     fontList = TxtFonts.list(appContext)
                                 },
@@ -747,7 +747,7 @@ fun TxtReaderSettingsContent(
                             value = weightDrag ?: features.fontWeight.toFloat(),
                             onValueChange = { weightDrag = it },
                             onValueChangeFinished = {
-                                weightDrag?.let { features.setFontWeight(it.toInt()) }
+                                weightDrag?.let { features.updateFontWeight(it.toInt()) }
                                 weightDrag = null
                             },
                             valueRange = 300f..800f,
@@ -779,19 +779,19 @@ fun TxtReaderSettingsContent(
                             ReaderSettingsChip(
                                 text = "关",
                                 selected = features.convertMode == TxtConvert.OFF,
-                                onClick = { features.setConvertMode(TxtConvert.OFF) },
+                                onClick = { features.updateConvertMode(TxtConvert.OFF) },
                             )
                             Spacer(Modifier.width(8.dp))
                             ReaderSettingsChip(
                                 text = "繁转简",
                                 selected = features.convertMode == TxtConvert.T2S,
-                                onClick = { features.setConvertMode(TxtConvert.T2S) },
+                                onClick = { features.updateConvertMode(TxtConvert.T2S) },
                             )
                             Spacer(Modifier.width(8.dp))
                             ReaderSettingsChip(
                                 text = "简转繁",
                                 selected = features.convertMode == TxtConvert.S2T,
-                                onClick = { features.setConvertMode(TxtConvert.S2T) },
+                                onClick = { features.updateConvertMode(TxtConvert.S2T) },
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -816,7 +816,7 @@ fun TxtReaderSettingsContent(
                             }
                             AppSwitch(
                                 checked = features.reflow,
-                                onCheckedChange = { features.setReflow(it) },
+                                onCheckedChange = { features.updateReflow(it) },
                             )
                         }
                     }
