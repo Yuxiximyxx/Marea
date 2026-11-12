@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1503,6 +1504,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             if (pickedBook != null) {
                 TxtBookRulePickerOverlay(
                     book = pickedBook,
+                    bookName = name,
                     rules = tocRules,
                     choice = ruleChoice,
                     onPick = { id ->
@@ -1525,6 +1527,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             if (searchBook != null) {
                 TxtSearchOverlay(
                     book = searchBook,
+                    bookName = name,
                     onJump = { para ->
                         showSearch = false
                         jumpPara = para
@@ -1920,6 +1923,7 @@ private data class TxtRulePreview(val count: Int, val samples: List<String>)
 @Composable
 private fun TxtBookRulePickerOverlay(
     book: TxtBook,
+    bookName: String,
     rules: List<TxtTocRule>,
     choice: Long?,
     onPick: (Long?) -> Unit,
@@ -1954,7 +1958,7 @@ private fun TxtBookRulePickerOverlay(
     ) {
         SmallTopAppBar(
             title = "本书目录规则",
-            subtitle = book.name,
+            subtitle = bookName,
             navigationIcon = {
                 LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onDismiss)
             },
@@ -2047,6 +2051,7 @@ private data class TxtSearchHit(val paragraph: Int, val chapter: String?, val sn
 @Composable
 private fun TxtSearchOverlay(
     book: TxtBook,
+    bookName: String,
     onJump: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2090,7 +2095,7 @@ private fun TxtSearchOverlay(
     ) {
         SmallTopAppBar(
             title = "全文搜索",
-            subtitle = book.name,
+            subtitle = bookName,
             navigationIcon = {
                 LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onDismiss)
             },
