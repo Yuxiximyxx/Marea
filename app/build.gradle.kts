@@ -104,6 +104,7 @@ android {
 dependencies {
     // 实验分支 exp/legado-reader：整体移植的 Legado 阅读器（库模块）
     implementation(project(":legado"))
+    coreLibraryDesugaring(libs.desugar)
     // 宿主 LegadoReaderHostActivity 的编译面（Nav3 / Koin / AppCompat）
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
