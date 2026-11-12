@@ -25,7 +25,6 @@ data class MangaReaderUiState(
     val sourceUrl: String? = null,
     val sourceType: Int? = null,
     val sourceCustomButtonAvailable: Boolean = false,
-    val changeSourceBook: MangaBookSnapshot? = null,
     val pages: ImmutableList<MangaReaderItemUi> = persistentListOf(),
     val currentItemIndex: Int = 0,
     val footerItemIndex: Int? = null,
@@ -201,10 +200,6 @@ sealed interface MangaReaderIntent {
     data object ReloadContent : MangaReaderIntent
     data class ApplyReadingProgress(val progress: BookProgress) : MangaReaderIntent
     data class OpenChapter(val chapterIndex: Int, val pageIndex: Int) : MangaReaderIntent
-    data class ChangeSourceBook(
-        val book: Book,
-        val toc: List<BookChapter>,
-    ) : MangaReaderIntent
     data class AddExternalBookToShelf(
         val book: Book,
         val toc: List<BookChapter>,
@@ -228,7 +223,6 @@ sealed interface MangaReaderIntent {
     data object OpenCatalog : MangaReaderIntent
     data object OpenBookInfo : MangaReaderIntent
     data object OpenChapterUrl : MangaReaderIntent
-    data object ChangeSource : MangaReaderIntent
     data object RefreshChapter : MangaReaderIntent
     data class OpenSettings(val category: MangaReaderSettingsCategory) : MangaReaderIntent
     data object CloseSettings : MangaReaderIntent
@@ -281,7 +275,6 @@ sealed interface MangaReaderIntent {
 
 sealed interface MangaReaderSheet {
     data object Catalog : MangaReaderSheet
-    data object ChangeSource : MangaReaderSheet
     data object SourceActions : MangaReaderSheet
     data object CacheActions : MangaReaderSheet
     data class PageActions(

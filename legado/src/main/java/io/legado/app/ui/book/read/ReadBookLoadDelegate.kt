@@ -149,11 +149,7 @@ class ReadBookLoadDelegate(
         if (isSameBook) {
             ReadBook.upData(book)
         } else {
-            val playing = ReadAloud.bookSession.state.value
-            val readerBook = if (BaseReadAloudService.isRun && ReadAloud.bookSession.owns(book.bookUrl)) {
-                book.copy(durChapterIndex = playing.chapterIndex, durChapterPos = playing.chapterPosition)
-            } else book
-            ReadBook.resetData(readerBook)
+            ReadBook.resetData(book)
         }
         host.setInitFinish()
         if (!book.isLocal && book.tocUrl.isEmpty() && !loadBookInfo(book)) {

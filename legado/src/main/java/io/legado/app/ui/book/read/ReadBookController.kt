@@ -75,7 +75,6 @@ import io.legado.app.model.analyzeRule.AnalyzeUrl.Companion.paramPattern
 import io.legado.app.model.reader.ReaderChapterInput
 import io.legado.app.receiver.NetworkChangedListener
 import io.legado.app.receiver.TimeBatteryReceiver
-import io.legado.app.ui.association.OpenUrlConfirmActivity
 import io.legado.app.ui.book.read.page.entities.PageDirection
 import io.legado.app.ui.widget.PopupAction
 import io.legado.app.utils.ColorUtils
@@ -582,23 +581,21 @@ class ReadBookController(
         is ReaderElement.Text -> when {
             element.markingId != null -> { onMarkingClick(element.markingId); true }
             element.link != null -> {
-                activity.startActivity(Intent(activity, OpenUrlConfirmActivity::class.java).putExtra("uri", element.link))
+                // exp.11：跳转确认页已移除，正文链接直接交给系统打开。
+                runCatching {
+                    activity.startActivity(
+                        Intent(Intent.ACTION_VIEW, element.link!!.toUri())
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
                 true
             }
             else -> false
         }
-        is ReaderElement.RoleCast -> {
-            // 多角色分配：点击胶囊打开分配弹层（确认/取消后重排当前章）
-            viewModel.onIntent(
-                ReadBookIntent.ShowSheet(ReadBookSheet.RoleCast(element.quoteOrdinal)),
-            )
-            true
-        }
+        // exp.11：多角色分配与背景音乐场景弹层已随朗读移除，胶囊点击不再处理。
+        is ReaderElement.RoleCast -> false
 
-        is ReaderElement.BgmScene -> {
-            viewModel.onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.BgmScene(element.paragraphIndex)))
-            true
-        }
+        is ReaderElement.BgmScene -> false
         is ReaderElement.Image -> handleComposeImageClick(element)
         is ReaderElement.Review -> { activity.toastOnUi("Button Pressed!"); true }
         is ReaderElement.Action -> { activity.toastOnUi("Button Pressed!"); true }
@@ -2013,16 +2010,6 @@ class ReadBookController(
 
     fun onMenuItemSelected(itemId: Int): Boolean {
         when (itemId) {
-            R.id.menu_aloud -> {
-                viewModel.onIntent(
-                    ReadBookIntent.TextActionAloud(
-                        selectedText,
-                        composeSelection?.bodyStart,
-                    )
-                )
-                return true
-            }
-
             R.id.menu_bookmark -> {
                 composeSelectionBookmark()?.let {
                     viewModel.onIntent(ReadBookIntent.TextActionBookmark(it))
@@ -2057,9 +2044,6 @@ class ReadBookController(
                 return true
             }
 
-            R.id.menu_insert_bgm_before -> return openBgmSceneAtSelection(before = true)
-
-            R.id.menu_insert_bgm_after -> return openBgmSceneAtSelection(before = false)
         }
         return false
     }
@@ -2075,28 +2059,6 @@ class ReadBookController(
      * 段序号来自 [io.legado.app.help.readaloud.cast.BgmSceneStore.positionsToOrdinals]，
      * 与胶囊渲染、AI 分配同一套计数（空白段不编号、标题不算段）。
      */
-    private fun openBgmSceneAtSelection(before: Boolean): Boolean {
-        val selection = composeSelection
-        // 选区含标题时 bodyStart 会被压成 0，落不到正确的段上，直接判不可用
-        val bodyStart = selection?.bodyStart?.takeIf { !selection.includesTitle }
-        val positions = ReadBook.readerChapterInputWindow.current?.source
-            ?.let { BgmSceneStore.positionsToOrdinals(it.semanticContent) }
-            .orEmpty()
-        var ordinal = -1
-        if (bodyStart != null) {
-            positions.forEach { (position, value) ->
-                if (position <= bodyStart) ordinal = value
-            }
-        }
-        val target = ordinal + if (before) 0 else 1
-        if (target !in 0..(positions.lastOrNull()?.second ?: -1)) {
-            activity.toastOnUi(R.string.bgm_scene_insert_error)
-            return false
-        }
-        viewModel.onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.BgmScene(target)))
-        return true
-    }
-
     fun onMenuActionFinally() {
         dismissTextActionMenu()
         composeSelection = null
@@ -2527,8 +2489,6 @@ class ReadBookController(
             is ReadBookEffect.OpenBookInfo,
             is ReadBookEffect.OpenSearch,
             is ReadBookEffect.ShowLogin,
-            is ReadBookEffect.OpenWebView,
-            is ReadBookEffect.RunSourceCustomButton,
             is ReadBookEffect.MenuSettingReplace,
             is ReadBookEffect.TextActionReplace,
             is ReadBookEffect.OpenReplaceEditor,

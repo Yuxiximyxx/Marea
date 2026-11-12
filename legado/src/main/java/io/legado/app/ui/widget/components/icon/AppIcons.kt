@@ -138,18 +138,6 @@ object AppIcons {
                 if (selected) Icons.AutoMirrored.Filled.LibraryBooks else Icons.AutoMirrored.Outlined.LibraryBooks
             }
 
-            MainDestination.Explore -> if (isMiuix) {
-                if (selected) MiuixIcons.Regular.Album else MiuixIcons.Regular.Album
-            } else {
-                if (selected) Icons.Default.Explore else Icons.Outlined.Explore
-            }
-
-            MainDestination.Rss -> if (isMiuix) {
-                if (selected) MiuixIcons.Regular.Favorites else MiuixIcons.Regular.Favorites
-            } else {
-                if (selected) Icons.Default.RssFeed else Icons.Outlined.RssFeed
-            }
-
             MainDestination.My -> if (isMiuix) {
                 if (selected) MiuixIcons.Regular.Settings else MiuixIcons.Regular.Settings
             } else {

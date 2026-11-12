@@ -301,18 +301,6 @@ class ThemeConfigViewModel(
                     defaultHomePage = current.fallbackHomePage(intent),
                 )
             }
-            MainDestination.Explore.route -> { current ->
-                current.copy(
-                    showDiscovery = intent.visible,
-                    defaultHomePage = current.fallbackHomePage(intent),
-                )
-            }
-            MainDestination.Rss.route -> { current ->
-                current.copy(
-                    showRss = intent.visible,
-                    defaultHomePage = current.fallbackHomePage(intent),
-                )
-            }
             else -> return
         }
         updateAppShell(transform = transform)
@@ -343,12 +331,6 @@ class ThemeConfigViewModel(
             MainDestination.Bookshelf.route -> { settings ->
                 settings.copy(navIconBookshelf = intent.path)
             }
-            MainDestination.Explore.route -> { settings ->
-                settings.copy(navIconExplore = intent.path)
-            }
-            MainDestination.Rss.route -> { settings ->
-                settings.copy(navIconRss = intent.path)
-            }
             MainDestination.My.route -> { settings ->
                 settings.copy(navIconMy = intent.path)
             }
@@ -358,14 +340,6 @@ class ThemeConfigViewModel(
 
             "${MainDestination.Bookshelf.route}:selected" -> { settings ->
                 settings.copy(navIconBookshelfSelected = intent.path)
-            }
-
-            "${MainDestination.Explore.route}:selected" -> { settings ->
-                settings.copy(navIconExploreSelected = intent.path)
-            }
-
-            "${MainDestination.Rss.route}:selected" -> { settings ->
-                settings.copy(navIconRssSelected = intent.path)
             }
 
             "${MainDestination.My.route}:selected" -> { settings ->
@@ -390,13 +364,9 @@ class ThemeConfigViewModel(
     private fun AppShellSettings.navIconPath(destination: String): String = when (destination) {
         MainDestination.Home.route -> navIconHome
         MainDestination.Bookshelf.route -> navIconBookshelf
-        MainDestination.Explore.route -> navIconExplore
-        MainDestination.Rss.route -> navIconRss
         MainDestination.My.route -> navIconMy
         "${MainDestination.Home.route}:selected" -> navIconHomeSelected
         "${MainDestination.Bookshelf.route}:selected" -> navIconBookshelfSelected
-        "${MainDestination.Explore.route}:selected" -> navIconExploreSelected
-        "${MainDestination.Rss.route}:selected" -> navIconRssSelected
         "${MainDestination.My.route}:selected" -> navIconMySelected
         else -> ""
     }

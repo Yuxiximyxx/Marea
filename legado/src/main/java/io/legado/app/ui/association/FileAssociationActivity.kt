@@ -98,20 +98,15 @@ class FileAssociationActivity : BaseComposeActivity(transparent = true) {
             importBook(uri)
         }
         viewModel.onLineImportLive.observe(this) {
-            startActivity<OnLineImportActivity> {
-                data = it
-            }
+            // exp.11：在线导入（legado:// 一键导入书源）已移除，收到即忽略并关闭。
             finish()
         }
         viewModel.successLive.observe(this) {
             when (it.first) {
-                "bookSource" -> {
-                    startActivity(MainActivity.createBookSourceManageIntent(this, it.second))
-                    finish()
-                }
-                "rssSource" -> showDialogFragment(ImportRssSourceDialog(it.second, true))
+                "bookSource" -> finish()
+                "rssSource" -> finish()
                 "replaceRule" -> showDialogFragment(ImportReplaceRuleDialog(it.second, true))
-                "httpTts" -> showDialogFragment(ImportHttpTtsDialog(it.second, true))
+                "httpTts" -> finish()
                 "theme" -> showDialogFragment(ImportThemeDialog(it.second, true))
                 "txtRule" -> showDialogFragment(ImportTxtTocRuleDialog(it.second, true))
                 "dictRule" -> showDialogFragment(ImportDictRuleDialog(it.second, true))

@@ -83,8 +83,6 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.translation.TranslationChapterStatus
 import io.legado.app.ui.book.read.page.entities.PageDirection
-import io.legado.app.ui.book.read.sheet.CastSheetVisuals
-import io.legado.app.ui.book.read.sheet.LocalCastSheetVisuals
 import io.legado.app.ui.book.read.sheet.ReaderBookSheetRoute
 import io.legado.app.ui.book.read.sheet.ReaderBookSourceActions
 import io.legado.app.ui.book.read.sheet.TextSelectMenuConfigSheet
@@ -408,12 +406,6 @@ fun ReadBookRouteScreen(
                             is ReadBookEffect.OpenTitleBarCustomIconPicker -> {
                                 pendingTitleBarCustomIconId = effect.id
                                 titleBarCustomIconPicker.launch("image/*")
-                            }
-                            is ReadBookEffect.OpenSystemTtsSettings -> {
-                                IntentHelp.openTTSSetting()
-                            }
-                            is ReadBookEffect.TtsCacheCleared -> {
-                                context.toastOnUi(effect.message)
                             }
                             is ReadBookEffect.OpenHighlightRuleImportPicker -> {
                                 importHighlightRulePicker.launch(
@@ -796,12 +788,7 @@ fun ReadBookRouteScreen(
             if (featureOverlaysInitialized) {
                 // 正文内新做的悬浮窗（分配角色 / 分配表 / AI 分配 / 背景音乐 / 听书下载）用底栏
                 // 同一份模糊与玻璃数据源；消费方是 CastSheetCard 里的 LocalCastSheetVisuals。
-                CompositionLocalProvider(
-                    LocalCastSheetVisuals provides CastSheetVisuals(
-                        backdrop = menuBackdrop,
-                        hazeState = menuHazeState.takeIf { useMenuHazeSource },
-                    ),
-                ) {
+
                     ReadBookOverlayRoute(
                         viewModel = viewModel,
                         state = state,
@@ -865,9 +852,7 @@ fun ReadBookRouteScreen(
                                             viewModel.onIntent(ReadBookIntent.ToggleReadUrlInBrowser)
                                         },
                                         sourceActions = ReaderBookSourceActions(
-                                            onLogin = { viewModel.onIntent(ReadBookIntent.ShowLogin) },
                                             onPay = { viewModel.onIntent(ReadBookIntent.PayAction) },
-                                            onEdit = { viewModel.onIntent(ReadBookIntent.OpenSourceEdit) },
                                             onDisable = { viewModel.onIntent(ReadBookIntent.DisableSource) },
                                         ),
                                         chapterPayable = state.chapterPayable,
@@ -923,7 +908,6 @@ fun ReadBookRouteScreen(
                             viewModel.onIntent(ReadBookIntent.ClearBookmarkBadgeImage)
                         },
                     )
-                }
             }
             ReaderPerfTrace.marker("compose.selection.begin")
             ReaderTextSelectionOverlay(

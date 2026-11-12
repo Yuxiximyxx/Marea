@@ -148,12 +148,6 @@ class MangaReaderViewModel(
                 executeSession(MangaSessionCommand.ApplyProgress(intent.progress.toMangaProgress()))
             }
             is MangaReaderIntent.OpenChapter -> openChapter(intent.chapterIndex, intent.pageIndex)
-            is MangaReaderIntent.ChangeSourceBook -> launchAction {
-                showLoading()
-                val currentUrl = requireNotNull(readerSession.state.value.book?.bookUrl)
-                actionRepository.changeSource(currentUrl, intent.book, intent.toc)
-                readerSession.execute(MangaSessionCommand.Open(intent.book.bookUrl, true, true))
-            }
             is MangaReaderIntent.AddExternalBookToShelf -> launchAction(
                 successMessageRes = R.string.manga_reader_added_to_shelf,
             ) { actionRepository.addToShelf(intent.book, intent.toc) }
@@ -252,15 +246,6 @@ class MangaReaderViewModel(
             MangaReaderIntent.OpenChapterUrl -> emitAndHide(
                 MangaReaderEffect.OpenChapterUrl(readSettingsGateway.currentSettings.readUrlInBrowser)
             )
-            MangaReaderIntent.ChangeSource -> {
-                setMenuVisible(false)
-                _uiState.update { it.copy(activeSheet = MangaReaderSheet.ChangeSource) }
-                launchAction {
-                    val url = requireNotNull(readerSession.state.value.book?.bookUrl)
-                    val snapshot = actionRepository.getBook(url)?.let(MangaBookSnapshot::from)
-                    _uiState.update { it.copy(changeSourceBook = snapshot) }
-                }
-            }
             MangaReaderIntent.RefreshChapter -> {
                 setMenuVisible(false)
                 launchAction {
@@ -284,7 +269,7 @@ class MangaReaderViewModel(
                 )
             }
             MangaReaderIntent.DismissSheet -> _uiState.update {
-                it.copy(activeSheet = null, changeSourceBook = null, settingsCategory = null)
+                it.copy(activeSheet = null, settingsCategory = null)
             }
             is MangaReaderIntent.UpdateSetting -> updateSetting(intent.key, intent.value)
             is MangaReaderIntent.UpdateMenuPaletteStyle -> updateMangaPreference {

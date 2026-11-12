@@ -63,7 +63,6 @@ import io.legado.app.help.webView.WebJsExtensions.Companion.nameSource
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.lib.dialogs.selector
 import io.legado.app.model.analyzeRule.AnalyzeUrl
-import io.legado.app.ui.association.OnLineImportActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import io.legado.app.utils.ACache
 import io.legado.app.utils.GSON
@@ -791,12 +790,8 @@ class BottomWebViewDialog() : BottomSheetDialogFragment(R.layout.dialog_web_view
                 "http", "https" -> {
                     false
                 }
-                "legado", "yuedu" -> {
-                    startActivity<OnLineImportActivity> {
-                        data = url
-                    }
-                    true
-                }
+                // exp.11：在线导入已移除，legado:// 链接直接吞掉。
+                "legado", "yuedu" -> true
                 else -> {
                     binding.root.longSnackbar(R.string.jump_to_another_app, R.string.confirm) {
                         activity?.openUrl(url)

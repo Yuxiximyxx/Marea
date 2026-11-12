@@ -3,6 +3,7 @@ package io.legado.app.help
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import androidx.annotation.Keep
+import android.content.Intent
 import androidx.core.net.toUri
 import com.script.rhino.rhinoContext
 import com.script.rhino.rhinoContextOrNull
@@ -30,8 +31,6 @@ import io.legado.app.help.source.getSourceType
 import io.legado.app.model.Debug
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.model.analyzeRule.QueryTTF
-import io.legado.app.ui.association.OnLineImportActivity
-import io.legado.app.ui.association.OpenUrlConfirmActivity
 import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.ChineseUtils
 import io.legado.app.utils.EncoderUtils
@@ -1168,19 +1167,16 @@ interface JsExtensions : JsEncodeUtils {
     fun openUrl(url: String, mimeType: String? = null) {
         require(url.length < 64 * 1024) { "openUrl parameter url too long" }
         rhinoContextOrNull?.ensureActive()
+        // exp.11：在线导入与跳转确认页已随书源功能移除，legado:// 链接忽略，
+        // 其余链接直接交给系统打开。
         if (url.startsWith("legado://") || url.startsWith("yuedu://")) {
-            appCtx.startActivity<OnLineImportActivity> {
-                data = url.toUri()
-            }
             return
         }
-        val source = getSource() ?: throw NoStackTraceException("openUrl source cannot be null")
-        appCtx.startActivity<OpenUrlConfirmActivity> {
-            putExtra("uri", url)
-            putExtra("mimeType", mimeType)
-            putExtra("sourceOrigin", source.getKey())
-            putExtra("sourceName", source.getTag())
-            putExtra("sourceType", source.getSourceType())
+        runCatching {
+            appCtx.startActivity(
+                Intent(Intent.ACTION_VIEW, url.toUri())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     }
 

@@ -62,8 +62,6 @@ fun MainNavigationSettingsSheet(
 
     fun isRouteVisible(route: String): Boolean = when (route) {
         MainDestination.Home.route -> settings.showHome
-        MainDestination.Explore.route -> settings.showDiscovery
-        MainDestination.Rss.route -> settings.showRss
         else -> true
     }
 

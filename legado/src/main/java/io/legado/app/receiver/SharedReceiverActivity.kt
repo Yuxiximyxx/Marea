@@ -52,7 +52,7 @@ class SharedReceiverActivity : AppCompatActivity() {
         if (result.length > 1) {
             startActivity(MainActivity.createHomeIntent(this))
         } else {
-            startActivity(MainActivity.createSearchIntent(this, text))
+            startActivity(MainActivity.createHomeIntent(this))
         }
     }
 }

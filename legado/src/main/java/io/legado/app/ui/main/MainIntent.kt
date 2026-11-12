@@ -66,119 +66,9 @@ object MainIntent {
     /**
      * 磁贴等无 Activity 的入口无法自行申请本地网络权限，转到宿主 Activity 申请并补启 Web 服务。
      */
-    fun createSourceLoginIntent(
-        context: Context,
-        type: io.legado.app.ui.login.SourceLoginType,
-        sourceKey: String? = null,
-        bookUrl: String? = null,
-    ): Intent = createLauncherIntent(context).apply {
-        // NEW_TASK: 支持从 Application context（如 RssJsExtensions）启动；
-        // SINGLE_TOP: MainActivity 已在栈顶时复用现有实例走 onNewIntent，直接把登录路由
-        // 压进 nav3 back stack，避免 standard launchMode 下新建 MainActivity 先回主页面。
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_SOURCE_LOGIN)
-        putExtra(EXTRA_SOURCE_LOGIN_TYPE, type.name)
-        putExtra(EXTRA_SOURCE_LOGIN_KEY, sourceKey)
-        putExtra(EXTRA_BOOK_URL, bookUrl)
-    }
-
-    fun createWebViewIntent(
-        context: Context,
-        title: String? = null,
-        url: String,
-        sourceOrigin: String? = null,
-        sourceName: String? = null,
-        sourceType: Int? = null,
-        sourceVerificationEnable: Boolean = false,
-        refetchAfterSuccess: Boolean = true,
-        html: String? = null,
-    ): Intent = createLauncherIntent(context).apply {
-        // NEW_TASK: 支持从 Application context（如 SourceVerificationHelp）启动；
-        // SINGLE_TOP: MainActivity 已在栈顶时复用现有实例走 onNewIntent，直接把路由压进 nav3 back stack。
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_WEB_VIEW)
-        putExtra(EXTRA_WEB_VIEW_TITLE, title)
-        putExtra(EXTRA_WEB_VIEW_URL, url)
-        putExtra(EXTRA_WEB_VIEW_SOURCE_ORIGIN, sourceOrigin)
-        putExtra(EXTRA_WEB_VIEW_SOURCE_NAME, sourceName)
-        sourceType?.let { putExtra(EXTRA_WEB_VIEW_SOURCE_TYPE, it) }
-        putExtra(EXTRA_WEB_VIEW_VERIFICATION, sourceVerificationEnable)
-        putExtra(EXTRA_WEB_VIEW_REFETCH, refetchAfterSuccess)
-        putExtra(EXTRA_WEB_VIEW_HTML, html)
-    }
-
-    fun createBookSourceManageIntent(
-        context: Context,
-        importSource: String? = null,
-    ): Intent =
-        createLauncherIntent(context).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_SOURCE_MANAGE)
-            putExtra(EXTRA_BOOK_SOURCE_IMPORT, importSource)
-        }
-
-    fun createBookSourceEditIntent(context: Context, sourceUrl: String? = null): Intent =
-        createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_SOURCE_EDIT)
-            putExtra(EXTRA_SOURCE_URL, sourceUrl)
-        }
-
-    fun createRssSourceManageIntent(context: Context): Intent =
-        createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_RSS_SOURCE_MANAGE)
-        }
-
-    fun createRssSourceEditIntent(context: Context, sourceUrl: String? = null): Intent =
-        createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_RSS_SOURCE_EDIT)
-            putExtra(EXTRA_SOURCE_URL, sourceUrl)
-        }
-
-    fun createBookSourceDebugIntent(context: Context, sourceUrl: String?): Intent =
-        createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_SOURCE_DEBUG)
-            putExtra(EXTRA_SOURCE_URL, sourceUrl)
-        }
-
-    fun createRssSourceDebugIntent(context: Context, sourceUrl: String?): Intent =
-        createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_RSS_SOURCE_DEBUG)
-            putExtra(EXTRA_SOURCE_URL, sourceUrl)
-        }
-
     fun createIntent(context: Context, configTag: String? = null): Intent {
         return createLauncherIntent(context).apply {
             putExtra(EXTRA_START_ROUTE, routeForConfigTag(configTag))
-        }
-    }
-
-    fun createRssSortIntent(
-        context: Context,
-        sourceUrl: String,
-        sortUrl: String? = null,
-        key: String? = null
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_RSS_SORT)
-            putExtra(EXTRA_RSS_SOURCE_URL, sourceUrl)
-            putExtra(EXTRA_RSS_SORT_URL, sortUrl)
-            putExtra(EXTRA_RSS_KEY, key)
-        }
-    }
-
-    fun createRssReadIntent(
-        context: Context,
-        title: String? = null,
-        origin: String,
-        link: String? = null,
-        openUrl: String? = null
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_RSS_READ)
-            putExtra(EXTRA_RSS_READ_TITLE, title)
-            putExtra(EXTRA_RSS_READ_ORIGIN, origin)
-            putExtra(EXTRA_RSS_READ_LINK, link)
-            putExtra(EXTRA_RSS_READ_OPEN_URL, openUrl)
         }
     }
 
@@ -248,21 +138,6 @@ object MainIntent {
         putExtra(EXTRA_CHAPTER_CHANGED, chapterChanged)
     }
 
-
-    fun createSearchIntent(
-        context: Context,
-        key: String? = null,
-        scopeRaw: String? = null
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_SEARCH)
-            putExtra(EXTRA_SEARCH_KEY, key)
-            scopeRaw?.takeIf { it.isNotBlank() }?.let {
-                putExtra(EXTRA_SEARCH_SCOPE, it)
-            }
-        }
-    }
-
     fun createBookInfoIntent(
         context: Context,
         name: String? = null,
@@ -278,96 +153,6 @@ object MainIntent {
             putExtra(EXTRA_BOOK_URL, bookUrl)
             putExtra(EXTRA_BOOK_ORIGIN, origin)
             putExtra(EXTRA_BOOK_COVER, coverPath)
-        }
-    }
-
-    fun createBookCharacterDetailIntent(
-        context: Context,
-        bookUrl: String,
-        characterId: String? = null,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_CHARACTER_DETAIL)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-            putExtra(EXTRA_CHARACTER_ID, characterId)
-        }
-    }
-
-    fun createBookCharacterNetworkIntent(
-        context: Context,
-        bookUrl: String,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_CHARACTER_NETWORK)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-        }
-    }
-
-    fun createBookCharacterListIntent(
-        context: Context,
-        bookUrl: String,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_CHARACTER_LIST)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-        }
-    }
-
-    fun createBookKnowledgeListIntent(
-        context: Context,
-        bookUrl: String,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_KNOWLEDGE_LIST)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-        }
-    }
-
-    fun createBookKnowledgeDetailIntent(
-        context: Context,
-        bookUrl: String,
-        entryId: String? = null,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_KNOWLEDGE_DETAIL)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-            entryId?.let { putExtra(EXTRA_ENTRY_ID, it) }
-        }
-    }
-
-    fun createBookEventListIntent(
-        context: Context,
-        bookUrl: String,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_EVENT_LIST)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-        }
-    }
-
-    fun createBookEventDetailIntent(
-        context: Context,
-        bookUrl: String,
-        eventId: String? = null,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_BOOK_EVENT_DETAIL)
-            putExtra(EXTRA_BOOK_URL, bookUrl)
-            eventId?.let { putExtra(EXTRA_EVENT_ID, it) }
-        }
-    }
-
-    fun createExploreShowIntent(
-        context: Context,
-        exploreName: String? = null,
-        sourceUrl: String,
-        exploreUrl: String? = null,
-    ): Intent {
-        return createLauncherIntent(context).apply {
-            putExtra(EXTRA_START_ROUTE, MainRouteConst.ROUTE_EXPLORE_SHOW)
-            putExtra(EXTRA_EXPLORE_NAME, exploreName)
-            putExtra(EXTRA_SOURCE_URL, sourceUrl)
-            putExtra(EXTRA_EXPLORE_URL, exploreUrl)
         }
     }
 

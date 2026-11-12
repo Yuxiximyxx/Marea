@@ -90,11 +90,6 @@ internal fun MangaReaderSourceActionsSheet(
             addAll(
                 listOf(
                     MangaMoreAction(
-                        stringResource(R.string.change_origin),
-                        Icons.Default.SwapHoriz,
-                        MangaReaderIntent.ChangeSource
-                    ),
-                    MangaMoreAction(
                         stringResource(R.string.refresh),
                         Icons.Default.Refresh,
                         MangaReaderIntent.RefreshChapter

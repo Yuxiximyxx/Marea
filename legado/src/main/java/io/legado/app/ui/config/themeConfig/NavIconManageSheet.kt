@@ -219,7 +219,5 @@ private val NavIconDestination.mainDestination: MainDestination
     get() = when (key) {
         MainDestination.Home.route -> MainDestination.Home
         MainDestination.Bookshelf.route -> MainDestination.Bookshelf
-        MainDestination.Explore.route -> MainDestination.Explore
-        MainDestination.Rss.route -> MainDestination.Rss
         else -> MainDestination.My
     }

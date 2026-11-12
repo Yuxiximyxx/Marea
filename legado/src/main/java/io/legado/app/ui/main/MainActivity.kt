@@ -150,70 +150,30 @@ open class MainActivity : BaseComposeActivity() {
         var hasActiveReadBookRoute: Boolean = false
 
         @Volatile
-
-        @Volatile
         var hasActiveSourceLoginRoute: Boolean = false
 
         fun createLauncherIntent(context: Context): Intent =
             MainIntent.createLauncherIntent(context)
 
         fun createHomeIntent(context: Context): Intent = MainIntent.createHomeIntent(context)
-        fun createSourceLoginIntent(
-            context: Context,
-            type: io.legado.app.ui.login.SourceLoginType,
-            sourceKey: String? = null,
-            bookUrl: String? = null,
-        ): Intent = MainIntent.createSourceLoginIntent(context, type, sourceKey, bookUrl)
-
-        fun createWebViewIntent(
-            context: Context,
-            title: String? = null,
-            url: String,
-            sourceOrigin: String? = null,
-            sourceName: String? = null,
-            sourceType: Int? = null,
-            sourceVerificationEnable: Boolean = false,
-            refetchAfterSuccess: Boolean = true,
-            html: String? = null,
-        ): Intent = MainIntent.createWebViewIntent(
-            context, title, url, sourceOrigin, sourceName, sourceType,
-            sourceVerificationEnable, refetchAfterSuccess, html,
-        )
-
-        fun createBookSourceManageIntent(context: Context, importSource: String? = null) =
-            MainIntent.createBookSourceManageIntent(context, importSource)
-
-        fun createBookSourceEditIntent(context: Context, sourceUrl: String? = null) =
-            MainIntent.createBookSourceEditIntent(context, sourceUrl)
-
-        fun createRssSourceManageIntent(context: Context) =
-            MainIntent.createRssSourceManageIntent(context)
-
-        fun createRssSourceEditIntent(context: Context, sourceUrl: String? = null) =
-            MainIntent.createRssSourceEditIntent(context, sourceUrl)
-
-        fun createBookSourceDebugIntent(context: Context, sourceUrl: String?) =
-            MainIntent.createBookSourceDebugIntent(context, sourceUrl)
-
-        fun createRssSourceDebugIntent(context: Context, sourceUrl: String?) =
-            MainIntent.createRssSourceDebugIntent(context, sourceUrl)
         fun createIntent(context: Context, configTag: String? = null): Intent =
             MainIntent.createIntent(context, configTag)
 
-        fun createRssSortIntent(
+        fun createBookInfoIntent(
             context: Context,
-            sourceUrl: String,
-            sortUrl: String? = null,
-            key: String? = null
-        ): Intent = MainIntent.createRssSortIntent(context, sourceUrl, sortUrl, key)
-
-        fun createRssReadIntent(
-            context: Context,
-            title: String? = null,
-            origin: String,
-            link: String? = null,
-            openUrl: String? = null
-        ): Intent = MainIntent.createRssReadIntent(context, title, origin, link, openUrl)
+            name: String? = null,
+            author: String? = null,
+            bookUrl: String,
+            origin: String? = null,
+            coverPath: String? = null,
+        ): Intent = MainIntent.createBookInfoIntent(
+            context = context,
+            name = name,
+            author = author,
+            bookUrl = bookUrl,
+            origin = origin,
+            coverPath = coverPath,
+        )
 
         fun createBookshelfManageScreenIntent(context: Context, groupId: Long = -1L): Intent =
             MainIntent.createBookshelfManageScreenIntent(context, groupId)
@@ -254,6 +214,22 @@ open class MainActivity : BaseComposeActivity() {
         )
     }
 
+    private val viewModel by viewModel<MainViewModel>()
+    private val bookshelfCoverPreloader by inject<BookshelfCoverPreloader>()
+    private val otherSettingsGateway by inject<OtherSettingsGateway>()
+    private val mangaSettingsGateway by inject<MangaSettingsGateway>()
+    private val backupSettingsGateway by inject<BackupSettingsGateway>()
+    internal val navRouteTracker by inject<MainNavRouteTracker>()
+    private val routeEvents = MutableSharedFlow<RouteEvent>(extraBufferCapacity = 1)
+
+    private val localNetworkRequestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        // 授权后由用户重试原操作；未授权时提示授予方式。
+        if (!granted) {
+            toastOnUi(R.string.local_network_permission_required)
+        }
+    }
     private var shouldApplyDefaultToRead = true
     private var restoredReadBookRoute: MainRouteReadBook? = null
     internal var activeReadBookInputHandler: ReadBookInputHandler? = null

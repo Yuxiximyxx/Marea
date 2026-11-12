@@ -65,14 +65,10 @@ object SourceVerificationHelp {
 
         clearResult(source.getKey())
 
+        // exp.11：验证码页已随书源功能移除，非浏览器路径同样按被拦截处理。
         if (!useBrowser) {
-            appCtx.startActivity<VerificationCodeActivity> {
-                putExtra("imageUrl", url)
-                putExtra("sourceOrigin", source.getKey())
-                putExtra("sourceName", source.getTag())
-                putExtra("sourceType", source.getSourceType())
-                IntentData.put(getVerificationResultKey(source), Thread.currentThread())
-            }
+            notifyBrowserBlocked(source)
+            throw NoStackTraceException(appCtx.getString(R.string.block_source_browser_error))
         } else {
             startBrowser(source, url, title, true, refetchAfterSuccess, html)
         }
@@ -109,13 +105,8 @@ object SourceVerificationHelp {
             notifyBrowserBlocked(source)
             return
         }
-        IntentData.put(getVerificationResultKey(source), Thread.currentThread())
-        appCtx.startActivity(
-            MainActivity.createWebViewIntent(
-                appCtx, title, url, source.getKey(), source.getTag(), source.getSourceType(),
-                saveResult == true, refetchAfterSuccess != false, html,
-            )
-        )
+        // exp.11：内置 WebView 页已随书源功能移除，验证码浏览器一律按被拦截处理。
+        notifyBrowserBlocked(source)
     }
 
 

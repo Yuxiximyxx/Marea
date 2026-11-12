@@ -324,15 +324,6 @@ internal fun buildTopBarActionDefs(
             onIntent(ReadBookIntent.MenuRefreshDur)
         },
         def(
-            "change_source",
-            longPressMenu = ReadMenuLongPressMenu.ChangeSource,
-        ) {
-            onIntent(ReadBookIntent.MenuChangeSource)
-        },
-        def("audio_download") {
-            onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.AudioDownload))
-        },
-        def(
             "source_custom_button",
             onLongClick = { onIntent(ReadBookIntent.SourceCustomButton(true)) },
         ) {
@@ -344,14 +335,8 @@ internal fun buildTopBarActionDefs(
         def("charset") {
             onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.Charset))
         },
-        def("source_login") {
-            onIntent(ReadBookIntent.ShowLogin)
-        },
         def("source_pay") {
             onIntent(ReadBookIntent.PayAction)
-        },
-        def("edit_source") {
-            onIntent(ReadBookIntent.OpenSourceEdit)
         },
         def("disable_source") {
             onIntent(ReadBookIntent.DisableSource)
@@ -444,27 +429,6 @@ internal fun buildReadMenuActionDefs(
         },
         def("refresh_current") {
             onIntent(ReadBookIntent.RefreshCurrentChapter)
-        },
-        def("ai_chat") {
-            onIntent(ReadBookIntent.OpenAiChat)
-        },
-        def("ai_summary") {
-            onIntent(ReadBookIntent.OpenChapterSummary)
-        },
-        def("ai_rewrite") {
-            onIntent(ReadBookIntent.OpenAiCurrentChapterRewrite)
-        },
-        def("multi_role_read", isActive = state.useMultiSpeaker) {
-            onIntent(ReadBookIntent.SetUseMultiSpeaker(!state.useMultiSpeaker))
-        },
-        def("multi_role_cast", isActive = state.multiRoleCast) {
-            onIntent(ReadBookIntent.SetMultiRoleCast(!state.multiRoleCast))
-        },
-        def("cast_table") {
-            onIntent(ReadBookIntent.OpenBookVoiceCasting)
-        },
-        def("ai_cast") {
-            onIntent(ReadBookIntent.OpenAiCastDialog)
         },
         def("more_actions") {
             onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.MoreActions))

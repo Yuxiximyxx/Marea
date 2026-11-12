@@ -225,20 +225,6 @@ private fun ActionSquareHost(
                 )
             }
 
-            "change_source" -> RoundDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) { dismiss ->
-                RoundDropdownMenuItem(
-                    text = stringResource(R.string.change_origin),
-                    onClick = { dismiss(); dispatch(ReadBookIntent.MenuBookChangeSource) },
-                )
-                RoundDropdownMenuItem(
-                    text = stringResource(R.string.chapter_change_source),
-                    onClick = { dismiss(); dispatch(ReadBookIntent.MenuChapterChangeSource) },
-                )
-            }
-
             "refresh" -> RoundDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
@@ -318,29 +304,15 @@ private fun moreActionSpecs(
     ),
     // 书源四项：顶栏那行在开胶囊或「精简顶部按钮」时不可达，这里作为兜底入口
     MoreActionSpec(
-        "source_login", stringResource(R.string.login), Icons.AutoMirrored.Filled.Login,
-        applicable = isReadMenuActionApplicable("source_login", state),
-        onClick = { dispatch(ReadBookIntent.ShowLogin) },
-    ),
-    MoreActionSpec(
         "source_pay", stringResource(R.string.chapter_pay), Icons.Default.Payment,
         applicable = isReadMenuActionApplicable("source_pay", state),
         onClick = { dispatch(ReadBookIntent.PayAction) },
-    ),
-    MoreActionSpec(
-        "edit_source", stringResource(R.string.edit_source), Icons.Default.Edit,
-        applicable = isReadMenuActionApplicable("edit_source", state),
-        onClick = { dispatch(ReadBookIntent.OpenSourceEdit) },
     ),
     MoreActionSpec(
         "disable_source", stringResource(R.string.disable_source), Icons.Default.Block,
         applicable = isReadMenuActionApplicable("disable_source", state),
         onClick = { dispatch(ReadBookIntent.DisableSource) },
     ),
-    MoreActionSpec(
-        "change_source", stringResource(R.string.change_origin), Icons.Default.SwapHoriz,
-        applicable = isReadMenuActionApplicable("change_source", state),
-        onClick = { dispatch(ReadBookIntent.MenuChangeSource) }),
     MoreActionSpec(
         "refresh", stringResource(R.string.menu_refresh), Icons.Default.Refresh,
         applicable = isReadMenuActionApplicable("refresh", state),
@@ -350,10 +322,6 @@ private fun moreActionSpecs(
         applicable = isReadMenuActionApplicable("download", state),
         onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.Download)) }),
     MoreActionSpec(
-        "audio_download",
-        stringResource(R.string.read_aloud_audio_download_entry), Icons.Default.Download,
-        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.AudioDownload)) }),
-    MoreActionSpec(
         "toc_rule", stringResource(R.string.txt_toc_rule), Icons.AutoMirrored.Filled.Toc,
         applicable = isReadMenuActionApplicable("toc_rule", state),
         onClick = { dispatch(ReadBookIntent.MenuTocRegex) }),
@@ -361,9 +329,6 @@ private fun moreActionSpecs(
         "charset", stringResource(R.string.set_charset), Icons.Default.Translate,
         applicable = isReadMenuActionApplicable("charset", state),
         onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.Charset)) }),
-    MoreActionSpec(
-        "ai_chat", stringResource(R.string.ai_chat), Icons.AutoMirrored.Filled.Chat,
-        onClick = { dispatch(ReadBookIntent.OpenAiChat) }),
     MoreActionSpec(
         "edit_content", stringResource(R.string.edit_content), Icons.Default.Edit,
         onClick = { dispatch(ReadBookIntent.OpenContentEdit) }),

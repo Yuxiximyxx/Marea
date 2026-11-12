@@ -30,16 +30,12 @@ data class MainUiState(
     fun customIconPath(destination: MainDestination): String = when (destination) {
         MainDestination.Home -> navIconHome
         MainDestination.Bookshelf -> navIconBookshelf
-        MainDestination.Explore -> navIconExplore
-        MainDestination.Rss -> navIconRss
         MainDestination.My -> navIconMy
     }
 
     fun selectedCustomIconPath(destination: MainDestination): String = when (destination) {
         MainDestination.Home -> navIconHomeSelected
         MainDestination.Bookshelf -> navIconBookshelfSelected
-        MainDestination.Explore -> navIconExploreSelected
-        MainDestination.Rss -> navIconRssSelected
         MainDestination.My -> navIconMySelected
     }
 }

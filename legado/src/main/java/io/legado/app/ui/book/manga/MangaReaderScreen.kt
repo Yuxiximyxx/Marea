@@ -121,7 +121,6 @@ import io.legado.app.ui.book.manga.config.MangaWidePageMode
 import io.legado.app.ui.book.manga.config.MangaZoomStartPosition
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.button.series.MediumOutlinedButton
-import io.legado.app.ui.widget.components.changeSource.ChangeSourceSheet
 import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
@@ -358,28 +357,6 @@ fun MangaReaderScreen(
     }
     (state.activeSheet as? MangaReaderSheet.PageActions)?.let { sheet ->
         MangaReaderPageActionsSheet(sheet.companionPageKey != null, onIntent)
-    }
-    if (state.activeSheet == MangaReaderSheet.ChangeSource) {
-        val oldBook = remember(state.changeSourceBook) {
-            state.changeSourceBook?.toBook()
-        }
-        oldBook?.let {
-            ChangeSourceSheet(
-                show = true,
-                oldBook = it,
-                fromReadBookActivity = true,
-                allowAddAsNew = true,
-                dismissOnReplaceStart = true,
-                onDismissRequest = { onIntent(MangaReaderIntent.DismissSheet) },
-                onReplace = { _, book, toc, _ ->
-                    onIntent(MangaReaderIntent.DismissSheet)
-                    onIntent(MangaReaderIntent.ChangeSourceBook(book, toc))
-                },
-                onAddAsNew = { book, toc ->
-                    onIntent(MangaReaderIntent.AddExternalBookToShelf(book, toc))
-                },
-            )
-        }
     }
     AppAlertDialog(
         show = state.activeDialog is MangaReaderDialog.AddToShelf,

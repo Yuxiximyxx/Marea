@@ -330,13 +330,7 @@ fun MainActivity.mainEntryProvider(
                     )
                 )
             },
-            onNavigateToSourceLogin = { type, sourceUrl ->
-                onNavigateToRoute(MainRouteSourceLogin(type, sourceUrl))
-            },
             onNavigateToReplaceRules = { onNavigateToRoute(MainRouteReplaceRules()) },
-            onNavigateToBookSourceEdit = {
-                onNavigateToRoute(MainRouteBookSourceEdit(it))
-            },
             onNavigateToReadRecord = {
                 onNavigateToRoute(MainRouteReadRecord)
             },
@@ -425,7 +419,6 @@ fun MainActivity.mainEntryProvider(
     entry<MainRouteSettingsTranslation> {
         TranslationConfigRouteScreen(
             onBackClick = { onNavigateBack() },
-            onNavigateToAi = { pushRoute(MainRouteSettingsAi) }
         )
     }
 
@@ -555,9 +548,6 @@ fun MainActivity.mainEntryProvider(
                         ReadBookIntent.TocRegexResult(result.rule)
                     )
 
-                    is BookPageResult.SourceEdited -> readBookViewModel.onIntent(
-                        ReadBookIntent.SourceEditResult(result.sourceUrl)
-                    )
                     BookPageResult.RulesClosed -> readBookViewModel.onIntent(ReadBookIntent.ReplaceRuleResult)
                     else -> Unit
                 }
@@ -774,7 +764,8 @@ fun MainActivity.mainEntryProvider(
                     }
                     if (book != null) this@mainEntryProvider.startActivityForBook(book)
                     else {
-                        onNavigateToRoute(MainRouteSearch(key = name))
+                        // exp.11：全局搜索已移除，本地无此书时只提示。
+                        this@mainEntryProvider.toastOnUi("本地书架中没有这本书")
                     }
                 }
             },
@@ -794,7 +785,8 @@ fun MainActivity.mainEntryProvider(
                     }
                     if (book != null) this@mainEntryProvider.startActivityForBook(book)
                     else {
-                        onNavigateToRoute(MainRouteSearch(key = name))
+                        // exp.11：全局搜索已移除，本地无此书时只提示。
+                        this@mainEntryProvider.toastOnUi("本地书架中没有这本书")
                     }
                 }
             }
@@ -852,12 +844,6 @@ fun MainActivity.mainEntryProvider(
                     }
                 }
                 popped
-            },
-            onOpenSearch = { keyword ->
-                onNavigateToRoute(MainRouteSearch(key = keyword))
-            },
-            onOpenSourceLogin = { sourceUrl ->
-                onNavigateToRoute(MainRouteSourceLogin(SourceLoginType.BookSource, sourceUrl))
             },
             // 私密内容需要本地密码：直接把人送到私密设置页，而不是只弹一句提示
             onOpenSettings = {

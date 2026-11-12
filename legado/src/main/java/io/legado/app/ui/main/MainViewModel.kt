@@ -99,8 +99,6 @@ private fun buildMainUiState(
     val destinations = MainDestination.ordered(appShell.mainNavigationOrder).filter {
         when (it) {
             MainDestination.Home -> appShell.showHome
-            MainDestination.Explore -> appShell.showDiscovery
-            MainDestination.Rss -> appShell.showRss
             else -> true
         }
     }

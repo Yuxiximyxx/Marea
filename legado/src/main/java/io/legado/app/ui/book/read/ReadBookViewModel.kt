@@ -264,6 +264,31 @@ class ReadBookViewModel(
         },
     ) }
 
+    // --- 高亮规则域 ---
+
+    private val highlightRuleDelegate by lazy { ReadHighlightRuleDelegate(
+        context = context,
+        scope = viewModelScope,
+        host = object : ReadHighlightRuleDelegate.Host {
+            override fun showToast(message: String) {
+                _effects.tryEmit(ReadBookEffect.ShowToast(message))
+            }
+
+            override fun notifyRulesChanged() {
+                _effects.tryEmit(
+                    ReadBookEffect.UpdateReaderConfig(
+                        setOf(
+                            ConfigUpdateAction.UpdateChapterStyle,
+                            ConfigUpdateAction.ReloadContent,
+                        )
+                    )
+                )
+            }
+        },
+        highlightRuleRepository = highlightRuleRepository,
+        uploadRepository = uploadRepository,
+    ) }
+
     val highlightRuleState get() = highlightRuleDelegate.uiState
 
     // --- 正文编辑域 ---
@@ -1378,32 +1403,6 @@ class ReadBookViewModel(
 
     private var backupJob: Job? = null
 
-    private fun handleChangeSource() {
-        viewModelScope.launch {
-            if (readSettingsRepository.currentSettings.defaultSourceChangeAll) {
-                _uiState.update { it.withSheet(ReadBookSheet.ChangeBookSource) }
-            } else {
-                val chapter = currentChapter() ?: return@launch
-                _uiState.update {
-                    it.withSheet(
-                        ReadBookSheet.ChangeChapterSource(chapter.index, chapter.title)
-                    )
-                }
-            }
-        }
-    }
-
-    private fun handleChapterChangeSource() {
-        viewModelScope.launch {
-            val chapter = currentChapter() ?: return@launch
-            _uiState.update {
-                it.withSheet(
-                    ReadBookSheet.ChangeChapterSource(chapter.index, chapter.title)
-                )
-            }
-        }
-    }
-
     // --- ReadBook 回调（归属见下）---
     //
     // 渲染子集（upContent/upContentAwait/pageChanged/contentLoadFinish/
@@ -1831,10 +1830,6 @@ class ReadBookViewModel(
     fun markJustInitData() {
         justInitData = true
     }
-
-    fun changeTo(book: Book, toc: List<BookChapter>) = loadDelegate.changeTo(book, toc)
-
-    fun changeTo(book: Book) = loadDelegate.changeTo(book)
 
     fun isReadingProgressSyncConfigured(): Boolean = loadDelegate.isReadingProgressSyncConfigured()
 

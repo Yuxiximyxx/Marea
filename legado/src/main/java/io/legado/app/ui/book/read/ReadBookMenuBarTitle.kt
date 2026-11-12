@@ -304,9 +304,7 @@ internal fun MenuTitleBar(
                             onDismissRequest = { sourceMenuExpanded = false },
                             bookSource = state.bookSource,
                             payVisible = state.chapterPayable,
-                            onLogin = { onIntent(ReadBookIntent.ShowLogin) },
                             onPay = { onIntent(ReadBookIntent.PayAction) },
-                            onEdit = { onIntent(ReadBookIntent.OpenSourceEdit) },
                             onDisable = { onIntent(ReadBookIntent.DisableSource) },
                         )
                     }
@@ -623,9 +621,7 @@ private fun RowScope.TitleCapsuleGlassLayout(
                     onDismissRequest = { sourceMenuExpanded = false },
                     bookSource = state.bookSource,
                     payVisible = state.chapterPayable,
-                    onLogin = { onIntent(ReadBookIntent.ShowLogin) },
                     onPay = { onIntent(ReadBookIntent.PayAction) },
-                    onEdit = { onIntent(ReadBookIntent.OpenSourceEdit) },
                     onDisable = { onIntent(ReadBookIntent.DisableSource) },
                 )
             }
@@ -645,25 +641,13 @@ internal fun ReadMenuSourceDropdown(
     onDismissRequest: () -> Unit,
     bookSource: BookSource?,
     payVisible: Boolean,
-    onLogin: () -> Unit,
     onPay: () -> Unit,
-    onEdit: () -> Unit,
     onDisable: () -> Unit,
 ) {
     RoundDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
     ) {
-        if (!bookSource?.loginUrl.isNullOrBlank()) {
-            RoundDropdownMenuItem(
-                leadingIcon = { MenuItemIcon(Icons.AutoMirrored.Filled.Login) },
-                text = stringResource(R.string.login),
-                onClick = {
-                    onDismissRequest()
-                    onLogin()
-                },
-            )
-        }
         if (payVisible) {
             RoundDropdownMenuItem(
                 leadingIcon = { MenuItemIcon(Icons.Default.Payment) },
@@ -674,14 +658,6 @@ internal fun ReadMenuSourceDropdown(
                 },
             )
         }
-        RoundDropdownMenuItem(
-            leadingIcon = { MenuItemIcon(Icons.Default.Edit) },
-            text = stringResource(R.string.edit_source),
-            onClick = {
-                onDismissRequest()
-                onEdit()
-            },
-        )
         RoundDropdownMenuItem(
             leadingIcon = { MenuItemIcon(Icons.Default.Block) },
             text = stringResource(R.string.disable_source),
@@ -761,21 +737,6 @@ private fun MergedGlassDivider(tint: Color) {
 }
 
 @Composable
-private fun ChangeSourceMenuItems(
-    dismiss: () -> Unit,
-    onBookChange: () -> Unit,
-    onChapterChange: () -> Unit,
-) {
-    RoundDropdownMenuItem(
-        text = stringResource(R.string.change_origin),
-        onClick = { dismiss(); onBookChange() },
-    )
-    RoundDropdownMenuItem(
-        text = stringResource(R.string.chapter_change_source),
-        onClick = { dismiss(); onChapterChange() },
-    )
-}
-
 @Composable
 private fun RefreshMenuItems(
     dismiss: () -> Unit,
@@ -809,12 +770,6 @@ internal fun ReadMenuLongPressDropdown(
         onDismissRequest = onDismissRequest,
     ) { dismiss ->
         when (menu) {
-            ReadMenuLongPressMenu.ChangeSource -> ChangeSourceMenuItems(
-                dismiss = dismiss,
-                onBookChange = { onIntent(ReadBookIntent.MenuBookChangeSource) },
-                onChapterChange = { onIntent(ReadBookIntent.MenuChapterChangeSource) },
-            )
-
             ReadMenuLongPressMenu.Refresh -> RefreshMenuItems(
                 dismiss = dismiss,
                 onRefreshDur = { onIntent(ReadBookIntent.MenuRefreshDur) },

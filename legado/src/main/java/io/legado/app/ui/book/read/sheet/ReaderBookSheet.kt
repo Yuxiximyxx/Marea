@@ -359,9 +359,7 @@ private fun ReaderBookSheet(
 }
 
 data class ReaderBookSourceActions(
-    val onLogin: () -> Unit = {},
     val onPay: () -> Unit = {},
-    val onEdit: () -> Unit = {},
     val onDisable: () -> Unit = {},
 )
 
@@ -457,9 +455,7 @@ internal fun ReaderBookHeader(
                         onDismissRequest = { sourceMenuExpanded = false },
                         bookSource = bookSource,
                         payVisible = chapterPayable,
-                        onLogin = sourceActions.onLogin,
                         onPay = sourceActions.onPay,
-                        onEdit = sourceActions.onEdit,
                         onDisable = sourceActions.onDisable,
                     )
                 }

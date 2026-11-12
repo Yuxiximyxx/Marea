@@ -161,6 +161,8 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
     private var readerPaginationEnvironment: ReaderPaginationEnvironment? = null
     val paginationEnvironment: ReaderPaginationEnvironment? get() = readerPaginationEnvironment
 
+    var bookSource: BookSource? = null
+
     /** Only the playing book may drive/highlight this reader. */
     var msg: String? = null
     private val readRecordRepository: ReadRecordRepository by inject()
@@ -1016,6 +1018,11 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
      * 返回是否跟随页面重启了朗读，调用方据此锚定朗读高亮。
      */
     fun onComposeManualPageTurn(): Boolean = false
+
+    // exp.11：朗读已移除，手动翻页不再有朗读锚点需要保留/跟随。
+    private fun prepareManualNavigation() = Unit
+
+    private fun followReadAloudAfterManualNavigation(): Boolean = false
 
     /**
      * Compose 画布手动翻页提交后的旧 `curPageChanged` 副作用：阅读时长、预下载、进度落库。
