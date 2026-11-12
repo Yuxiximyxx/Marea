@@ -8,10 +8,8 @@ import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import io.legado.app.data.AppDatabase
 import io.legado.app.data.repository.AiArtifactRepository
-import io.legado.app.data.repository.AiChatRepository
 import io.legado.app.data.repository.AiMemoryRepository
 import io.legado.app.data.repository.AiProfileRepository
-import io.legado.app.data.repository.AiPromptPresetRepository
 import io.legado.app.data.repository.AiTextRepositoryImpl
 import io.legado.app.data.repository.AiToolRepository
 import io.legado.app.data.repository.AppLocaleRepository
@@ -102,10 +100,8 @@ import io.legado.app.data.repository.manga.MangaReaderActionRepository
 import io.legado.app.data.repository.manga.MangaReaderDataRepository
 import io.legado.app.data.security.CloudTtsCredentialCipher
 import io.legado.app.domain.gateway.AiArtifactGateway
-import io.legado.app.domain.gateway.AiChatGateway
 import io.legado.app.domain.gateway.AiMemoryGateway
 import io.legado.app.domain.gateway.AiProfileGateway
-import io.legado.app.domain.gateway.AiPromptPresetGateway
 import io.legado.app.domain.gateway.AiTextGateway
 import io.legado.app.domain.gateway.AiToolGateway
 import io.legado.app.domain.gateway.AppLocaleGateway
@@ -166,7 +162,6 @@ import io.legado.app.domain.repository.BookDomainRepository
 import io.legado.app.domain.usecase.AddBookUseCase
 import io.legado.app.domain.usecase.AddToBookshelfUseCase
 import io.legado.app.domain.usecase.AiTaskManager
-import io.legado.app.domain.usecase.AiTextFactoryUseCase
 import io.legado.app.domain.usecase.AiToolAwareGenerationUseCase
 import io.legado.app.domain.usecase.AnalyzeChapterSpeechUseCase
 import io.legado.app.domain.usecase.AppStartupMaintenanceUseCase
@@ -177,7 +172,6 @@ import io.legado.app.domain.usecase.BuildSpeechPlanUseCase
 import io.legado.app.domain.usecase.CacheBookChaptersUseCase
 import io.legado.app.domain.usecase.ChangeBookSourceUseCase
 import io.legado.app.domain.usecase.CheckBookContentQualityUseCase
-import io.legado.app.domain.usecase.CleanSelectedTextUseCase
 import io.legado.app.domain.usecase.ClearBookCacheUseCase
 import io.legado.app.domain.usecase.CoverAlbumUseCase
 import io.legado.app.domain.usecase.DeleteBooksUseCase
@@ -186,7 +180,6 @@ import io.legado.app.domain.usecase.ExploreKindUiUseCase
 import io.legado.app.domain.usecase.ExportBookshelfUseCase
 import io.legado.app.domain.usecase.FindBookshelfConflictUseCase
 import io.legado.app.domain.usecase.GenerateBookshelfAutoGroupPlanUseCase
-import io.legado.app.domain.usecase.GenerateChapterSummaryUseCase
 import io.legado.app.domain.usecase.GetChapterContentUseCase
 import io.legado.app.domain.usecase.GetReadingProgressUseCase
 import io.legado.app.domain.usecase.HomeDashboardUseCase
@@ -259,7 +252,6 @@ import io.legado.app.ui.config.readConfig.ApplyReadSettingUseCase
 import io.legado.app.ui.config.readConfig.ReadConfigViewModel
 import io.legado.app.ui.config.themeConfig.ThemeConfigViewModel
 import io.legado.app.ui.config.themeManage.ThemeManageViewModel
-import io.legado.app.ui.config.translation.TranslationConfigViewModel
 import io.legado.app.ui.dict.DictViewModel
 import io.legado.app.ui.dict.rule.DictRuleViewModel
 import io.legado.app.help.readaloud.cast.AiCastAssignUseCase
@@ -425,10 +417,8 @@ val appModule = module {
     single<TranslationCacheGateway> { TranslationCacheRepositoryImpl() }
     single<AiProfileGateway> { AiProfileRepository(get()) }
     single<AiArtifactGateway> { AiArtifactRepository(get()) }
-    single<AiChatGateway> { AiChatRepository(get()) }
-    single<AiMemoryGateway> { AiMemoryRepository(get()) }
-    single<AiPromptPresetGateway> { AiPromptPresetRepository(get()) }
     single<AiTextGateway> { AiTextRepositoryImpl() }
+    single<AiMemoryGateway> { AiMemoryRepository(get()) }
     single<AiToolGateway> {
         AiToolRepository(
             get(),
@@ -478,13 +468,10 @@ val appModule = module {
     singleOf(::SearchBooksUseCase)
     singleOf(::GetChapterContentUseCase)
     singleOf(::CheckBookContentQualityUseCase)
-    singleOf(::AiToolAwareGenerationUseCase)
     singleOf(::AiTaskManager)
-    singleOf(::GenerateChapterSummaryUseCase)
-    singleOf(::AiTextFactoryUseCase)
+    singleOf(::AiToolAwareGenerationUseCase)
     singleOf(::GenerateBookshelfAutoGroupPlanUseCase)
     singleOf(::ApplyBookshelfAutoGroupPlanUseCase)
-    singleOf(::CleanSelectedTextUseCase)
     singleOf(::SaveBookContentProcessUseCase)
     singleOf(::SaveMarkingUseCase)
     singleOf(::VerifyBookmarkTargetUseCase)
@@ -560,7 +547,6 @@ val appModule = module {
     viewModelOf(::OnboardingViewModel)
     viewModelOf(::BackupConfigViewModel)
     viewModelOf(::LabConfigViewModel)
-    viewModelOf(::TranslationConfigViewModel)
     viewModelOf(::TocViewModel)
     viewModelOf(::ImportBookViewModel)
     viewModelOf(::RemoteBookViewModel)

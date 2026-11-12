@@ -26,9 +26,7 @@ import io.legado.app.data.repository.ReadSettingsRepository
 import io.legado.app.data.repository.ReplaceRuleRepository
 import io.legado.app.data.repository.SettingsRepository
 import io.legado.app.data.repository.UploadRepository
-import io.legado.app.domain.gateway.AiArtifactGateway
 import io.legado.app.domain.gateway.AiProfileGateway
-import io.legado.app.domain.gateway.AiPromptPresetGateway
 import io.legado.app.domain.gateway.AppShellSettingsGateway
 import io.legado.app.domain.gateway.AppUiConfigurationGateway
 import io.legado.app.domain.gateway.BackupSettingsGateway
@@ -40,10 +38,7 @@ import io.legado.app.domain.gateway.ReadStyleGateway
 import io.legado.app.domain.gateway.ThemeSettingsGateway
 import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
-import io.legado.app.domain.usecase.AiTextFactoryUseCase
 import io.legado.app.domain.usecase.ChangeBookSourceUseCase
-import io.legado.app.domain.usecase.CleanSelectedTextUseCase
-import io.legado.app.domain.usecase.GenerateChapterSummaryUseCase
 import io.legado.app.domain.usecase.GetReadingProgressUseCase
 import io.legado.app.domain.usecase.RelocateMarkingTargetUseCase
 import io.legado.app.domain.usecase.SaveBookContentProcessUseCase
@@ -119,16 +114,11 @@ class ReadBookViewModel(
     private val localPreferencesRepository: SettingsRepository,
     private val highlightRuleRepository: HighlightRuleRepository,
     private val uploadRepository: UploadRepository,
-    private val generateChapterSummaryUseCase: GenerateChapterSummaryUseCase,
-    private val cleanSelectedTextUseCase: CleanSelectedTextUseCase,
-    private val aiTextFactoryUseCase: AiTextFactoryUseCase,
     private val saveBookContentProcessUseCase: SaveBookContentProcessUseCase,
     private val saveMarkingUseCase: SaveMarkingUseCase,
     private val verifyBookmarkTargetUseCase: VerifyBookmarkTargetUseCase,
     private val relocateMarkingTargetUseCase: RelocateMarkingTargetUseCase,
     private val bookContentProcessGateway: BookContentProcessGateway,
-    private val aiArtifactGateway: AiArtifactGateway,
-    private val aiPromptPresetGateway: AiPromptPresetGateway,
     private val aiProfileGateway: AiProfileGateway,
     private val aiCastAssignUseCase: io.legado.app.help.readaloud.cast.AiCastAssignUseCase,
     private val aiSceneAssignUseCase: io.legado.app.help.readaloud.cast.AiSceneAssignUseCase,

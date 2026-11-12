@@ -86,7 +86,6 @@ import io.legado.app.ui.config.privateConfig.PrivateConfigRouteScreen
 import io.legado.app.ui.config.readConfig.ReadConfigRouteScreen
 import io.legado.app.ui.config.themeConfig.ThemeConfigRouteScreen
 import io.legado.app.ui.config.themeManage.ThemeManageRouteScreen
-import io.legado.app.ui.config.translation.TranslationConfigRouteScreen
 import io.legado.app.ui.dict.rule.DictRuleRouteScreen
 import io.legado.app.ui.highlightTagRule.HighlightTagRuleRouteScreen
 import io.legado.app.ui.replace.ReplaceRuleRouteScreen
@@ -369,7 +368,6 @@ fun MainActivity.mainEntryProvider(
                     onNavigateToTheme = { pushRoute(MainRouteSettingsTheme) },
                     onNavigateToBackup = { pushRoute(MainRouteSettingsBackup) },
                     onNavigateToDownloadCache = { pushRoute(MainRouteSettingsDownloadCache) },
-                    onNavigateToTranslation = { pushRoute(MainRouteSettingsTranslation) },
                     onNavigateToLab = { pushRoute(MainRouteSettingsLabConfig) },
                     onNavigateToPrivate = { pushRoute(MainRouteSettingsPrivate) }
                 )
@@ -437,15 +435,6 @@ fun MainActivity.mainEntryProvider(
         // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
         MiuixSurface {
                 DownloadCacheConfigRouteScreen(onBackClick = { onNavigateBack() })
-        }
-        }
-
-    entry<MainRouteSettingsTranslation> {
-        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
-        MiuixSurface {
-                TranslationConfigRouteScreen(
-                    onBackClick = { onNavigateBack() },
-                )
         }
         }
 
