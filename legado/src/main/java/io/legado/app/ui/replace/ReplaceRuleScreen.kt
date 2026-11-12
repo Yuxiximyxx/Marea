@@ -6,6 +6,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -15,10 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.animateFloatingActionButton
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
+import top.yukonga.miuix.kmp.basic.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.ui.widget.components.progressIndicator.AppContainedLoadingIndicator
 import io.legado.app.base.BaseRuleEvent
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.ui.theme.ProvideAppDensity
@@ -217,7 +221,7 @@ fun ReplaceRuleScreen(
     )
 
     if (importState is BaseImportUiState.Loading) {
-        Dialog(onDismissRequest = { onIntent(ReplaceRuleIntent.CancelImport) }) { ProvideAppDensity { LoadingIndicator() } }
+        Dialog(onDismissRequest = { onIntent(ReplaceRuleIntent.CancelImport) }) { ProvideAppDensity { AppContainedLoadingIndicator() } }
     }
 
     LaunchedEffect(importState) {
@@ -341,17 +345,19 @@ fun ReplaceRuleScreen(
             }
         },
         floatingActionButton = {
-            AppFloatingActionButton(
-                modifier = Modifier.animateFloatingActionButton(
-                    visible = !inSelectionMode,
-                    alignment = Alignment.BottomEnd,
-                ),
-                onClick = {
-                    onNavigateToEdit(ReplaceEditRoute(id = -1))
-                },
-                tooltipText = stringResource(R.string.add),
-                icon = Icons.Default.Add
-            )
+            AnimatedVisibility(
+                visible = !inSelectionMode,
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f)
+            ) {
+                AppFloatingActionButton(
+                    onClick = {
+                        onNavigateToEdit(ReplaceEditRoute(id = -1))
+                    },
+                    tooltipText = stringResource(R.string.add),
+                    icon = Icons.Default.Add
+                )
+            }
         },
         snackbarHostState = snackbarHostState,
         dropDownMenuContent = { dismiss ->

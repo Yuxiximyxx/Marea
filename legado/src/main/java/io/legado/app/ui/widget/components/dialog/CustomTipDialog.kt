@@ -3,15 +3,13 @@ package io.legado.app.ui.widget.components.dialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -25,7 +23,11 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.config.CustomTipPlaceholder
+import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
+import io.legado.app.ui.widget.components.card.NormalCard
+import io.legado.app.ui.widget.components.text.AppText
+import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 
 /**
  * 自定义页眉/页脚模板编辑弹窗。
@@ -65,26 +67,25 @@ fun CustomTipDialog(
         title = stringResource(R.string.custom_tip),
         content = {
             Column {
-                OutlinedTextField(
+                MiuixTextField(
                     value = template,
                     onValueChange = { template = it },
-                    placeholder = { Text(stringResource(R.string.custom_tip_template_hint)) },
-                    isError = !isValid && template.text.isNotEmpty(),
-                    supportingText = {
-                        if (!isValid && template.text.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.custom_tip_invalid),
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    },
+                    label = stringResource(R.string.custom_tip_template_hint),
+                    useLabelAsPlaceholder = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (!isValid && template.text.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    AppText(
+                        text = stringResource(R.string.custom_tip_invalid),
+                        color = LegadoTheme.colorScheme.error,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
-                Text(
+                AppText(
                     text = stringResource(R.string.custom_tip_template_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = LegadoTheme.typography.bodySmall,
+                    color = LegadoTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyRow(
@@ -92,10 +93,14 @@ fun CustomTipDialog(
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
                     items(placeholders, key = { it.token }) { ph ->
-                        AssistChip(
-                            label = { Text(stringResource(ph.labelRes)) },
+                        NormalCard(
                             onClick = { template = template.insertAtCursor(ph.token) },
-                        )
+                            cornerRadius = 16.dp
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                AppText(stringResource(ph.labelRes))
+                            }
+                        }
                     }
                 }
             }

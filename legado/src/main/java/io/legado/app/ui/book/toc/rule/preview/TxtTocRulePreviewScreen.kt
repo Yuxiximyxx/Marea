@@ -28,11 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -238,7 +236,7 @@ fun TxtTocRulePreviewScreen(
                     .padding(contentPadding),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
             }
         } else if (state.isGridLayout) {
                 val displayRules = state.filteredRules

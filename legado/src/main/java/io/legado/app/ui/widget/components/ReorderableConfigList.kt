@@ -19,8 +19,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.Icon
+import io.legado.app.ui.widget.components.text.AppText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -181,7 +181,7 @@ fun ConfigListEntryRow(
                 .weight(1f)
                 .padding(end = 12.dp),
         ) {
-            Text(
+            AppText(
                 text = entry.label,
                 style = LegadoTheme.typography.labelMediumEmphasized,
                 color = LegadoTheme.colorScheme.onSurface.copy(alpha = alpha),
@@ -190,7 +190,7 @@ fun ConfigListEntryRow(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (!entry.subtitle.isNullOrBlank()) {
-                Text(
+                AppText(
                     text = entry.subtitle,
                     style = LegadoTheme.typography.bodySmall,
                     color = LegadoTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),

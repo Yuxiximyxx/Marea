@@ -22,8 +22,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +49,7 @@ import io.legado.app.ui.widget.components.modalBottomSheet.AppModalBottomSheet
 import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
 import io.legado.app.ui.widget.components.settingItem.SwitchSettingItem
 import io.legado.app.ui.widget.components.text.AppText
+import io.legado.app.ui.widget.components.card.NormalCard
 import io.legado.app.utils.GSON
 
 @Composable
@@ -85,10 +84,14 @@ fun SourceInputDialog(
                     AppText(stringResource(R.string.history_label), style = LegadoTheme.typography.labelSmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(historyValues) { history ->
-                            AssistChip(
+                            NormalCard(
                                 onClick = { text = history },
-                                label = { AppText(history, maxLines = 1) }
-                            )
+                                cornerRadius = 16.dp
+                            ) {
+                                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                    AppText(history, maxLines = 1)
+                                }
+                            }
                         }
                     }
                 }
@@ -106,7 +109,6 @@ fun SourceInputDialog(
 
 //TODO: 动画
 @SuppressLint("ConfigurationScreenWidthHeight")
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun <T> BatchImportDialog(
     title: String,

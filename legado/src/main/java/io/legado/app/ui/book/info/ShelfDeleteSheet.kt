@@ -17,10 +17,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.ui.widget.components.checkBox.AppCheckbox
 import io.legado.app.domain.model.ConflictBookSummary
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.button.ConfirmDismissButtonsRow
@@ -155,14 +154,9 @@ fun ShelfDeleteSheet(
         if (isLocal) {
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
+                AppCheckbox(
                     checked = deleteOriginal,
                     onCheckedChange = { deleteOriginal = it },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = LegadoTheme.colorScheme.primary,
-                        checkmarkColor = LegadoTheme.colorScheme.onPrimary,
-                        uncheckedColor = LegadoTheme.colorScheme.onSurfaceVariant,
-                    ),
                 )
                 AppText(
                     text = stringResource(R.string.delete_book_file),

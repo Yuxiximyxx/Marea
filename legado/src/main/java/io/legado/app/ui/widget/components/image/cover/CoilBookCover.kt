@@ -21,8 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -521,7 +520,7 @@ private fun CoverTextOverlay(
 
     if (!showName && !showAuthor) return
 
-    val secondaryColor = MaterialTheme.colorScheme.secondary.toArgb()
+    val secondaryColor = LegadoTheme.colorScheme.secondary.toArgb()
     val textColor = if (coverSettings.useDefaultColor) {
         secondaryColor
     } else {

@@ -3,12 +3,18 @@ package io.legado.app.ui.book.searchContent
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,15 +34,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.DeleteSweep
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.animateFloatingActionButton
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -251,11 +252,12 @@ fun SearchContentScreen(
         },
         floatingActionButton = {
             val fabVisible = (isSearching || searchResults.isNotEmpty()) && searchQuery.isNotBlank()
+            AnimatedVisibility(
+                visible = fabVisible,
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f)
+            ) {
             AppFloatingActionButton(
-                modifier = Modifier.animateFloatingActionButton(
-                    visible = fabVisible,
-                    alignment = Alignment.BottomEnd,
-                ),
                 onClick = {
                     if (isSearching) {
                         onIntent(SearchContentIntent.StopSearch)
@@ -278,6 +280,7 @@ fun SearchContentScreen(
                         )
                     }
                 }
+            }
             }
         }
     ) { paddingValues ->
@@ -395,29 +398,27 @@ fun SearchHistoryList(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(history, key = { it.id }) { item ->
-                    ListItem(
+                    Row(
                         modifier = Modifier
+                            .fillMaxWidth()
+                            .background(LegadoTheme.colorScheme.surface)
                             .clickable { onHistoryClick(item) }
-                            .animateItem(),
-                        leadingContent = {
-                            Icon(Icons.Default.History, contentDescription = null)
-                        },
-                        trailingContent = {
-                            SmallPlainButton(
-                                onClick = { onDeleteHistory(item) },
-                                icon = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.delete)
-                            )
-                        },
-                        colors = ListItemDefaults.colors(
-                            containerColor = LegadoTheme.colorScheme.surface,
-                            contentColor = LegadoTheme.colorScheme.onSurface
-                        )
+                            .animateItem()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Icon(Icons.Default.History, contentDescription = null)
+                        Spacer(modifier = Modifier.width(16.dp))
                         AppText(
                             text = item.query,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SmallPlainButton(
+                            onClick = { onDeleteHistory(item) },
+                            icon = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.delete)
                         )
                     }
                 }
@@ -450,15 +451,12 @@ fun SearchResultItem(
     isCurrentChapter: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    NormalCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor =
-                LegadoTheme.colorScheme.surfaceContainer
-        )
+        containerColor = LegadoTheme.colorScheme.surfaceContainer
     ) {
         Box(modifier = Modifier.padding(16.dp)) {
 

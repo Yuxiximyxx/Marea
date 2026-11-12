@@ -41,9 +41,7 @@ import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +60,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.ui.widget.components.button.AppIconButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import io.legado.app.constant.AppConst
 import io.legado.app.data.entities.Server
 import io.legado.app.lib.dialogs.alert
@@ -535,7 +535,7 @@ private fun ServerConfigSheetContent(
             singleLine = true,
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
-                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                AppIconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         contentDescription = stringResource(
@@ -606,7 +606,7 @@ private fun PathNavigationBar(
                         else
                             LegadoTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
-                            .clip(MaterialTheme.shapes.small)
+                            .clip(RoundedCornerShape(4.dp))
                             .then(
                                 if (!isLast)
                                     Modifier.clickable { onNavigateToLevel(index) }

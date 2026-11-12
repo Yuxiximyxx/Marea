@@ -6,8 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RssFeed
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +27,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import io.legado.app.help.coil.CoverExtras
+import io.legado.app.ui.theme.LegadoTheme
 import org.koin.compose.koinInject
 
 /**
@@ -48,7 +48,7 @@ fun SourceIcon(
         Icon(
             Icons.Default.RssFeed,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.outlineVariant,
+            tint = LegadoTheme.colorScheme.outlineVariant,
             modifier = Modifier.fillMaxSize(0.7f)
         )
     }

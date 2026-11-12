@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.ui.widget.components.AppTextField
 import io.legado.app.data.entities.Book
 import io.legado.app.domain.model.HomeDashboardSection
 import io.legado.app.domain.model.MAX_DAILY_READING_GOAL_MINUTES
@@ -1015,15 +1015,13 @@ private fun HomeDialogs(
         onDismissRequest = { onIntent(HomeIntent.DismissDialog) },
         title = stringResource(R.string.home_set_reading_goal),
         content = {
-            OutlinedTextField(
+            AppTextField(
                 value = goalInput,
                 onValueChange = { value ->
                     goalInput = value.filter(Char::isDigit)
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = {
-                    AppText(stringResource(R.string.home_goal_minutes_label))
-                },
+                label = stringResource(R.string.home_goal_minutes_label),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )

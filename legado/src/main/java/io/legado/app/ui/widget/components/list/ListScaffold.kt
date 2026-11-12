@@ -1,6 +1,8 @@
 package io.legado.app.ui.widget.components.list
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -10,17 +12,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
-import androidx.compose.material3.ScaffoldDefaults
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,8 +35,9 @@ import io.legado.app.ui.widget.components.icon.AppIcons
 import io.legado.app.ui.widget.components.topbar.DynamicTopAppBar
 import io.legado.app.ui.widget.components.topbar.GlassTopAppBarDefaults
 import io.legado.app.ui.widget.components.topbar.GlassTopAppBarScrollBehavior
+import top.yukonga.miuix.kmp.basic.SnackbarHost
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun <T> ListScaffold(
     title: String,
@@ -69,19 +66,21 @@ fun <T> ListScaffold(
     onAddClick: (() -> Unit)? = null,
     floatingActionButton: @Composable () -> Unit = {
         onAddClick?.let { onClick ->
-            AppFloatingActionButton(
-                onClick = onClick,
-                modifier = Modifier.animateFloatingActionButton(
-                    visible = state.selectedIds.isEmpty(),
-                    alignment = Alignment.BottomEnd,
-                ),
-                tooltipText = stringResource(R.string.add),
-                icon = Icons.Default.Add
-            )
+            AnimatedVisibility(
+                visible = state.selectedIds.isEmpty(),
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f)
+            ) {
+                AppFloatingActionButton(
+                    onClick = onClick,
+                    tooltipText = stringResource(R.string.add),
+                    icon = Icons.Default.Add
+                )
+            }
         }
     },
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
+    contentWindowInsets: WindowInsets = WindowInsets.systemBars,
     scrollBehavior: GlassTopAppBarScrollBehavior? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
@@ -90,7 +89,7 @@ fun <T> ListScaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         snackbarHost = {
             SnackbarHost(
-                hostState = snackbarHostState,
+                state = snackbarHostState,
                 modifier = Modifier
                     .padding(bottom = 72.dp)
             )
@@ -129,7 +128,7 @@ fun <T> ListScaffold(
                 visible = state.selectedIds.isNotEmpty() && selectionActions != null,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp + ScreenOffset)
+                    .padding(bottom = 32.dp)
                     .zIndex(1f),
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()

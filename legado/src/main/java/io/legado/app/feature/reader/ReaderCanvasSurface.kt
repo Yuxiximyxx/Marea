@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.magnifier
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +90,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.widget.components.text.AppText
 import io.legado.app.domain.model.TextProcessStyle
 import io.legado.app.feature.reader.core.accessibility.ReaderAccessibilityPolicy
 import io.legado.app.feature.reader.core.gesture.PullBookmarkDefaults
@@ -1848,7 +1848,7 @@ fun ReaderCanvasSurface(
             enter = fadeIn(tween(PullBookmarkDefaults.HINT_FADE_MILLIS)),
             exit = fadeOut(tween(0)),
         ) {
-            Text(
+            AppText(
                 text = stringResource(if (bookmarkWillRemove) {
                     R.string.bookmark_swipe_release_to_remove
                 } else R.string.bookmark_swipe_release_to_add),

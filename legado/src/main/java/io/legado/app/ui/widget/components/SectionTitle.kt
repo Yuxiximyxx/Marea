@@ -2,8 +2,7 @@ package io.legado.app.ui.widget.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import io.legado.app.ui.widget.components.text.AppText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -12,7 +11,7 @@ import io.legado.app.ui.theme.LegadoTheme
 
 @Composable
 fun SectionTitle(title: String) {
-    Text(
+    AppText(
         text = title,
         style = LegadoTheme.typography.labelMediumEmphasized,
         modifier = Modifier

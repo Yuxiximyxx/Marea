@@ -22,10 +22,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +35,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.widget.components.button.AppIconButton
+import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.button.series.MediumOutlinedButton
 import io.legado.app.ui.widget.components.button.series.MediumTonalButton
@@ -47,7 +46,6 @@ import io.legado.app.ui.widget.components.checkBox.AppCheckbox
 import io.legado.app.ui.widget.components.modalBottomSheet.AppModalBottomSheet
 import io.legado.app.ui.widget.components.settingItem.SettingItem
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupManageBottomSheet(
     show: Boolean,
@@ -282,9 +280,9 @@ private fun GroupItem(
         expanded = if (inSelectionMode) false else expanded,
         cornerRadius = 12.dp,
         color = if (inSelectionMode && isSelected) {
-            MaterialTheme.colorScheme.secondaryContainer
+            LegadoTheme.colorScheme.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surface
+            LegadoTheme.colorScheme.surface
         },
         onClick = if (inSelectionMode) onToggleSelect else null,
         onLongClick = onLongClick,
@@ -303,14 +301,14 @@ private fun GroupItem(
                 )
             } else {
                 Row {
-                    IconButton(onClick = { expanded = !expanded }) {
-                        Icon(
+                    AppIconButton(onClick = { expanded = !expanded }) {
+                        AppIcon(
                             Icons.Default.Edit,
                             contentDescription = stringResource(id = R.string.edit)
                         )
                     }
-                    IconButton(onClick = { onDeleteGroup(group) }) {
-                        Icon(
+                    AppIconButton(onClick = { onDeleteGroup(group) }) {
+                        AppIcon(
                             Icons.Default.Delete,
                             contentDescription = stringResource(id = R.string.delete)
                         )

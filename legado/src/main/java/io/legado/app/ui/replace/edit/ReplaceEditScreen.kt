@@ -23,16 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import top.yukonga.miuix.kmp.basic.Surface
+import io.legado.app.ui.widget.components.icon.AppIcon
+import io.legado.app.ui.widget.components.card.NormalCard
+import io.legado.app.ui.widget.components.button.AppIconButton
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.AppFloatingActionButton
 import io.legado.app.ui.widget.components.AppScaffold
@@ -188,17 +190,18 @@ fun ReplaceEditScreen(
             )
         },
         floatingActionButton = {
-            AppFloatingActionButton(
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .animateFloatingActionButton(
-                        visible = !isKeyboardVisible,
-                        alignment = Alignment.BottomEnd,
-                    ),
-                onClick = onSave,
-                tooltipText = stringResource(R.string.action_save),
-                icon = Icons.Default.Save
-            )
+            AnimatedVisibility(
+                visible = !isKeyboardVisible,
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f)
+            ) {
+                AppFloatingActionButton(
+                    modifier = Modifier.navigationBarsPadding(),
+                    onClick = onSave,
+                    tooltipText = stringResource(R.string.action_save),
+                    icon = Icons.Default.Save
+                )
+            }
         }, contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Box(
@@ -371,24 +374,23 @@ fun GroupSelector(
     var expanded by remember { mutableStateOf(false) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
-            modifier = Modifier.weight(1f)
-        ) {
+        Box(modifier = Modifier.weight(1f)) {
             AppTextField(
                 value = currentGroup,
                 onValueChange = onGroupChange,
                 label = stringResource(R.string.group),
                 backgroundColor = backgroundColor,
                 placeholder = { AppText("默认") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(
-                        ExposedDropdownMenuAnchorType.PrimaryEditable,
-                        true
-                    )
+                trailingIcon = {
+                    AppIconButton(onClick = { expanded = !expanded }) {
+                        AppIcon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.rotate(if (expanded) 180f else 0f)
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
             )
             RoundDropdownMenu(
                 expanded = expanded,
@@ -467,18 +469,26 @@ fun QuickInputBar(
 ) {
     val symbols = listOf(".*", "\\d+", "\\w+", "[]", "()", "^", "$", "|", "{}", "<>")
 
-    BottomAppBar(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        contentPadding = PaddingValues(horizontal = 16.dp)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = LegadoTheme.colorScheme.surface
     ) {
-        symbols.forEach { symbol ->
-            AssistChip(
-                onClick = { onInsert(symbol) },
-                label = { AppText(symbol) },
-                modifier = Modifier.padding(end = 8.dp)
-            )
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            symbols.forEach { symbol ->
+                NormalCard(
+                    onClick = { onInsert(symbol) },
+                    cornerRadius = 16.dp,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        AppText(symbol)
+                    }
+                }
+            }
         }
     }
 }

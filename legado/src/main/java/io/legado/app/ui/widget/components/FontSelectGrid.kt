@@ -22,13 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -52,7 +45,12 @@ import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.help.FontFolderRead
 import io.legado.app.help.scanFontFiles
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ProvideAppDensity
+import io.legado.app.ui.widget.components.button.AppIconButton
+import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenu
+import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenuItem
+import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
+import io.legado.app.ui.widget.components.text.AppText
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.cnCompare
 import kotlinx.coroutines.CancellationException
@@ -162,38 +160,36 @@ fun FontSelectGrid(
             trailingIcon = {
                 var expanded by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { expanded = true }) {
-                        Icon(
+                    AppIconButton(onClick = { expanded = true }) {
+                        MiuixIcon(
                             imageVector = Icons.AutoMirrored.Filled.Sort,
                             contentDescription = stringResource(R.string.sort),
                             tint = LegadoTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    DropdownMenu(
+                    RoundDropdownMenu(
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
-                    ) {
-                        ProvideAppDensity {
-                            FontSort.entries.forEach { sort ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(sort.labelRes)) },
-                                    onClick = {
-                                        scope.launch {
-                                            otherSettings.update { it.copy(fontSort = sort.ordinal) }
-                                        }
-                                        expanded = false
-                                    },
-                                    trailingIcon = if (fontSort == sort.ordinal) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = LegadoTheme.colorScheme.primary
-                                            )
-                                        }
-                                    } else null
-                                )
-                            }
+                    ) { dismiss ->
+                        FontSort.entries.forEach { sort ->
+                            RoundDropdownMenuItem(
+                                text = stringResource(sort.labelRes),
+                                onClick = {
+                                    scope.launch {
+                                        otherSettings.update { it.copy(fontSort = sort.ordinal) }
+                                    }
+                                    dismiss()
+                                },
+                                trailingIcon = if (fontSort == sort.ordinal) {
+                                    {
+                                        MiuixIcon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = LegadoTheme.colorScheme.primary
+                                        )
+                                    }
+                                } else null
+                            )
                         }
                     }
                 }
@@ -204,10 +200,10 @@ fun FontSelectGrid(
 
         // 字体文件夹读不出来时给出明确原因，否则用户只会看到一个空列表
         fontFolderMessage(folderRead)?.let { message ->
-            Text(
+            AppText(
                 text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                style = LegadoTheme.typography.bodySmall,
+                color = LegadoTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,7 +220,7 @@ fun FontSelectGrid(
                     .height(fontGridHeight),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
             }
         } else if (filteredItems.isEmpty()) {
             Box(
@@ -233,10 +229,10 @@ fun FontSelectGrid(
                     .height(fontGridHeight),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
+                AppText(
                     text = emptyText ?: stringResource(R.string.empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = LegadoTheme.typography.bodyMedium,
+                    color = LegadoTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
@@ -287,7 +283,7 @@ private fun FontItem(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.height(48.dp)
         ) {
-            Text(
+            AppText(
                 text = item.name,
                 style = LegadoTheme.typography.bodyMedium.copy(fontFamily = fontFamily),
                 color = LegadoTheme.colorScheme.onSurface,
@@ -297,7 +293,7 @@ private fun FontItem(
                 modifier = Modifier.weight(1f),
             )
             if (isSelected) {
-                Icon(
+                MiuixIcon(
                     Icons.Default.Check,
                     contentDescription = null,
                     tint = LegadoTheme.colorScheme.primary,

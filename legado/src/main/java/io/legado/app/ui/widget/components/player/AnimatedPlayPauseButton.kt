@@ -12,7 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.material3.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -88,7 +89,10 @@ fun AnimatedPlayPauseButton(
             CircularProgressIndicator(
                 modifier = Modifier.size(56.dp),
                 strokeWidth = 3.dp,
-                color = contentColor,
+                colors = ProgressIndicatorDefaults.progressIndicatorColors(
+                    foregroundColor = contentColor,
+                    backgroundColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
             )
         }
     }

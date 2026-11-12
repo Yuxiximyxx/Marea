@@ -15,8 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import io.legado.app.ui.widget.components.text.AppText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,7 +76,7 @@ fun LoadMoreFooter(
         onDismiss = { showFullError = null },
         content = { error ->
             SelectionContainer {
-                Text(
+                AppText(
                     text = error,
                     style = LegadoTheme.typography.bodyMedium,
                     modifier = Modifier

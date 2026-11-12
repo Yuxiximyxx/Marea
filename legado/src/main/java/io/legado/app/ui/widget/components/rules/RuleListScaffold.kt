@@ -1,21 +1,16 @@
 package io.legado.app.ui.widget.components.rules
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,8 +29,8 @@ import io.legado.app.ui.widget.components.list.ListScaffold
 import io.legado.app.ui.widget.components.list.ListUiState
 import io.legado.app.ui.widget.components.text.AppText
 import io.legado.app.ui.widget.components.topbar.GlassTopAppBarScrollBehavior
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun <T> RuleListScaffold(
     title: String,
@@ -56,15 +51,17 @@ fun <T> RuleListScaffold(
     onAddClick: (() -> Unit)? = null,
     floatingActionButton: @Composable () -> Unit = {
         onAddClick?.let { onClick ->
-            AppFloatingActionButton(
-                onClick = onClick,
-                modifier = Modifier.animateFloatingActionButton(
-                    visible = state.selectedIds.isEmpty(),
-                    alignment = Alignment.BottomEnd,
-                ),
-                tooltipText = stringResource(R.string.add),
-                icon = Icons.Default.Add
-            )
+            AnimatedVisibility(
+                visible = state.selectedIds.isEmpty(),
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f)
+            ) {
+                AppFloatingActionButton(
+                    onClick = onClick,
+                    tooltipText = stringResource(R.string.add),
+                    icon = Icons.Default.Add
+                )
+            }
         }
     },
     snackbarHostState: SnackbarHostState,

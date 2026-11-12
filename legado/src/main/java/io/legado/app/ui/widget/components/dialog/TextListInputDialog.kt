@@ -8,10 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +23,9 @@ import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.AppTextField
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.text.AppText
+import io.legado.app.ui.widget.components.card.NormalCard
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 
 /**
  * 基础版：由 Boolean 控制显示/隐藏
@@ -71,10 +70,14 @@ fun TextListInputDialog(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(suggestions) { suggestion ->
-                            AssistChip(
+                            NormalCard(
                                 onClick = { text = suggestion },
-                                label = { AppText(suggestion) }
-                            )
+                                cornerRadius = 16.dp
+                            ) {
+                                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                    AppText(suggestion)
+                                }
+                            }
                         }
                     }
                 }

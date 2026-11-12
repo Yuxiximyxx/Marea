@@ -14,8 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.widget.components.button.AppIconButton
 import io.legado.app.constant.AppConst.appInfo
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.ThemeResolver
@@ -148,19 +148,19 @@ private fun MaterialAboutScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
             ) {
-                FilledTonalIconButton(onClick = { onIntent(AboutIntent.OpenUrl("https://github.com/HapeLee/legado-with-MD3")) }) {
+                AppIconButton(miuixBackgroundColor = LegadoTheme.colorScheme.secondaryContainer, onClick = { onIntent(AboutIntent.OpenUrl("https://github.com/HapeLee/legado-with-MD3")) }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_web_outline),
                         contentDescription = stringResource(R.string.about_open_project_homepage)
                     )
                 }
-                FilledTonalIconButton(onClick = { onIntent(AboutIntent.OpenUrl("https://github.com/HapeLee/legado-with-MD3")) }) {
+                AppIconButton(miuixBackgroundColor = LegadoTheme.colorScheme.secondaryContainer, onClick = { onIntent(AboutIntent.OpenUrl("https://github.com/HapeLee/legado-with-MD3")) }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_github),
                         contentDescription = stringResource(R.string.about_open_github)
                     )
                 }
-                FilledTonalIconButton(onClick = { onIntent(AboutIntent.CheckUpdate) }) {
+                AppIconButton(miuixBackgroundColor = LegadoTheme.colorScheme.secondaryContainer, onClick = { onIntent(AboutIntent.CheckUpdate) }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_import),
                         contentDescription = stringResource(R.string.check_update)

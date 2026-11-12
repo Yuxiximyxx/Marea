@@ -27,8 +27,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.Icon
+import io.legado.app.ui.widget.components.text.AppText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,7 +80,7 @@ fun WebFileSheet(
                     .fillMaxWidth()
                     .padding(24.dp), contentAlignment = Alignment.Center
             ) {
-                Text(text = stringResource(R.string.empty))
+                AppText(text = stringResource(R.string.empty))
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -94,7 +94,7 @@ fun WebFileSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(if (file.name.endsWith("zip") || file.name.endsWith("rar") || file.name.endsWith("7z")) Icons.Outlined.FolderZip else Icons.Outlined.Image, null)
-                            Text(text = file.name, modifier = Modifier.weight(1f), style = LegadoTheme.typography.bodyMedium)
+                            AppText(text = file.name, modifier = Modifier.weight(1f), style = LegadoTheme.typography.bodyMedium)
                         }
                     }
                 }

@@ -53,8 +53,7 @@ import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
-import androidx.compose.material3.Surface
+import top.yukonga.miuix.kmp.basic.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -628,7 +627,7 @@ fun TocScreen(
                 visible = isSelectionMode,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .offset(y = -ScreenOffset)
+                    .offset(y = (-16).dp)
                     .padding(bottom = 16.dp)
                     .zIndex(1f),
                 enter = slideInVertically { it } + fadeIn(),
