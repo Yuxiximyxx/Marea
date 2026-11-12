@@ -100,8 +100,10 @@ abstract class BaseComposeActivity(
                 // Miuix Scaffold / 子页内容按 systemBars inset 让位时，导航条下方
                 // 露出的不再是窗口背景（宿主主题的动态色），而是页面底色本身；
                 // transparent 宿主（文件关联跳板）不画，保持透出。
+                // exp.9：Miuix 分支改绑 background——暗色 surface 是纯黑 #000，
+                // 绑它时书架/我的等主页底部会露出纯黑带（页面底色是 #242424）。
                 val pageBackground = if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
-                    MiuixTheme.colorScheme.surface
+                    MiuixTheme.colorScheme.background
                 } else {
                     LegadoTheme.colorScheme.background
                 }
@@ -196,8 +198,9 @@ abstract class BaseComposeActivity(
     @Composable
     private fun SyncWindowBackground() {
         if (transparent) return
+        // exp.9：Miuix 分支与页面底色层同口径改绑 background（暗色 surface 为纯黑）。
         val backgroundColor = if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
-            MiuixTheme.colorScheme.surface
+            MiuixTheme.colorScheme.background
         } else {
             LegadoTheme.colorScheme.background
         }

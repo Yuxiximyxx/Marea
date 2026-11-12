@@ -131,6 +131,8 @@ fun FloatingBottomBar(
     backdrop: Backdrop,
     tabsCount: Int,
     isBlurEnabled: Boolean = true,
+    /** exp.9：透镜（液态玻璃折射）单独门控——Marea 磨砂档只要模糊不要透镜，液态档才全开。 */
+    isLiquidGlass: Boolean = true,
     hasCustomIcons: Boolean = false,
     compactProgress: Float = 0f,
     expandedWidth: Dp? = null,
@@ -290,10 +292,12 @@ fun FloatingBottomBar(
                         if (isBlurEnabled) {
                             vibrancy()
                             blur(themeSettings.bottomBarBlurRadius.toFloat().dp.toPx())
-                            lens(
-                                themeSettings.bottomBarLensRadius.dp.toPx(),
-                                themeSettings.bottomBarLensRadius.dp.toPx()
-                            )
+                            if (isLiquidGlass) {
+                                lens(
+                                    themeSettings.bottomBarLensRadius.dp.toPx(),
+                                    themeSettings.bottomBarLensRadius.dp.toPx()
+                                )
+                            }
                         }
                     },
                     highlight = {
@@ -379,10 +383,12 @@ fun FloatingBottomBar(
                                 val progress = dampedDragAnimation.pressProgress
                                 vibrancy()
                                 blur(themeSettings.bottomBarBlurRadius.toFloat().dp.toPx())
-                                lens(
-                                    themeSettings.bottomBarLensRadius.dp.toPx() * progress,
-                                    themeSettings.bottomBarLensRadius.dp.toPx() * progress
-                                )
+                                if (isLiquidGlass) {
+                                    lens(
+                                        themeSettings.bottomBarLensRadius.dp.toPx() * progress,
+                                        themeSettings.bottomBarLensRadius.dp.toPx() * progress
+                                    )
+                                }
                             }
                         },
                         highlight = {
@@ -448,7 +454,7 @@ fun FloatingBottomBar(
                             backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                             shape = { ContinuousCapsule },
                             effects = {
-                                if (isBlurEnabled) {
+                                if (isBlurEnabled && isLiquidGlass) {
                                     val progress = dampedDragAnimation.pressProgress
                                     lens(10f.dp.toPx() * progress, 14f.dp.toPx() * progress, true)
                                 }

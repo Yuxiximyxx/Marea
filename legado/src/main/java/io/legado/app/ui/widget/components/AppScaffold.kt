@@ -92,7 +92,11 @@ fun AppScaffold(
     val miuixContainerColor = if (hasImageBg) {
         Color.Transparent
     } else {
-        MiuixTheme.colorScheme.surface
+        // exp.9：容器是「页面背景」角色，必须绑 background 而不是 surface——
+        // Miuix 暗色 surface 是纯黑 #000，绑它会让内容未覆盖处（列表尾部、
+        // 导航条下方）露出纯黑带，与页面底色（暗色 background=#242424）不一致；
+        // 与 MD3 分支绑 LegadoTheme.background 的口径对齐。
+        MiuixTheme.colorScheme.background
     }
     val topBarBackdropBaseColor = LegadoTheme.colorScheme.background
     val topBarBackgroundBackdrop = rememberLayerBackdrop {

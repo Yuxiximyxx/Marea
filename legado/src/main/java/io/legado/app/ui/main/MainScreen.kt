@@ -1,7 +1,6 @@
 package io.legado.app.ui.main
 
 import android.content.Intent
-import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -96,6 +95,7 @@ import io.legado.app.ui.main.my.MyRouteScreen
 import io.legado.app.ui.main.my.PrefClickEvent
 import io.legado.app.ui.main.rss.RssRouteScreen
 import dev.dsh.glasskit.LocalMareaBlurMode
+import dev.dsh.glasskit.MAREA_BLUR_LIQUID
 import dev.dsh.glasskit.MAREA_BLUR_OFF
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.ThemeResolver
@@ -275,13 +275,12 @@ fun MainScreen(
             onMainRoute = true, showBottomView = mainUiState.showBottomView,
             useFloatingBottomBar = mainUiState.useFloatingBottomBar, useRail = useRail,
         )
-    val useLiquidGlass = useFloatingBottomBar &&
-            mainUiState.useFloatingBottomBarLiquidGlass &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    // exp.7：悬浮底栏/听书胶囊的玻璃采样与模糊改由 Marea 材质档位总控
-    // （关档回实色；磨砂/液态档点亮采样与模糊，Legado 自身液态开关在开档时仍生效）
+    // exp.9：悬浮底栏/听书胶囊的材质改由 Marea 档位单独总控，Legado 自身的
+    // useFloatingBottomBarLiquidGlass 在此表面让位、不再参与判定：
+    // 关档→实色且不采样；磨砂档→模糊（无透镜）；液态档→模糊+透镜。
     val mareaBlurMode = LocalMareaBlurMode.current
-    val floatingGlassEnabled = useLiquidGlass || mareaBlurMode != MAREA_BLUR_OFF
+    val floatingGlassEnabled = mareaBlurMode != MAREA_BLUR_OFF
+    val floatingLiquidEnabled = mareaBlurMode == MAREA_BLUR_LIQUID
     val alwaysShowLabel = labelVisibilityMode == "labeled"
     val showLabel = !isUnlabeled
 
@@ -730,6 +729,7 @@ fun MainScreen(
                             backdrop = floatingBarBackdrop,
                             tabsCount = destinations.size,
                             isBlurEnabled = floatingGlassEnabled,
+                            isLiquidGlass = floatingLiquidEnabled,
                             hasCustomIcons = destinations.any { dest ->
                                 mainUiState.customIconPath(dest).isNotEmpty() ||
                                         mainUiState.selectedCustomIconPath(dest).isNotEmpty()

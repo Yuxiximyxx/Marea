@@ -171,7 +171,9 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                     // 自绘于其上，不受影响），并注入 Marea 材质档位。
                     val pageBackground =
                         if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
-                            MiuixTheme.colorScheme.surface
+                            // exp.9：与 BaseComposeActivity 同口径改绑 background
+                            //（Miuix 暗色 surface 为纯黑，不是页面底色）。
+                            MiuixTheme.colorScheme.background
                         } else {
                             LegadoTheme.colorScheme.background
                         }
