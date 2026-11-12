@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -39,68 +37,63 @@ fun ExploreKindItem(
     textAlign: TextAlign = TextAlign.Center,
     minHeight: Dp = 0.dp,
 ) {
-    CompositionLocalProvider(
-        LocalMinimumInteractiveComponentSize provides Dp.Unspecified
-    ) {
+    val cornerRadius = 12.dp
+    val containerColor = if (isSelected) {
+        LegadoTheme.colorScheme.primaryContainer
+    } else {
+        backgroundColor
+    }
+    val contentColor = if (isSelected) {
+        LegadoTheme.colorScheme.onPrimaryContainer
+    } else if (isClickable) {
+        LegadoTheme.colorScheme.onSurface
+    } else {
+        LegadoTheme.colorScheme.primary
+    }
+    val itemModifier = if (isClickable) {
+        modifier.semantics(mergeDescendants = true) {
+            contentDescription = displayText
+            role = Role.Button
+            if (isSelected) {
+                selected = true
+            }
+        }
+    } else {
+        modifier
+    }
 
-        val cornerRadius = 12.dp
-        val containerColor = if (isSelected) {
-            LegadoTheme.colorScheme.primaryContainer
-        } else {
-            backgroundColor
-        }
-        val contentColor = if (isSelected) {
-            LegadoTheme.colorScheme.onPrimaryContainer
-        } else if (isClickable) {
-            LegadoTheme.colorScheme.onSurface
-        } else {
-            LegadoTheme.colorScheme.primary
-        }
-        val itemModifier = if (isClickable) {
-            modifier.semantics(mergeDescendants = true) {
-                contentDescription = displayText
-                role = Role.Button
-                if (isSelected) {
-                    selected = true
-                }
-            }
-        } else {
-            modifier
-        }
-
-        if (isClickable) {
-            GlassCard(
-                onClick = onClick,
-                onLongClick = onLongClick,
-                cornerRadius = cornerRadius,
-                containerColor = containerColor,
+    if (isClickable) {
+        GlassCard(
+            onClick = onClick,
+            onLongClick = onLongClick,
+            cornerRadius = cornerRadius,
+            containerColor = containerColor,
+            contentColor = contentColor,
+            modifier = itemModifier,
+        ) {
+            KindText(
+                text = displayText,
+                isClickable = true,
                 contentColor = contentColor,
-                modifier = itemModifier,
-            ) {
-                KindText(
-                    text = displayText,
-                    isClickable = true,
-                    contentColor = contentColor,
-                    trailingIcon = trailingIcon,
-                    textAlign = textAlign,
-                    minHeight = minHeight,
-                )
-            }
-        } else {
-            GlassCard(
-                cornerRadius = cornerRadius,
-                containerColor = containerColor,
+                trailingIcon = trailingIcon,
+                textAlign = textAlign,
+                minHeight = minHeight,
+            )
+        }
+    } else {
+        GlassCard(
+            cornerRadius = cornerRadius,
+            containerColor = containerColor,
+            contentColor = contentColor,
+            modifier = itemModifier,
+        ) {
+            KindText(
+                text = displayText,
+                isClickable = false,
                 contentColor = contentColor,
-                modifier = itemModifier,
-            ) {
-                KindText(
-                    text = displayText,
-                    isClickable = false,
-                    contentColor = contentColor,
-                    trailingIcon = trailingIcon,
-                    minHeight = minHeight,
-                )
-            }
+                trailingIcon = trailingIcon,
+                minHeight = minHeight,
+            )
         }
     }
 }

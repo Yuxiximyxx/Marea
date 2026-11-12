@@ -41,11 +41,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.WideNavigationRail
-import androidx.compose.material3.WideNavigationRailItem
-import androidx.compose.material3.WideNavigationRailValue
-import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -284,12 +279,6 @@ fun MainScreen(
     val alwaysShowLabel = labelVisibilityMode == "labeled"
     val showLabel = !isUnlabeled
 
-    val navState = rememberWideNavigationRailState(
-        initialValue = if (mainUiState.navExtended)
-            WideNavigationRailValue.Expanded
-        else
-            WideNavigationRailValue.Collapsed
-    )
 
     Row(
         modifier = Modifier
@@ -297,7 +286,6 @@ fun MainScreen(
             .windowInsetsPadding(mainAdaptiveInsets.only(WindowInsetsSides.Horizontal))
     ) {
         if (useRail && mainUiState.showBottomView) {
-            if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
                 val miuixNavState = rememberNavigationRailState(
                     initialValue = if (mainUiState.navExtended) {
                         NavigationRailValue.Expanded
@@ -362,92 +350,6 @@ fun MainScreen(
                         }
                     }
                 }
-            } else WideNavigationRail(
-                modifier = Modifier.onSizeChanged {
-                    onNavigationRailWidthChanged(with(density) { it.width.toDp() })
-                },
-                state = navState,
-                header = {
-                    val expanded = navState.targetValue == WideNavigationRailValue.Expanded
-
-                    Column {
-                        MediumTonalButton(
-                            modifier = Modifier.padding(start = 24.dp),
-                            onClick = {
-                                coroutineScope.launch {
-                                    val targetExpanded = !expanded
-                                    if (targetExpanded) navState.expand()
-                                    else navState.collapse()
-                                    onIntent(MainUiIntent.SetNavigationRailExpanded(targetExpanded))
-                                }
-                            },
-                            icon = if (expanded) {
-                                Icons.AutoMirrored.Filled.MenuOpen
-                            } else {
-                                Icons.Default.Menu
-                            },
-                            contentDescription = stringResource(
-                                if (expanded) R.string.collapse else R.string.expand
-                            ),
-                        )
-                    }
-                }
-            ) {
-                destinations.forEachIndexed { index, destination ->
-                    val selected = pagerState.targetPage == index
-                    var showGroupMenu by remember { mutableStateOf(false) }
-                    val haptic = LocalHapticFeedback.current
-                    val destinationLabel = stringResource(destination.labelId)
-
-                    WideNavigationRailItem(
-                        modifier = Modifier.semantics(mergeDescendants = true) {
-                            contentDescription = destinationLabel
-                        },
-                        railExpanded = navState.targetValue == WideNavigationRailValue.Expanded,
-                        selected = selected,
-                        onClick = {
-                            handleMainDestinationClick(index, destination)
-                        },
-                        icon = {
-                            Box {
-                                NavigationIcon(
-                                    destination = destination,
-                                    selected = selected,
-                                    customIconPath = mainUiState.customIconPath(destination),
-                                    modifier = if (destination == MainDestination.Bookshelf) {
-                                        Modifier.combinedClickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = {
-                                                handleMainDestinationClick(index, destination)
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                showGroupMenu = true
-                                            }
-                                        )
-                                    } else Modifier
-                                )
-
-                                if (destination == MainDestination.Bookshelf && showGroupMenu) {
-                                    BookshelfRailGroupMenuRoute(
-                                        expanded = showGroupMenu,
-                                        onDismissRequest = { showGroupMenu = false },
-                                        onBeforeSelectGroup = {
-                                            if (pagerState.currentPage != index) {
-                                                pagerState.scrollToPage(index)
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        },
-                        label = if (labelVisibilityMode != "unlabeled") {
-                            { AppText(stringResource(destination.labelId)) }
-                        } else null
-                    )
-                }
-            }
         }
 
         AppScaffold(

@@ -195,6 +195,7 @@ fun MainActivity.mainEntryProvider(
      */
 ) = mainPaneEntryProvider(backStack, panesEnabled, navRouteTracker, navigateToRoute) {
     entry<MainRouteToc> { route ->
+        MiuixSurface {
         // VM 提到 entry 里，是为了让「规则列表选好的规则」能从这里回灌（SaveTocRegex）。
         val tocViewModel = koinViewModel<TocViewModel>()
         ConsumeBookPageResult(route, backStack.lastOrNull() == route, navRouteTracker) { result ->
@@ -231,8 +232,10 @@ fun MainActivity.mainEntryProvider(
                 )
             },
         )
+        }
     }
     entry<MainRouteBookInfoEdit> { route ->
+        MiuixSurface {
         val viewModel = koinViewModel<BookInfoEditViewModel>()
         LaunchedEffect(route.bookUrl) { viewModel.loadBook(route.bookUrl) }
         BookInfoEditScreen(
@@ -248,15 +251,19 @@ fun MainActivity.mainEntryProvider(
                 }
             },
         )
+        }
     }
     entry<MainRouteReplaceRules> { route ->
+        MiuixSurface {
         ReplaceRuleRouteScreen(
             bookUrl = route.bookUrl,
             onBackClick = { closeBookPage(backStack, route) },
             onNavigateToEdit = { onNavigateToRoute(MainRouteReplaceEdit(it)) },
         )
+        }
     }
     entry<MainRouteReplaceEdit> { route ->
+        MiuixSurface {
         val viewModel =
             koinViewModel<ReplaceEditViewModel>(key = "replace_edit_${route.editor.sessionId}") {
                 parametersOf(route.editor)
@@ -266,8 +273,10 @@ fun MainActivity.mainEntryProvider(
             onBack = { closeBookPage(backStack, route) },
             onSaveSuccess = { closeBookPage(backStack, route) },
         )
+        }
     }
     entry<MainRouteHome> {
+        MiuixSurface {
         val mainViewModel = koinViewModel<MainViewModel>()
         val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
         MainScreen(
@@ -342,6 +351,7 @@ fun MainActivity.mainEntryProvider(
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = LocalNavAnimatedContentScope.current,
         )
+        }
     }
 
     entry<MainRouteSettings> {
@@ -461,15 +471,19 @@ fun MainActivity.mainEntryProvider(
         }
 
     entry<MainRouteImportLocal> {
+        MiuixSurface {
         ImportBookRouteScreen(
             onBackClick = { onNavigateBack() }
         )
+        }
     }
 
     entry<MainRouteImportRemote> {
+        MiuixSurface {
         RemoteBookRouteScreen(
             onBackClick = { onNavigateBack() }
         )
+        }
     }
 
     entry<MainRouteCache> { route ->
@@ -492,9 +506,11 @@ fun MainActivity.mainEntryProvider(
     }
 
     entry<MainRouteBookCacheManage> {
+        MiuixSurface {
         BookCacheManageRouteScreen(
             onBackClick = { onNavigateBack() }
         )
+        }
     }
 
     entry<MainRouteReadBook>(
@@ -695,6 +711,7 @@ fun MainActivity.mainEntryProvider(
     entry<MainRouteSearchContent>(
         metadata = modalOverlayEntryMetadata() + ModalOverlaySceneStrategy.searchSlide()
     ) { route ->
+        MiuixSurface {
         val viewModel = koinViewModel<SearchContentViewModel>(
             key = "SearchContent:${route.bookUrl}",
             parameters = { parametersOf(route) }
@@ -706,6 +723,7 @@ fun MainActivity.mainEntryProvider(
             autoFocus = route.autoFocus,
             onBack = { onNavigateBack() },
         )
+        }
     }
 
 
@@ -715,6 +733,7 @@ fun MainActivity.mainEntryProvider(
 
 
     entry<MainRouteReadRecord> {
+        MiuixSurface {
         ReadRecordRouteScreen(
             onBackClick = { onNavigateBack() },
             onBookClick = { name, author ->
@@ -733,9 +752,11 @@ fun MainActivity.mainEntryProvider(
                 onNavigateToRoute(MainRouteReadRecordOverview)
             }
         )
+        }
     }
 
     entry<MainRouteReadRecordOverview> {
+        MiuixSurface {
         ReadRecordOverviewRouteScreen(
             onBackClick = { onNavigateBack() },
             onBookClick = { name, author ->
@@ -751,11 +772,13 @@ fun MainActivity.mainEntryProvider(
                 }
             }
         )
+        }
     }
 
     entry<MainRouteBookInfo>(
         metadata = bookInfoEntryMetadata(configuration.appShell.predictiveBackEnabled)
     ) { route ->
+        MiuixSurface {
         val bookInfoViewModel = koinViewModel<BookInfoViewModel>(key = "BookInfo:${route.bookUrl}")
         ConsumeBookPageResult(route, backStack.lastOrNull() == route, navRouteTracker) { result ->
             when (result) {
@@ -825,6 +848,7 @@ fun MainActivity.mainEntryProvider(
             animatedVisibilityScope = LocalNavAnimatedContentScope.current,
             sharedCoverKey = route.sharedCoverKey ?: bookCoverSharedElementKey(route.bookUrl),
         )
+        }
     }
 
 
@@ -839,19 +863,24 @@ fun MainActivity.mainEntryProvider(
 
 
     entry<MainRouteHighlightTagRule> {
+        MiuixSurface {
         HighlightTagRuleRouteScreen(
             onBackClick = { onNavigateBack() }
         )
+        }
     }
 
     // 以下三个原先各自是一个薄壳 Activity（只为 setContent 而存在）。改成普通目的地后，
     // 宽窗口下能与首页并排成右栏，也回到 NavDisplay 的统一转场里。
 
     entry<MainRouteDictRule> {
+        MiuixSurface {
         DictRuleRouteScreen(onBackClick = { onNavigateBack() })
+        }
     }
 
     entry<MainRouteTxtTocRule> { route ->
+        MiuixSurface {
         TxtRuleRouteScreen(
             initialRule = route.initialRule,
             // 选择模式：为打开它的目录页挑一条规则，选中即回传并退出。
@@ -862,9 +891,11 @@ fun MainActivity.mainEntryProvider(
             },
             onBackClick = { onNavigateBack() },
         )
+        }
     }
 
     entry<MainRouteTxtTocRulePreview> { route ->
+        MiuixSurface {
         TxtTocRulePreviewRouteScreen(
             bookUrl = route.bookUrl,
             currentTocRegex = route.currentTocRegex,
@@ -874,10 +905,13 @@ fun MainActivity.mainEntryProvider(
             },
             onOpenManagePage = { onNavigateToRoute(MainRouteTxtTocRule()) },
         )
+        }
     }
 
     entry<MainRouteAllBookmark> {
+        MiuixSurface {
         AllBookmarkRouteScreen(onBack = { onNavigateBack() })
+        }
     }
 
 
@@ -888,6 +922,7 @@ fun MainActivity.mainEntryProvider(
 
 
     entry<MainRouteAbout> {
+        MiuixSurface {
         val viewModel = koinViewModel<AboutViewModel>()
         val context = LocalContext.current
         LaunchedEffect(viewModel) {
@@ -908,6 +943,7 @@ fun MainActivity.mainEntryProvider(
             onIntent = viewModel::onIntent,
             onBack = { onNavigateBack() },
         )
+        }
     }
 }
 

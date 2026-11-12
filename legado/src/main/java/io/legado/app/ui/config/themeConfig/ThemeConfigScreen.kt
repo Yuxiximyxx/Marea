@@ -37,9 +37,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
@@ -721,7 +720,7 @@ fun ThemeConfigScreen(
                                             .background(Color(theme.itemDividerColor))
                                             .border(
                                                 1.dp,
-                                                MaterialTheme.colorScheme.outlineVariant,
+                                                LegadoTheme.colorScheme.outlineVariant,
                                                 CircleShape
                                             )
                                     )
@@ -993,7 +992,7 @@ private fun BaseCardBorderColorSettingItem(
                         color.takeIf { it != 0 }?.let(::Color)
                             ?: LegadoTheme.colorScheme.outlineVariant
                     )
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .border(1.dp, LegadoTheme.colorScheme.outlineVariant, CircleShape)
             )
         }
     )
@@ -1033,7 +1032,7 @@ fun ThemeModeSelector(
             ) {
                 Icon(imageVector = icon, contentDescription = null)
                 Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
-                Text(text = label, overflow = TextOverflow.Ellipsis, maxLines = 1)
+                AppText(text = label, overflow = TextOverflow.Ellipsis, maxLines = 1)
             }
         }
     }
@@ -1164,7 +1163,7 @@ fun ThemeColorButton(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
+                            tint = LegadoTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }

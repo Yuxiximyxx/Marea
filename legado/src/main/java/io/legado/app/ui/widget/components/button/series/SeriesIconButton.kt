@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Indication
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -17,11 +18,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -46,9 +44,8 @@ import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.text.AppText
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal val SeriesIconSize: Dp
-    get() = IconButtonDefaults.mediumIconSize
+    get() = 24.dp
 internal val MediumSeriesIconButtonSize = DpSize(40.dp, 40.dp)
 internal val MediumSeriesIconSize = SeriesIconSize
 internal val TopBarSeriesIconButtonSize = DpSize(36.dp, 36.dp)
@@ -72,8 +69,8 @@ internal fun SeriesButton(
     size: DpSize? = null,
     enforceMinimumInteractiveSize: Boolean = true,
     clipToShape: Boolean = true,
-    indication: Indication? = ripple(bounded = true),
-    shape: Shape = IconButtonDefaults.extraSmallRoundShape,
+    indication: Indication? = LocalIndication.current,
+    shape: Shape = SmallButtonShape,
     style: SeriesIconButtonStyle = SeriesIconButtonStyle.Plain,
     contentColor: Color = LegadoTheme.colorScheme.onSurfaceVariant,
     containerColor: Color? = null,
@@ -122,7 +119,7 @@ internal fun SeriesButton(
 
     Box(
         modifier = Modifier
-            .then(if (enforceMinimumInteractiveSize) Modifier.minimumInteractiveComponentSize() else Modifier)
+            .then(if (enforceMinimumInteractiveSize) Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp) else Modifier)
             .then(modifier)
             .then(if (size != null) Modifier.size(size) else Modifier)
             .then(if (clipToShape) Modifier.clip(shape) else Modifier)
