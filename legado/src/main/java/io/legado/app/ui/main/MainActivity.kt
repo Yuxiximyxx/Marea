@@ -603,6 +603,7 @@ open class MainActivity : BaseComposeActivity() {
                             )
                         )
                     }
+                }
                 // 关闭预见性返回时由宿主在导航层之前接管返回：手势不跟手预览，
                 // 松手后走普通出栈，popTransitionSpec 的返回动画照常播放。
                 BackHandler(
