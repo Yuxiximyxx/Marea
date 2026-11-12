@@ -52,9 +52,17 @@ fun ProvideMareaBlurMode(content: @Composable () -> Unit) {
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
     DisposableEffect(prefs) {
+        GlassDiag.log(context, "BlurBridge", "init blur_mode=$mode")
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_BLUR_MODE || key == KEY_BLUR_LEGACY) {
-                mode = readMareaBlurMode(context)
+                val newMode = readMareaBlurMode(context)
+                if (newMode != mode) {
+                    GlassDiag.log(
+                        context, "BlurBridge",
+                        "blur_mode changed: $mode -> $newMode (key=$key)"
+                    )
+                }
+                mode = newMode
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)

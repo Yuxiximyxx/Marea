@@ -93,6 +93,13 @@ object Diag {
         sb.append(legacyCrash ?: "（无记录）").append('\n')
         sb.append("\n===== diag.txt（Diag 运行日志，尾部至多 256KB） =====\n")
         sb.append(diagText ?: "（无记录）").append('\n')
+        // exp.10：glasskit 侧取证日志（材质档位到达/分支、底栏生效参数），文件在 filesDir。
+        val glassText = runCatching {
+            File(context.filesDir, dev.dsh.glasskit.GlassDiag.FILE_NAME)
+                .takeIf { it.exists() }?.readText()
+        }.getOrNull()
+        sb.append("\n===== marea_glass_diag.log（玻璃/底栏取证日志） =====\n")
+        sb.append(glassText ?: "（无记录）").append('\n')
         val name = "marea-diag-" +
             SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".txt"
         File(context.cacheDir, name).apply { writeText(sb.toString()) }

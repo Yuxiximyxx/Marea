@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -74,6 +75,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
+import dev.dsh.glasskit.GlassDiag
 import io.legado.app.domain.model.settings.customColors
 import io.legado.app.ui.animation.DampedDragAnimation
 import io.legado.app.ui.animation.InteractiveHighlight
@@ -133,6 +135,16 @@ fun FloatingBottomBar(
     isBlurEnabled: Boolean = true,
     /** exp.9：透镜（液态玻璃折射）单独门控——Marea 磨砂档只要模糊不要透镜，液态档才全开。 */
     isLiquidGlass: Boolean = true,
+    /**
+     * exp.10 返工二：Marea 档位驱动的材质参数（与 glasskit glassBar 的分档口径对齐）。
+     * exp.9 只切了开关、参数仍走 Legado 自家 bottomBarBlurRadius(8dp)/bottomBarBlurAlpha(40%)/
+     * bottomBarLensRadius(24dp)——磨砂与液态共用同一套弱模糊参数，真机上两档看不出区别。
+     * 由 MainScreen 按档位传入：磨砂=强模糊 24dp + 40% tint；液态=弱模糊 3dp + 12% tint +
+     * 18/40dp 强透镜（depthEffect+色差，与 glassBar 液态分支同参）。null = 沿用 Legado 主题设置。
+     */
+    tierBlurRadius: Dp? = null,
+    tierTintAlpha: Float? = null,
+    tierLensRadius: Pair<Dp, Dp>? = null,
     hasCustomIcons: Boolean = false,
     compactProgress: Float = 0f,
     expandedWidth: Dp? = null,
@@ -157,10 +169,22 @@ fun FloatingBottomBar(
         )
     } else if (isBlurEnabled) {
         LegadoTheme.colorScheme.surfaceContainer.copy(
-            alpha = themeSettings.bottomBarBlurAlpha / 100f
+            alpha = tierTintAlpha ?: (themeSettings.bottomBarBlurAlpha / 100f)
         )
     } else {
         LegadoTheme.colorScheme.surfaceContainer
+    }
+
+    // exp.10 返工二取证：档位/分支/生效参数变化时落 Diag，证明值到达且分支在换。
+    val diagContext = LocalContext.current
+    LaunchedEffect(isBlurEnabled, isLiquidGlass, tierBlurRadius, tierTintAlpha, tierLensRadius) {
+        GlassDiag.log(
+            diagContext, "FloatingBottomBar",
+            "blur=$isBlurEnabled liquid=$isLiquidGlass " +
+                "blurRadius=${tierBlurRadius ?: themeSettings.bottomBarBlurRadius.dp} " +
+                "tintAlpha=${tierTintAlpha ?: (themeSettings.bottomBarBlurAlpha / 100f)} " +
+                "lens=${tierLensRadius ?: (themeSettings.bottomBarLensRadius.dp to themeSettings.bottomBarLensRadius.dp)}"
+        )
     }
 
     val tabsBackdrop = rememberLayerBackdrop()
@@ -291,12 +315,20 @@ fun FloatingBottomBar(
                     effects = {
                         if (isBlurEnabled) {
                             vibrancy()
-                            blur(themeSettings.bottomBarBlurRadius.toFloat().dp.toPx())
+                            blur((tierBlurRadius ?: themeSettings.bottomBarBlurRadius.dp).toPx())
                             if (isLiquidGlass) {
-                                lens(
-                                    themeSettings.bottomBarLensRadius.dp.toPx(),
-                                    themeSettings.bottomBarLensRadius.dp.toPx()
-                                )
+                                val tierLens = tierLensRadius
+                                if (tierLens != null) {
+                                    lens(
+                                        tierLens.first.toPx(), tierLens.second.toPx(),
+                                        depthEffect = true, chromaticAberration = true
+                                    )
+                                } else {
+                                    lens(
+                                        themeSettings.bottomBarLensRadius.dp.toPx(),
+                                        themeSettings.bottomBarLensRadius.dp.toPx()
+                                    )
+                                }
                             }
                         }
                     },
@@ -382,12 +414,21 @@ fun FloatingBottomBar(
                             if (isBlurEnabled) {
                                 val progress = dampedDragAnimation.pressProgress
                                 vibrancy()
-                                blur(themeSettings.bottomBarBlurRadius.toFloat().dp.toPx())
+                                blur((tierBlurRadius ?: themeSettings.bottomBarBlurRadius.dp).toPx())
                                 if (isLiquidGlass) {
-                                    lens(
-                                        themeSettings.bottomBarLensRadius.dp.toPx() * progress,
-                                        themeSettings.bottomBarLensRadius.dp.toPx() * progress
-                                    )
+                                    val tierLens = tierLensRadius
+                                    if (tierLens != null) {
+                                        lens(
+                                            tierLens.first.toPx() * progress,
+                                            tierLens.second.toPx() * progress,
+                                            depthEffect = true, chromaticAberration = true
+                                        )
+                                    } else {
+                                        lens(
+                                            themeSettings.bottomBarLensRadius.dp.toPx() * progress,
+                                            themeSettings.bottomBarLensRadius.dp.toPx() * progress
+                                        )
+                                    }
                                 }
                             }
                         },

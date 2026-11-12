@@ -94,6 +94,7 @@ import io.legado.app.ui.main.home.HomeRouteScreen
 import io.legado.app.ui.main.my.MyRouteScreen
 import io.legado.app.ui.main.my.PrefClickEvent
 import io.legado.app.ui.main.rss.RssRouteScreen
+import dev.dsh.glasskit.GlassDiag
 import dev.dsh.glasskit.LocalMareaBlurMode
 import dev.dsh.glasskit.MAREA_BLUR_LIQUID
 import dev.dsh.glasskit.MAREA_BLUR_OFF
@@ -281,6 +282,30 @@ fun MainScreen(
     val mareaBlurMode = LocalMareaBlurMode.current
     val floatingGlassEnabled = mareaBlurMode != MAREA_BLUR_OFF
     val floatingLiquidEnabled = mareaBlurMode == MAREA_BLUR_LIQUID
+    // exp.10 返工二：档位取证（值与分支落 Diag，切档时应能看到 mode 变化与分支切换），
+    // 且材质参数按档位接管并与 glasskit glassBar 的分档口径对齐——exp.9 只切了开关，
+    // 模糊半径/tint/透镜仍走 Legado 自家弱参数（8dp/40%/24dp），磨砂与液态自然无区别。
+    LaunchedEffect(mareaBlurMode) {
+        GlassDiag.log(
+            context, "MainBottomBar",
+            "mode=$mareaBlurMode branch=" + when (mareaBlurMode) {
+                MAREA_BLUR_OFF -> "off(solid)"
+                MAREA_BLUR_LIQUID -> "liquid(blur3dp+lens18/40+tint0.12)"
+                else -> "frosted(blur24dp+tint0.40)"
+            }
+        )
+    }
+    val tierBlurRadius = when (mareaBlurMode) {
+        MAREA_BLUR_LIQUID -> 3.dp
+        MAREA_BLUR_OFF -> null
+        else -> 24.dp
+    }
+    val tierTintAlpha = when (mareaBlurMode) {
+        MAREA_BLUR_LIQUID -> 0.12f
+        MAREA_BLUR_OFF -> null
+        else -> 0.40f
+    }
+    val tierLensRadius = if (mareaBlurMode == MAREA_BLUR_LIQUID) 18.dp to 40.dp else null
     val alwaysShowLabel = labelVisibilityMode == "labeled"
     val showLabel = !isUnlabeled
 
@@ -730,6 +755,9 @@ fun MainScreen(
                             tabsCount = destinations.size,
                             isBlurEnabled = floatingGlassEnabled,
                             isLiquidGlass = floatingLiquidEnabled,
+                            tierBlurRadius = tierBlurRadius,
+                            tierTintAlpha = tierTintAlpha,
+                            tierLensRadius = tierLensRadius,
                             hasCustomIcons = destinations.any { dest ->
                                 mainUiState.customIconPath(dest).isNotEmpty() ||
                                         mainUiState.selectedCustomIconPath(dest).isNotEmpty()
