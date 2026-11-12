@@ -27,9 +27,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import io.legado.app.ui.theme.MiuixSurface
+import top.yukonga.miuix.kmp.basic.SnackbarDuration
+import top.yukonga.miuix.kmp.basic.SnackbarHost
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -745,10 +746,14 @@ fun ReadBookRouteScreen(
             }
             // 触边界提示：对照旧 `PageDelegate` 的 Snackbar（LENGTH_SHORT），不再用 Toast，
             // 重复由控制器侧 1.5s 抑制窗口挡掉。
-            SnackbarHost(
-                hostState = readerSnackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+            // exp.13：Snackbar 已换 Miuix 实现，包一层 MiuixSurface 补主题环境
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                MiuixSurface {
+                    SnackbarHost(
+                        state = readerSnackbarHostState,
+                    )
+                }
+            }
         }
         ReaderPerfTrace.marker("compose.chrome.begin")
         ReadBookColorTheme(
@@ -756,6 +761,10 @@ fun ReadBookRouteScreen(
             preferences = readPreferences,
             isDarkTheme = isDarkTheme,
         ) {
+            // exp.13：菜单栏/阅读弹层/选词层已换 Miuix 组件，整体包一层 MiuixSurface
+            // 补 Miuix 主题环境（与 exp.12 书架/设置同打法）；主题覆写（ReadBookColorTheme）
+            // 在外层，MiuixSurface 读到的仍是覆写后的 LegadoThemeMode，菜单配色跟随覆写。
+            MiuixSurface {
             ReadBookMenuBar(
                 state = state,
                 preferences = readPreferences,
@@ -921,6 +930,7 @@ fun ReadBookRouteScreen(
                 },
             )
             ReaderPerfTrace.marker("compose.selection.end")
+            }
         }
         ReaderPerfTrace.marker("compose.chrome.end")
     }

@@ -45,8 +45,8 @@ import androidx.compose.material.icons.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SmartToy
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.VerticalDivider
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect

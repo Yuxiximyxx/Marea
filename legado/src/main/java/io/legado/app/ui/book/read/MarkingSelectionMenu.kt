@@ -40,7 +40,7 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.StrikethroughS
 import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.Waves
-import androidx.compose.material3.Icon
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
