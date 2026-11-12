@@ -2,6 +2,14 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.2] - 2026-11-12
+
+### 实验版修复：打开书籍黑屏 / 闪退
+
+- exp.1 真机反馈：从书架打开书籍黑屏、按返回无正常响应并闪退。根因在宿主接线：LegadoReaderHostActivity 裸 setContent 挂阅读页，没套 Legado 自家宿主 BaseComposeActivity 的主题环境 AppTheme——阅读页组合期多处读 LegadoTheme.colorScheme，而 LocalLegadoColorScheme 的默认工厂是 error("No ColorScheme provided")，一读即抛、页面永不渲染（只剩窗口黑底）并把进程拖垮。exp.2 按 BaseComposeActivity 原样补齐：经 AppUiConfigurationGateway 收集全局 UI 配置驱动 AppTheme，并补 edge-to-edge 与系统日夜同步。
+- 顺带把宿主的失败从静默改可见：导入书籍失败不再无声关页，改为提示「打开失败」并把完整堆栈写进 Diag 诊断日志（diag.txt，外部 media 目录）；宿主启动/导入/内容就绪各节点均在 Diag 留痕，后续若仍异常可据此取证。
+- 其余同 exp.1：Legado 本地阅读栈整体移植、四处 TXT 入口改接、自研阅读器保留不接入口；TTS、书源编辑、AI 对话等子页仍不在实验范围。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验。
+
 ## [1.8.28-exp.1] - 2026-11-12
 
 ### 实验版：内置 Legado 阅读器

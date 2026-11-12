@@ -6,7 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,8 +26,10 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import io.legado.app.domain.gateway.AppUiConfigurationGateway
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.ui.theme.AppTheme
 import io.legado.app.ui.book.info.BookInfoRouteScreen
 import io.legado.app.ui.book.info.BookInfoViewModel
 import io.legado.app.ui.book.info.edit.BookInfoEditScreen
@@ -75,6 +79,9 @@ import org.koin.core.parameter.parametersOf
  * 相关子页（目录、书内搜索、书籍信息、替换规则、本地目录规则）。
  *
  * 与 Legado 原版宿主的差异（宿主层裁剪，不改阅读行为）：
+ * - 内容一律包在 AppTheme 里（同 BaseComposeActivity 经 AppUiConfigurationGateway
+ *   驱动）——exp.1 漏了这层，阅读页读 LegadoTheme.colorScheme 时撞上
+ *   LocalLegadoColorScheme 的 error 默认值，真机表现为黑屏 + 闪退，exp.2 补齐；
  * - 不套 PrivateReadGate 私密闸门（Marea 入口侧已有自己的空间划分）；
  * - AI 对话 / 配音选角 / TTS 引擎与缓存 / 书源编辑等在线与朗读子页不在
  *   本实验范围，菜单回调为空实现；
@@ -97,31 +104,68 @@ class LegadoReaderHostActivity : AppCompatActivity() {
     }
 
     private val navRouteTracker: MainNavRouteTracker by inject()
+    private val appUiConfigurationGateway: AppUiConfigurationGateway by inject()
 
     @Volatile
     private var readerController: ReadBookController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Diag.init(this)
+        // 与 Legado 自家宿主 BaseComposeActivity 对齐：阅读页按 edge-to-edge 布局
+        enableEdgeToEdge()
         val uri: Uri? = intent?.getStringExtra(EXTRA_URI)?.let { runCatching { Uri.parse(it) }.getOrNull() }
             ?: intent?.data
+        Diag.log("legado-host: create uri=$uri")
         if (uri == null) {
+            Diag.log("legado-host: no uri, finish")
             finish()
             return
         }
         lifecycleScope.launch {
             // 走 Legado 自己的本地书导入：建 Book 记录、解析书名作者、入其书架库
             val book = withContext(Dispatchers.IO) {
-                runCatching { LocalBook.importFile(uri) }.getOrNull()
+                runCatching { LocalBook.importFile(uri) }
+                    .onFailure {
+                        Diag.log("legado-host: import failed\n${it.stackTraceToString()}")
+                    }
+                    .getOrNull()
             }
             if (book == null) {
+                // exp.1 这里是静默 finish，用户侧无任何反馈；改为可见报错 + Diag 留痕
+                Toast.makeText(
+                    this@LegadoReaderHostActivity,
+                    "打开失败：导入书籍出错",
+                    Toast.LENGTH_LONG,
+                ).show()
                 finish()
                 return@launch
             }
+            Diag.log("legado-host: import ok bookUrl=${book.bookUrl}")
             setContent {
-                LegadoReaderNav(bookUrl = book.bookUrl)
+                // exp.1 黑屏根因：宿主裸 setContent，没套 Legado 自家宿主
+                // BaseComposeActivity 的 AppTheme——LocalLegadoColorScheme 的
+                // 默认工厂是 error("No ColorScheme provided")，阅读页组合期多处
+                // 读 LegadoTheme.colorScheme，一读即抛、页面永不渲染并拖垮进程。
+                // 这里按 BaseComposeActivity 原样补齐主题环境后再挂导航。
+                val uiConfiguration by appUiConfigurationGateway.configuration
+                    .collectAsStateWithLifecycle(appUiConfigurationGateway.currentConfiguration)
+                AppTheme(configuration = uiConfiguration) {
+                    LegadoReaderNav(bookUrl = book.bookUrl)
+                }
             }
+            Diag.log("legado-host: content set")
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        // 同 BaseComposeActivity：系统日夜翻转时把网关的系统暗色标记同步过来，
+        // 否则宿主长驻时阅读页拿到的仍是旧的日夜判断
+        appUiConfigurationGateway.synchronizeSystemDarkTheme(
+            (newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        )
+        super.onConfigurationChanged(newConfig)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
