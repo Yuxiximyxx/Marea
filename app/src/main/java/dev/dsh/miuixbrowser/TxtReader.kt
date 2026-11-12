@@ -18,7 +18,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +41,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +57,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,9 +68,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -206,8 +214,181 @@ object TxtCodec {
     }.getOrNull()
 
     /** 正文分段：逐行 trim 后去掉空行，一行一段（txt 小说的通行排版） */
-    fun paragraphsOf(text: String): List<String> =
-        text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    fun paragraphsOf(text: String, reflow: Boolean = false): List<String> =
+        if (reflow) {
+            reflowParagraphs(text)
+        } else {
+            text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        }
+
+    private val SENTENCE_END_CHARS =
+        setOf('。', '！', '？', '…', '」', '』', '）', '】', '”', '’', '.', '!', '?')
+
+    private val TITLE_PREFIXES =
+        listOf("序章", "序言", "楔子", "前言", "引言", "尾声", "后记", "终章", "番外")
+
+    /** 疑似章节标题行（重排时强制另起一段）：第X章式标题或特殊标题起头且不太长 */
+    private fun looksLikeTitleLine(line: String): Boolean {
+        if (line.length > 30) return false
+        if (TITLE_PREFIXES.any { line.startsWith(it) }) return true
+        if (line.startsWith("第")) {
+            val head = line.take(12)
+            return head.any { it in "章回节卷部篇集" }
+        }
+        return false
+    }
+
+    /**
+     * 文本重排（fork.30）：治硬换行排版乱的 txt——把被换行拆断的同一段
+     * 合并回一段。口径：空行必断段；原行带缩进（全角空格 / 两个以上 ASCII
+     * 空格 / Tab 起头）必起新段；疑似章节标题行必起新段；上一行以句末标点
+     * 结尾则断段；其余情况与上一行直接拼接（中文正文拼接不加分隔符）。
+     * 连续空行自然被吃掉。
+     */
+    private fun reflowParagraphs(text: String): List<String> {
+        val out = ArrayList<String>()
+        val buf = StringBuilder()
+        fun flush() {
+            if (buf.isNotEmpty()) {
+                out += buf.toString()
+                buf.setLength(0)
+            }
+        }
+        for (raw in text.split('\n')) {
+            val line = raw.trim()
+            if (line.isEmpty()) {
+                flush()
+                continue
+            }
+            if (buf.isEmpty()) {
+                buf.append(line)
+                continue
+            }
+            val startsNew = raw.startsWith('　') || raw.startsWith("  ") ||
+                raw.startsWith('\t') || looksLikeTitleLine(line)
+            if (startsNew || buf[buf.length - 1] in SENTENCE_END_CHARS) {
+                flush()
+                buf.append(line)
+            } else {
+                buf.append(line)
+            }
+        }
+        flush()
+        return out
+    }
+}
+
+/**
+ * 简繁转换（fork.30）：用系统 android.icu.text.Transliterator 的
+ * Traditional-Simplified / Simplified-Traditional 规则（ICU 系统数据，
+ * 覆盖常用与非常用汉字转换表，无需自带词典）。在解码后、切章前对全文
+ * 作用一次，目录 / 搜索 / 进度锚点都建立在转换后文本上、口径自洽。
+ * 转换失败（规则不可用等）静默回退原文。
+ */
+object TxtConvert {
+
+    const val OFF = "off"
+    const val T2S = "t2s"
+    const val S2T = "s2t"
+
+    fun convert(text: String, mode: String): String {
+        if (mode == OFF || text.isEmpty()) return text
+        val id = if (mode == T2S) "Traditional-Simplified" else "Simplified-Traditional"
+        return runCatching {
+            val transliterator = android.icu.text.Transliterator.getInstance(id)
+            // 分块转换，避免整本大书在 ICU 内部一次性处理时内存抖动；
+            // 按行切块、块边界落在换行后，简繁映射逐字进行、不受块界影响
+            val out = StringBuilder(text.length)
+            var chunk = StringBuilder()
+            for (line in text.split('\n')) {
+                chunk.append(line).append('\n')
+                if (chunk.length >= 32_768) {
+                    out.append(transliterator.transliterate(chunk.toString()))
+                    chunk = StringBuilder()
+                }
+            }
+            if (chunk.isNotEmpty()) out.append(transliterator.transliterate(chunk.toString()))
+            // split/join 往返会在文末多出一个换行，去掉以与原文形态一致
+            out.toString().removeSuffix("\n")
+        }.getOrNull() ?: text
+    }
+}
+
+/**
+ * 自定义字体（fork.30）：从系统文件选择器导入 ttf/otf，复制进应用
+ * 私有目录 files/txt_fonts 后长期持有；列表管理与删除都在这里。
+ * 渲染与翻页测量共用同一 Typeface（按字重烘焙，见 TxtFeatureState 的
+ * 字体解析），保证分页量高与实际排版一致。
+ */
+object TxtFonts {
+
+    data class Entry(val fileName: String, val label: String)
+
+    private fun dir(context: Context): File =
+        File(context.filesDir, "txt_fonts").apply { mkdirs() }
+
+    fun list(context: Context): List<Entry> = runCatching {
+        dir(context).listFiles()
+            ?.filter { it.isFile && (it.extension.equals("ttf", true) || it.extension.equals("otf", true)) }
+            ?.sortedBy { it.name.lowercase() }
+            ?.map { Entry(it.name, it.nameWithoutExtension) }
+            ?: emptyList()
+    }.getOrDefault(emptyList())
+
+    /** 导入字体文件到私有目录，返回落盘文件名；同名覆盖 */
+    fun importFont(context: Context, uri: Uri): String? = runCatching {
+        val display = queryDisplayName(context, uri) ?: "font-${System.currentTimeMillis()}.ttf"
+        val safe = display.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .takeIf { it.endsWith(".ttf", true) || it.endsWith(".otf", true) }
+            ?: "$display.ttf"
+        val target = File(dir(context), safe)
+        val stream = if (uri.scheme == ContentResolver.SCHEME_FILE) {
+            File(uri.path ?: return null).inputStream()
+        } else {
+            context.contentResolver.openInputStream(uri) ?: return null
+        }
+        stream.use { input -> target.outputStream().use { input.copyTo(it) } }
+        // 校验能被系统解析成字体（坏文件 createFromFile 会抛异常），坏文件不留
+        val parsed = runCatching { android.graphics.Typeface.createFromFile(target) }.getOrNull()
+        if (parsed == null) {
+            target.delete()
+            return null
+        }
+        target.name
+    }.getOrNull()
+
+    fun delete(context: Context, fileName: String) {
+        runCatching { File(dir(context), fileName).delete() }
+        baseCache.remove(fileName)
+    }
+
+    private val baseCache = HashMap<String, android.graphics.Typeface>()
+
+    /** 按文件取基础 Typeface（缓存）；[weight] 经 Typeface.create 烘焙进字重 */
+    fun typeface(context: Context, fileName: String, weight: Int): android.graphics.Typeface? {
+        val base = baseCache.getOrPut(fileName) {
+            runCatching { android.graphics.Typeface.createFromFile(File(dir(context), fileName)) }
+                .getOrNull() ?: return null
+        }
+        return runCatching {
+            android.graphics.Typeface.create(base, weight.coerceIn(100, 1000), false)
+        }.getOrDefault(base)
+    }
+
+    private fun queryDisplayName(context: Context, uri: Uri): String? {
+        if (uri.scheme == ContentResolver.SCHEME_CONTENT) {
+            runCatching {
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (idx >= 0) return cursor.getString(idx)?.takeIf { it.isNotBlank() }
+                        }
+                    }
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+    }
 }
 
 data class TxtChapter(val title: String, val paragraphIndex: Int)
@@ -524,6 +705,7 @@ object TxtReaderStore {
                 .putString("p_$key", "$paragraph|$offsetPx|$charOffset|${encoding.orEmpty()}|$total")
                 .apply()
         }
+        markProgressTs(context, space, key)
     }
 
     private const val KEY_BRIGHTNESS = "brightness"
@@ -554,6 +736,7 @@ object TxtReaderStore {
             if (ruleId == null) editor.remove("r_$key") else editor.putLong("r_$key", ruleId)
             editor.apply()
         }
+        markTocTs(context, space, key)
     }
 
     fun fontSize(context: Context): Float = runCatching {
@@ -629,6 +812,210 @@ object TxtReaderStore {
 
     fun setBgPreset(context: Context, value: String) {
         runCatching { uiPrefs(context).edit().putString(KEY_BG_PRESET, value).apply() }
+    }
+
+    /* ---------------- fork.30 新增设置与数据 ---------------- */
+
+    private const val KEY_CONVERT = "convert_mode"
+    private const val KEY_REFLOW = "reflow"
+    private const val KEY_FONT_FILE = "font_file"
+    private const val KEY_FONT_WEIGHT = "font_weight"
+    private const val KEY_INDENT = "indent_chars"
+    private const val KEY_JUSTIFY = "justify"
+    private const val KEY_PAGE_ANIM = "page_anim"
+    private const val KEY_TOC_REVERSED = "toc_reversed"
+    private const val KEY_FOOTER_CHAPTER = "footer_chapter"
+    private const val KEY_FOOTER_PAGE = "footer_page"
+    private const val KEY_FOOTER_PERCENT = "footer_percent"
+    private const val KEY_FOOTER_TIME = "footer_time"
+    private const val KEY_FOOTER_BATTERY = "footer_battery"
+    private const val KEY_SHELF_SORT = "shelf_sort"
+
+    const val ANIM_SLIDE = "slide"
+    const val ANIM_COVER = "cover"
+    const val ANIM_VERTICAL = "vertical"
+    const val ANIM_CURL = "curl"
+    const val ANIM_NONE = "none"
+
+    const val DEFAULT_FONT_WEIGHT = 400
+
+    /** 简繁转换模式：TxtConvert.OFF / T2S / S2T，全局一份 */
+    fun convertMode(context: Context): String = runCatching {
+        uiPrefs(context).getString(KEY_CONVERT, TxtConvert.OFF) ?: TxtConvert.OFF
+    }.getOrDefault(TxtConvert.OFF)
+
+    fun setConvertMode(context: Context, value: String) {
+        runCatching { uiPrefs(context).edit().putString(KEY_CONVERT, value).apply() }
+    }
+
+    /** 文本重排开关（默认关） */
+    fun reflow(context: Context): Boolean = runCatching {
+        uiPrefs(context).getBoolean(KEY_REFLOW, false)
+    }.getOrDefault(false)
+
+    fun setReflow(context: Context, value: Boolean) {
+        runCatching { uiPrefs(context).edit().putBoolean(KEY_REFLOW, value).apply() }
+    }
+
+    /** 自定义字体文件名（files/txt_fonts 下），空 = 系统默认字体 */
+    fun fontFile(context: Context): String = runCatching {
+        uiPrefs(context).getString(KEY_FONT_FILE, "") ?: ""
+    }.getOrDefault("")
+
+    fun setFontFile(context: Context, value: String) {
+        runCatching { uiPrefs(context).edit().putString(KEY_FONT_FILE, value).apply() }
+    }
+
+    /** 字重 100..900（默认 400） */
+    fun fontWeight(context: Context): Int = runCatching {
+        uiPrefs(context).getInt(KEY_FONT_WEIGHT, DEFAULT_FONT_WEIGHT)
+    }.getOrDefault(DEFAULT_FONT_WEIGHT)
+
+    fun setFontWeight(context: Context, value: Int) {
+        runCatching { uiPrefs(context).edit().putInt(KEY_FONT_WEIGHT, value).apply() }
+    }
+
+    /** 首行缩进字数：0 / 1 / 2（全角空格宽） */
+    fun indentChars(context: Context): Int = runCatching {
+        uiPrefs(context).getInt(KEY_INDENT, 0)
+    }.getOrDefault(0)
+
+    fun setIndentChars(context: Context, value: Int) {
+        runCatching { uiPrefs(context).edit().putInt(KEY_INDENT, value).apply() }
+    }
+
+    /** 两端对齐开关（关 = 左对齐） */
+    fun justify(context: Context): Boolean = runCatching {
+        uiPrefs(context).getBoolean(KEY_JUSTIFY, false)
+    }.getOrDefault(false)
+
+    fun setJustify(context: Context, value: Boolean) {
+        runCatching { uiPrefs(context).edit().putBoolean(KEY_JUSTIFY, value).apply() }
+    }
+
+    /** 翻页动画：ANIM_* 之一 */
+    fun pageAnim(context: Context): String = runCatching {
+        uiPrefs(context).getString(KEY_PAGE_ANIM, ANIM_SLIDE) ?: ANIM_SLIDE
+    }.getOrDefault(ANIM_SLIDE)
+
+    fun setPageAnim(context: Context, value: String) {
+        runCatching { uiPrefs(context).edit().putString(KEY_PAGE_ANIM, value).apply() }
+    }
+
+    /** 目录倒序显示偏好 */
+    fun tocReversed(context: Context): Boolean = runCatching {
+        uiPrefs(context).getBoolean(KEY_TOC_REVERSED, false)
+    }.getOrDefault(false)
+
+    fun setTocReversed(context: Context, value: Boolean) {
+        runCatching { uiPrefs(context).edit().putBoolean(KEY_TOC_REVERSED, value).apply() }
+    }
+
+    /** 底部信息行元素开关：章节名默认开、页码/百分比默认开、时间/电量默认关 */
+    fun footerShow(context: Context, key: String): Boolean {
+        val (prefKey, default) = when (key) {
+            "chapter" -> KEY_FOOTER_CHAPTER to true
+            "page" -> KEY_FOOTER_PAGE to true
+            "percent" -> KEY_FOOTER_PERCENT to true
+            "time" -> KEY_FOOTER_TIME to false
+            "battery" -> KEY_FOOTER_BATTERY to false
+            else -> return true
+        }
+        return runCatching { uiPrefs(context).getBoolean(prefKey, default) }.getOrDefault(default)
+    }
+
+    fun setFooterShow(context: Context, key: String, value: Boolean) {
+        val prefKey = when (key) {
+            "chapter" -> KEY_FOOTER_CHAPTER
+            "page" -> KEY_FOOTER_PAGE
+            "percent" -> KEY_FOOTER_PERCENT
+            "time" -> KEY_FOOTER_TIME
+            "battery" -> KEY_FOOTER_BATTERY
+            else -> return
+        }
+        runCatching { uiPrefs(context).edit().putBoolean(prefKey, value).apply() }
+    }
+
+    /** 书架排序口径：recent / name / added */
+    fun shelfSort(context: Context): String = runCatching {
+        uiPrefs(context).getString(KEY_SHELF_SORT, "recent") ?: "recent"
+    }.getOrDefault("recent")
+
+    fun setShelfSort(context: Context, value: String) {
+        runCatching { uiPrefs(context).edit().putString(KEY_SHELF_SORT, value).apply() }
+    }
+
+    /**
+     * 每本书累计阅读秒数（fork.30 统计）：与进度同文件、同空间口径，
+     * 键 t_<文件标识>。阅读器只在前台停留期间累计（进出/暂停结算）。
+     */
+    fun readSeconds(context: Context, space: Int, key: String): Long = runCatching {
+        progressPrefs(context, space).getLong("t_$key", 0L)
+    }.getOrDefault(0L)
+
+    fun addReadSeconds(context: Context, space: Int, key: String, seconds: Long) {
+        if (seconds <= 0) return
+        runCatching {
+            val prefs = progressPrefs(context, space)
+            prefs.edit().putLong("t_$key", prefs.getLong("t_$key", 0L) + seconds).apply()
+        }
+    }
+
+    /* -------- WebDAV 同步用的记录时间戳（fork.30）：独立小 prefs -------- */
+
+    private fun syncMetaPrefs(context: Context) =
+        context.getSharedPreferences("marea_txt_sync_meta", Context.MODE_PRIVATE)
+
+    fun markProgressTs(context: Context, space: Int, key: String, ts: Long = System.currentTimeMillis()) {
+        runCatching { syncMetaPrefs(context).edit().putLong("pt_${space}_$key", ts).apply() }
+    }
+
+    fun markTocTs(context: Context, space: Int, key: String, ts: Long = System.currentTimeMillis()) {
+        runCatching { syncMetaPrefs(context).edit().putLong("tt_${space}_$key", ts).apply() }
+    }
+
+    fun progressTs(context: Context, space: Int, key: String): Long = runCatching {
+        syncMetaPrefs(context).getLong("pt_${space}_$key", 0L)
+    }.getOrDefault(0L)
+
+    fun tocTs(context: Context, space: Int, key: String): Long = runCatching {
+        syncMetaPrefs(context).getLong("tt_${space}_$key", 0L)
+    }.getOrDefault(0L)
+
+    /** 枚举某空间下全部进度键（同步快照用）：返回文件标识列表 */
+    fun progressKeys(context: Context, space: Int): List<String> = runCatching {
+        progressPrefs(context, space).all.keys
+            .filter { it.startsWith("p_") }
+            .map { it.removePrefix("p_") }
+    }.getOrDefault(emptyList())
+
+    /** 枚举某空间下全部「本书目录规则选择」键（同步快照用） */
+    fun tocChoiceKeys(context: Context, space: Int): List<String> = runCatching {
+        progressPrefs(context, space).all.keys
+            .filter { it.startsWith("r_") }
+            .map { it.removePrefix("r_") }
+    }.getOrDefault(emptyList())
+
+    /** 同步合入远端进度时用：写进度并把记录时间戳钉为远端时间（不冒充本地新改动） */
+    fun saveProgressFromSync(
+        context: Context,
+        space: Int,
+        key: String,
+        paragraph: Int,
+        offsetPx: Int,
+        charOffset: Int,
+        encoding: String?,
+        total: Int,
+        ts: Long,
+    ) {
+        saveProgress(context, space, key, paragraph, offsetPx, charOffset, encoding, total)
+        markProgressTs(context, space, key, ts)
+    }
+
+    /** 同步合入远端规则选择时用：写选择并把时间戳钉为远端时间 */
+    fun saveTocRuleChoiceFromSync(context: Context, space: Int, key: String, ruleId: Long?, ts: Long) {
+        saveTocRuleChoice(context, space, key, ruleId)
+        markTocTs(context, space, key, ts)
     }
 }
 
@@ -793,6 +1180,49 @@ internal fun rememberTxtReaderPalette(preset: String): TxtReaderPalette = when (
     }
 }
 
+/**
+ * 生效中的字体规格（fork.30）：正文渲染与翻页 TextMeasurer 量测必须用
+ * 同一个 [family] + [weight]，否则分页与排版必然错位——所有正文入口
+ * 都只从这里取。自定义字体的字重已烘焙进 Typeface（Typeface.create 的
+ * weight 参数），故 weight 归 Normal；系统默认字体走 Compose 的
+ * FontWeight 合成，两条路都在量测与渲染间同口径。
+ */
+internal class TxtFontSpec(
+    val family: androidx.compose.ui.text.font.FontFamily,
+    val weight: FontWeight,
+)
+
+@Composable
+internal fun rememberTxtFontSpec(fontFile: String, fontWeightValue: Int): TxtFontSpec {
+    val context = LocalContext.current
+    return remember(fontFile, fontWeightValue, context) {
+        if (fontFile.isNotBlank()) {
+            val typeface = TxtFonts.typeface(context, fontFile, fontWeightValue)
+            if (typeface != null) {
+                return@remember TxtFontSpec(
+                    androidx.compose.ui.text.font.FontFamily(typeface),
+                    FontWeight.Normal,
+                )
+            }
+        }
+        TxtFontSpec(
+            androidx.compose.ui.text.font.FontFamily.Default,
+            FontWeight(fontWeightValue.coerceIn(100, 900)),
+        )
+    }
+}
+
+/** 当前电量百分比（fork.30 页脚元素）：读 ACTION_BATTERY_CHANGED 的 sticky 意图 */
+private fun txtBatteryPercent(context: Context): Int? = runCatching {
+    val intent = context.registerReceiver(
+        null,
+        android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED),
+    ) ?: return null
+    val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+    val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+    if (level < 0 || scale <= 0) null else level * 100 / scale
+}.getOrNull()
+
 private fun readAllBytes(context: Context, uri: Uri): ByteArray {
     val stream = if (uri.scheme == ContentResolver.SCHEME_FILE) {
         File(uri.path ?: throw IllegalStateException("bad file uri")).inputStream()
@@ -826,11 +1256,76 @@ private data class TxtPageInfo(
     val chapterTotal: Int,
 )
 
+/** 一段文本量出的逐行信息：行首/行末字符偏移（原段坐标）与行高 */
+private class TxtParaLines(
+    val starts: IntArray,
+    val ends: IntArray,
+    val heights: FloatArray,
+) {
+    val count: Int get() = starts.size
+}
+
+/**
+ * 量一段文本的逐行断行。首行缩进（fork.30）的处理：缩进是呈现层的事，
+ * 不改文本——首行单独按「内容宽 − 缩进宽」量、余下文字按全宽量，
+ * 两次量测的行首/行末都换算回原段字符坐标。这样（段落, 字符偏移）
+ * 锚点与进度口径完全不受缩进影响，渲染时只在段首切片前补全角空格。
+ */
+private fun measureTxtParaLines(
+    measurer: androidx.compose.ui.text.TextMeasurer,
+    text: String,
+    style: TextStyle,
+    widthPx: Int,
+    indentPx: Int,
+): TxtParaLines {
+    fun linesOf(layout: androidx.compose.ui.text.TextLayoutResult, base: Int): TxtParaLines {
+        val n = layout.lineCount
+        return TxtParaLines(
+            IntArray(n) { base + layout.getLineStart(it) },
+            IntArray(n) { base + layout.getLineEnd(it, true) },
+            FloatArray(n) { layout.getLineBottom(it) - layout.getLineTop(it) },
+        )
+    }
+    if (indentPx <= 0 || text.isEmpty()) {
+        return linesOf(
+            measurer.measure(text, style, Constraints(maxWidth = widthPx)),
+            0,
+        )
+    }
+    val headLayout = measurer.measure(
+        text, style, Constraints(maxWidth = (widthPx - indentPx).coerceAtLeast(1)),
+    )
+    val firstEnd = headLayout.getLineEnd(0, true)
+    if (firstEnd <= 0 || firstEnd >= text.length) {
+        return if (firstEnd <= 0) {
+            linesOf(measurer.measure(text, style, Constraints(maxWidth = widthPx)), 0)
+        } else {
+            TxtParaLines(
+                intArrayOf(0),
+                intArrayOf(firstEnd),
+                floatArrayOf(headLayout.getLineBottom(0) - headLayout.getLineTop(0)),
+            )
+        }
+    }
+    val firstHeight = headLayout.getLineBottom(0) - headLayout.getLineTop(0)
+    val rest = linesOf(
+        measurer.measure(text.substring(firstEnd), style, Constraints(maxWidth = widthPx)),
+        firstEnd,
+    )
+    return TxtParaLines(
+        intArrayOf(0) + rest.starts,
+        intArrayOf(firstEnd) + rest.ends,
+        floatArrayOf(firstHeight) + rest.heights,
+    )
+}
+
 /**
  * 用 TextMeasurer 按当前字号/行高逐段逐行量高，贪心装页；段落可跨页拆分，
  * 拆分点用行首字符索引表达，保证页与段落/字符偏移互相可定位。
  * 段间距与滚动模式同口径（fork.29 排版设置）：段后为段间距、章节段前
  * 为段间距×2+4dp（页首章节不加前距）；行距倍数同样来自排版设置。
+ * fork.30 起字体 / 字重 / 对齐与首行缩进一并进入量测，量测样式与渲染
+ * 样式严格同一份，否则分页必与实际排版错位。
  */
 private fun paginateTxt(
     measurer: androidx.compose.ui.text.TextMeasurer,
@@ -842,9 +1337,31 @@ private fun paginateTxt(
     paragraphBottomPx: Float,
     chapterTopPx: Float,
     lineHeightFactor: Float,
+    fontFamily: androidx.compose.ui.text.font.FontFamily,
+    fontWeight: FontWeight,
+    indentChars: Int,
+    justify: Boolean,
 ): List<TxtPage> {
     if (paragraphs.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
         return listOf(TxtPage(emptyList()))
+    }
+    val align = if (justify) {
+        androidx.compose.ui.text.style.TextAlign.Justify
+    } else {
+        androidx.compose.ui.text.style.TextAlign.Left
+    }
+    val bodyStyle = TextStyle(
+        fontSize = fontSizeSp.sp,
+        lineHeight = (fontSizeSp * lineHeightFactor).sp,
+        fontFamily = fontFamily,
+        fontWeight = fontWeight,
+        textAlign = align,
+    )
+    // 缩进宽度按正文样式实测（全角空格 × 缩进字数），不拍脑袋估
+    val indentPx = if (indentChars > 0) {
+        measurer.measure("　".repeat(indentChars), bodyStyle).size.width
+    } else {
+        0
     }
     val pages = ArrayList<TxtPage>()
     var pageSlices = ArrayList<TxtSlice>()
@@ -861,13 +1378,22 @@ private fun paginateTxt(
     for (i in paragraphs.indices) {
         val chapter = i in chapterStarts
         val size = if (chapter) fontSizeSp + 2 else fontSizeSp
-        val style = TextStyle(fontSize = size.sp, lineHeight = (size * lineHeightFactor).sp)
-        val layout = measurer.measure(
-            text = paragraphs[i],
-            style = style,
-            constraints = Constraints(maxWidth = contentWidthPx),
+        val style = if (chapter) {
+            TextStyle(
+                fontSize = size.sp,
+                lineHeight = (size * lineHeightFactor).sp,
+                fontFamily = fontFamily,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = align,
+            )
+        } else {
+            bodyStyle
+        }
+        val lines = measureTxtParaLines(
+            measurer, paragraphs[i], style, contentWidthPx,
+            if (chapter) 0 else indentPx,
         )
-        val totalLines = layout.lineCount
+        val totalLines = lines.count
         var line = 0
         var firstChunk = true
         while (line < totalLines) {
@@ -878,7 +1404,7 @@ private fun paginateTxt(
             var take = 0
             var h = 0f
             while (line + take < totalLines) {
-                val lh = layout.getLineBottom(line + take) - layout.getLineTop(line + take)
+                val lh = lines.heights[line + take]
                 if (take > 0 && h + lh > avail) break
                 h += lh
                 take++
@@ -888,8 +1414,8 @@ private fun paginateTxt(
                 flushPage()
                 continue
             }
-            val startChar = layout.getLineStart(line)
-            val endChar = layout.getLineEnd(line + take - 1, true)
+            val startChar = lines.starts[line]
+            val endChar = lines.ends[line + take - 1]
             pageSlices += TxtSlice(i, paragraphs[i].substring(startChar, endChar), chapter, startChar)
             usedPx += h
             line += take
@@ -970,6 +1496,12 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     var marginDp by remember { mutableStateOf(TxtReaderStore.margin(context)) }
     var readerBg by remember { mutableStateOf(TxtReaderStore.bgPreset(context)) }
     val settingsNav = remember { TxtReaderSettingsNav() }
+    // fork.30 功能批的统一状态（与设置组件共用同一份，写同一处存储）
+    val features = remember { TxtFeatureState(appContext) }
+    val fontSpec = rememberTxtFontSpec(features.fontFile, features.fontWeight)
+    var selectionPara by remember { mutableStateOf<Int?>(null) }
+    var searchInitial by remember { mutableStateOf("") }
+    var tocQuery by remember { mutableStateOf("") }
 
     fun applyRules(newRules: List<TxtTocRule>) {
         tocRules = newRules
@@ -996,6 +1528,8 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 ruleChoice = TxtReaderStore.loadTocRuleChoice(appContext, space, key)
                 // 打开过即入架（fork.27 书架），空间与进度同口径分开
                 TxtBookshelfStore.upsert(appContext, space, key, uri.toString(), name, bytes.size)
+                // WebDAV 静默同步（fork.30）：配过服务器才会真正跑，失败静默
+                scope.launch { TxtSync.syncIfConfigured(appContext) }
                 Diag.log("TxtReader: loaded ${bytes.size} bytes, progress=${progress != null}")
             }
             .onFailure {
@@ -1005,12 +1539,17 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     }
 
     // 解码 + 按当前规则切章（编码或规则变化时重跑）
-    LaunchedEffect(rawBytes, encodingChoice, tocRules, ruleChoice) {
+    LaunchedEffect(rawBytes, encodingChoice, tocRules, ruleChoice, features.convertMode, features.reflow) {
         val bytes = rawBytes ?: return@LaunchedEffect
         val decoded = withContext(Dispatchers.Default) {
             TxtCodec.decode(bytes, encodingChoice)
         }
-        val paragraphs = TxtCodec.paragraphsOf(decoded.text)
+        // fork.30：简繁转换在解码后、切章前作用于全文（目录 / 搜索 / 进度
+        // 锚点都建立在转换后文本上）；文本重排在分段时完成，同在切章之前
+        val paragraphs = withContext(Dispatchers.Default) {
+            val converted = TxtConvert.convert(decoded.text, features.convertMode)
+            TxtCodec.paragraphsOf(converted, features.reflow)
+        }
         // 本书指定了单条规则时只用它切章（本书专用，忽略其全局启停）；
         // 未指定（自动）沿用全局规则列表顺序的现行口径
         val chosenRule = ruleChoice?.let { id -> tocRules.firstOrNull { it.id == id } }
@@ -1060,6 +1599,40 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
         }
     }
 
+    // 阅读时长统计（fork.30）：只计阅读器 Activity 处于 RESUMED 的时间，
+    // ON_PAUSE / 销毁时结算进本书累计秒数——挂后台、跳系统界面都不计入
+    val readerActivity = context as? ComponentActivity
+    DisposableEffect(readerActivity, fileKey) {
+        val lifecycle = readerActivity?.lifecycle
+        val keySnapshot = fileKey
+        var segmentStart = 0L
+        fun settle() {
+            if (segmentStart > 0L) {
+                val secs = (android.os.SystemClock.elapsedRealtime() - segmentStart) / 1000
+                segmentStart = 0L
+                if (keySnapshot != null && secs > 0) {
+                    TxtReaderStore.addReadSeconds(appContext, space, keySnapshot, secs)
+                }
+            }
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME ->
+                    segmentStart = android.os.SystemClock.elapsedRealtime()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> settle()
+                else -> Unit
+            }
+        }
+        lifecycle?.addObserver(observer)
+        if (lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true) {
+            segmentStart = android.os.SystemClock.elapsedRealtime()
+        }
+        onDispose {
+            settle()
+            lifecycle?.removeObserver(observer)
+        }
+    }
+
     // fork.28 全屏口径纠正：系统状态栏与导航条全程保持显示，阅读器从不
     // 隐藏它们；「全屏」只表示隐藏应用自己的顶/底栏、正文全幅铺满，
     // 内容靠 windowInsetsPadding 给系统栏让位（见下方布局）。
@@ -1087,16 +1660,39 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
         Locale.US, "%.1f%%",
         if (total > 0) anchorPara * 100f / total else 0f,
     )
-    // 底部信息行右侧（Legado 式）：翻页模式 = 本章第 x/y 页 + 全书百分比
-    val infoRight = when {
-        currentBook == null -> ""
-        readMode == TxtReaderStore.MODE_PAGE && pageInfo != null ->
-            if (pageInfo!!.chapterTotal > 0) {
-                "${pageInfo!!.chapterCurrent}/${pageInfo!!.chapterTotal}  $percentText"
-            } else {
-                "${pageInfo!!.current}/${pageInfo!!.total}  $percentText"
+    // 页脚时间（fork.30 页眉页脚自定义）：开了时间元素才需要时钟，每 15 秒走一格
+    var clockMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            clockMs = System.currentTimeMillis()
+        }
+    }
+    val batteryPct = remember(clockMs) { txtBatteryPercent(appContext) }
+    // 底部信息行右侧（Legado 式 + fork.30 元素开关）：关掉的元素不出现、
+    // 不占位；翻页模式页码 = 本章第 x/y 页（无章节时全书页码）
+    val infoRight = if (currentBook == null) {
+        ""
+    } else {
+        buildList {
+            if (features.footerPage && readMode == TxtReaderStore.MODE_PAGE && pageInfo != null) {
+                add(
+                    if (pageInfo!!.chapterTotal > 0) {
+                        "${pageInfo!!.chapterCurrent}/${pageInfo!!.chapterTotal}"
+                    } else {
+                        "${pageInfo!!.current}/${pageInfo!!.total}"
+                    },
+                )
             }
-        else -> percentText
+            if (features.footerPercent) add(percentText)
+            if (features.footerTime) {
+                add(
+                    java.text.SimpleDateFormat("HH:mm", Locale.getDefault())
+                        .format(java.util.Date(clockMs)),
+                )
+            }
+            if (features.footerBattery && batteryPct != null) add("$batteryPct%")
+        }.joinToString("  ")
     }
 
     // 阅读器玻璃（fork.29）：与浏览器同款接法——正文录进双采样层（MIUIX 玻璃与
@@ -1182,7 +1778,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 enabled = chaptersNow.isNotEmpty(),
             )
             Text(
-                text = currentChapter ?: "",
+                text = if (features.footerChapter) currentChapter ?: "" else "",
                 fontSize = 12.sp,
                 color = palette.sub,
                 maxLines = 1,
@@ -1222,7 +1818,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = currentChapter ?: name,
+                text = if (features.footerChapter) currentChapter ?: name else "",
                 fontSize = 12.sp,
                 color = palette.sub,
                 maxLines = 1,
@@ -1301,6 +1897,10 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 paraSpacing = paraSpacing,
                                 marginDp = marginDp,
                                 palette = palette,
+                                fontSpec = fontSpec,
+                                indentChars = features.indentChars,
+                                justify = features.justify,
+                                pageAnim = features.pageAnim,
                                 anchorPara = anchorPara,
                                 anchorChar = anchorChar,
                                 jumpPara = jumpPara,
@@ -1312,6 +1912,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 },
                                 onPageInfo = { info -> pageInfo = info },
                                 onTapCenter = { panelVisible = !panelVisible },
+                                onLongPressPara = { para -> selectionPara = para },
                                 modifier = contentModifier,
                             )
                         } else {
@@ -1322,6 +1923,9 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 paraSpacing = paraSpacing,
                                 marginDp = marginDp,
                                 textColor = palette.text,
+                                fontSpec = fontSpec,
+                                indentChars = features.indentChars,
+                                justify = features.justify,
                                 initialPara = anchorPara,
                                 initialPx = when {
                                     anchorChar > 0 -> 0
@@ -1332,6 +1936,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 jumpSignal = jumpSignal,
                                 tapToggleEnabled = true,
                                 onToggleMenu = { panelVisible = !panelVisible },
+                                onLongPressPara = { para -> selectionPara = para },
                                 onPosition = { p, px ->
                                     anchorPara = p
                                     anchorChar = 0
@@ -1442,6 +2047,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 },
                 onOpenSearch = {
                     panelVisible = false
+                    searchInitial = ""
                     showSearch = true
                 },
                 onOpenSettings = {
@@ -1538,6 +2144,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                             },
                             onTocRulesChange = ::applyRules,
                         ),
+                        features = features,
                         nav = settingsNav,
                         modifier = if (settingsNav.section == null) {
                             Modifier.heightIn(max = 620.dp)
@@ -1563,6 +2170,34 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = { showToc = false })
                     },
                 )
+                if (currentBook.chapters.isNotEmpty()) {
+                    TextField(
+                        value = tocQuery,
+                        onValueChange = { tocQuery = it },
+                        label = "搜索章节",
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "共 ${currentBook.chapters.size} 章",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            text = if (features.tocReversed) "倒序 ✓" else "倒序",
+                            onClick = { features.setTocReversed(!features.tocReversed) },
+                        )
+                    }
+                }
                 if (currentBook.chapters.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
@@ -1572,10 +2207,26 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         )
                     }
                 } else {
+                    val shownChapters = currentBook.chapters
+                        .filter {
+                            tocQuery.isBlank() ||
+                                it.title.contains(tocQuery.trim(), ignoreCase = true)
+                        }
+                        .let { if (features.tocReversed) it.reversed() else it }
+                    if (shownChapters.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "没有匹配的章节",
+                                fontSize = 14.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(currentBook.chapters.size) { index ->
-                            val chapter = currentBook.chapters[index]
-                            val isCurrent = chapter.title == currentChapter
+                        items(shownChapters.size) { index ->
+                            val chapter = shownChapters[index]
+                            val isCurrent = chapter.paragraphIndex ==
+                                chaptersNow.getOrNull(chapterIndex)?.paragraphIndex
                             Text(
                                 text = chapter.title,
                                 fontSize = 14.sp,
@@ -1605,12 +2256,32 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 TxtSearchOverlay(
                     book = searchBook,
                     bookName = name,
+                    initialQuery = searchInitial,
                     onJump = { para ->
                         showSearch = false
                         jumpPara = para
                         jumpSignal++
                     },
                     onDismiss = { showSearch = false },
+                )
+            }
+        }
+
+        // 长按选词层（fork.30）：长按正文段落呼出，两种阅读模式共用
+        selectionPara?.let { para ->
+            val selText = currentBook?.paragraphs?.getOrNull(para)
+            if (selText != null) {
+                TxtSelectionOverlay(
+                    text = selText,
+                    glassBackdrop = readerBackdrop,
+                    glassLiquid = liquidBackdrop,
+                    glassBlurEnabled = glassBlurEnabled,
+                    onSearchWord = { word ->
+                        selectionPara = null
+                        searchInitial = word
+                        showSearch = true
+                    },
+                    onDismiss = { selectionPara = null },
                 )
             }
         }
@@ -2252,6 +2923,121 @@ internal fun TxtBookRulePickerContent(
     }
 }
 
+
+/**
+ * 长按选词层（fork.30）：长按正文段落呼出，该段以只读文本框呈现——
+ * 系统选词手柄可拖选，选区从 TextFieldValue 读出。动作三项：复制
+ * （未选中时作用于整段）、按选中词跳全文搜索、分享选中文本。
+ * 玻璃走阅读器既有 TxtSheetCard + glassBar 采样，与设置弹层同款。
+ */
+@Composable
+private fun TxtSelectionOverlay(
+    text: String,
+    glassBackdrop: LayerBackdrop?,
+    glassLiquid: com.kyant.backdrop.Backdrop?,
+    glassBlurEnabled: Boolean,
+    onSearchWord: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var fieldValue by remember(text) {
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(text))
+    }
+    val selection = fieldValue.selection
+    val selected = if (selection.collapsed) {
+        ""
+    } else {
+        text.substring(
+            selection.start.coerceIn(0, text.length),
+            selection.end.coerceIn(0, text.length),
+        )
+    }
+    val actionText = selected.ifEmpty { text }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .clickable { onDismiss() },
+    ) {
+        TxtSheetCard(
+            glassBackdrop = glassBackdrop,
+            glassLiquid = glassLiquid,
+            glassBlurEnabled = glassBlurEnabled,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(12.dp)
+                .clickable(enabled = false) {},
+        ) {
+            Column {
+                Text(
+                    text = "选择文字",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(10.dp))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = fieldValue,
+                    onValueChange = { fieldValue = it },
+                    readOnly = true,
+                    textStyle = TextStyle(
+                        fontSize = 15.sp,
+                        lineHeight = 24.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (selected.isEmpty()) {
+                        "拖动选词手柄选中文字；未选中时「复制 / 分享」作用于整段"
+                    } else {
+                        "已选中 ${selected.length} 字"
+                    },
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    TextButton(
+                        text = "复制",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(actionText))
+                            Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "搜全书",
+                        enabled = selected.isNotBlank(),
+                        onClick = { onSearchWord(selected.trim()) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "分享",
+                        onClick = {
+                            runCatching {
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, actionText)
+                                }
+                                context.startActivity(Intent.createChooser(send, null))
+                            }
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
 private data class TxtSearchHit(val paragraph: Int, val chapter: String?, val snippet: String)
 
 /**
@@ -2263,10 +3049,11 @@ private data class TxtSearchHit(val paragraph: Int, val chapter: String?, val sn
 private fun TxtSearchOverlay(
     book: TxtBook,
     bookName: String,
+    initialQuery: String = "",
     onJump: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery) }
     var hits by remember { mutableStateOf<List<TxtSearchHit>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     LaunchedEffect(query, book) {
@@ -2531,12 +3318,16 @@ private fun TxtScrollContent(
     paraSpacing: Float,
     marginDp: Float,
     textColor: Color,
+    fontSpec: TxtFontSpec,
+    indentChars: Int,
+    justify: Boolean,
     initialPara: Int,
     initialPx: Int,
     jumpPara: Int,
     jumpSignal: Int,
     tapToggleEnabled: Boolean,
     onToggleMenu: () -> Unit,
+    onLongPressPara: (Int) -> Unit,
     onPosition: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2563,39 +3354,56 @@ private fun TxtScrollContent(
                 if (restored) onPosition(index, offset)
             }
     }
+    val align = if (justify) {
+        androidx.compose.ui.text.style.TextAlign.Justify
+    } else {
+        androidx.compose.ui.text.style.TextAlign.Left
+    }
+    val indentPrefix = if (indentChars > 0) "　".repeat(indentChars) else ""
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(horizontal = marginDp.dp, vertical = 12.dp),
-        modifier = modifier
-            .fillMaxSize()
-            .then(
-                if (tapToggleEnabled) {
-                    Modifier.pointerInput(Unit) { detectTapGestures { onToggleMenu() } }
-                } else {
-                    Modifier
-                },
-            ),
+        modifier = modifier.fillMaxSize(),
     ) {
         items(book.paragraphs.size) { index ->
             val isChapter = index in book.chapterStarts
             Text(
-                text = book.paragraphs[index],
+                // 首行缩进（fork.30）：只在渲染文本前补全角空格，段落原文不动
+                text = if (!isChapter && indentPrefix.isNotEmpty()) {
+                    indentPrefix + book.paragraphs[index]
+                } else {
+                    book.paragraphs[index]
+                },
                 style = TextStyle(
                     fontSize = if (isChapter) (fontSize + 2).sp else fontSize.sp,
                     lineHeight = ((if (isChapter) fontSize + 2 else fontSize) * lineHeight).sp,
-                    fontWeight = if (isChapter) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if (isChapter) FontWeight.SemiBold else fontSpec.weight,
+                    fontFamily = fontSpec.family,
+                    textAlign = align,
                 ),
                 color = textColor,
-                modifier = Modifier.padding(
-                    top = if (isChapter && index > 0) (paraSpacing * 2 + 4).dp else 0.dp,
-                    bottom = paraSpacing.dp,
-                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (tapToggleEnabled) {
+                            Modifier.combinedClickable(
+                                onClick = onToggleMenu,
+                                onLongClick = { onLongPressPara(index) },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(
+                        top = if (isChapter && index > 0) (paraSpacing * 2 + 4).dp else 0.dp,
+                        bottom = paraSpacing.dp,
+                    ),
             )
         }
     }
 }
 
-/* ---------------- 左右翻页正文（fork.27）：平移横滑动画 + 手势分区 ---------------- */
+/* ---------------- 翻页正文（fork.27 平移，fork.30 扩五种动画 + 长按选词） ---------------- */
 
 @Composable
 private fun TxtPageContent(
@@ -2605,6 +3413,10 @@ private fun TxtPageContent(
     paraSpacing: Float,
     marginDp: Float,
     palette: TxtReaderPalette,
+    fontSpec: TxtFontSpec,
+    indentChars: Int,
+    justify: Boolean,
+    pageAnim: String,
     anchorPara: Int,
     anchorChar: Int,
     jumpPara: Int,
@@ -2612,6 +3424,7 @@ private fun TxtPageContent(
     onPosition: (Int, Int) -> Unit,
     onPageInfo: (TxtPageInfo) -> Unit,
     onTapCenter: () -> Unit,
+    onLongPressPara: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val measurer = rememberTextMeasurer()
@@ -2622,7 +3435,10 @@ private fun TxtPageContent(
     ) {
         val widthPx = with(density) { maxWidth.toPx() }
         val heightPx = with(density) { maxHeight.toPx() }
-        val pages = remember(book, fontSize, lineHeight, paraSpacing, marginDp, widthPx, heightPx) {
+        val pages = remember(
+            book, fontSize, lineHeight, paraSpacing, marginDp,
+            fontSpec, indentChars, justify, widthPx, heightPx,
+        ) {
             paginateTxt(
                 measurer = measurer,
                 paragraphs = book.paragraphs,
@@ -2633,6 +3449,10 @@ private fun TxtPageContent(
                 paragraphBottomPx = with(density) { paraSpacing.dp.toPx() },
                 chapterTopPx = with(density) { (paraSpacing * 2 + 4).dp.toPx() },
                 lineHeightFactor = lineHeight,
+                fontFamily = fontSpec.family,
+                fontWeight = fontSpec.weight,
+                indentChars = indentChars,
+                justify = justify,
             )
         }
         var pageIndex by remember { mutableIntStateOf(-1) }
@@ -2672,30 +3492,69 @@ private fun TxtPageContent(
                 onPageInfo(TxtPageInfo(pageIndex + 1, pages.size, 0, 0))
             }
         }
+        val vertical = pageAnim == TxtReaderStore.ANIM_VERTICAL
+        val axisSize = if (vertical) heightPx else widthPx
         val anim = remember { Animatable(0f) }
         fun flip(delta: Int) {
             val target = pageIndex + delta
-            if (target !in pages.indices || anim.isRunning) return
+            if (target !in pages.indices) return
+            if (pageAnim == TxtReaderStore.ANIM_NONE) {
+                pageIndex = target
+                return
+            }
+            if (anim.isRunning) return
             scope.launch {
-                anim.animateTo(if (delta > 0) -widthPx else widthPx, tween(230))
+                anim.animateTo(if (delta > 0) -axisSize else axisSize, tween(230))
                 pageIndex = target
                 anim.snapTo(0f)
             }
         }
-        val current = pages.getOrNull(pageIndex)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clipToBounds()
-                .pointerInput(pageIndex, pages.size) {
+        // 长按选词命中表：当前页各段落在页内的纵向范围，静止时由当前页列回报
+        val sliceBounds = remember { mutableStateMapOf<Int, IntRange>() }
+        LaunchedEffect(pageIndex) { sliceBounds.clear() }
+        val onSliceBounds: (Int, Int, Int) -> Unit = { para, top, bottom ->
+            val old = sliceBounds[para]
+            sliceBounds[para] = if (old == null) {
+                top..bottom
+            } else {
+                minOf(old.first, top)..maxOf(old.last, bottom)
+            }
+        }
+
+        var gestures: Modifier = Modifier
+        if (pageAnim != TxtReaderStore.ANIM_NONE) {
+            gestures = if (vertical) {
+                gestures.pointerInput(pageIndex, pages.size, pageAnim) {
+                    detectVerticalDragGestures(
+                        onDragStart = { scope.launch { anim.stop() } },
+                        onDragEnd = {
+                            val v = anim.value
+                            when {
+                                v < -axisSize * 0.22f && pageIndex < pages.size - 1 -> flip(1)
+                                v > axisSize * 0.22f && pageIndex > 0 -> flip(-1)
+                                else -> scope.launch { anim.animateTo(0f, tween(200)) }
+                            }
+                        },
+                        onDragCancel = { scope.launch { anim.animateTo(0f, tween(200)) } },
+                        onVerticalDrag = { change, amount ->
+                            change.consume()
+                            scope.launch {
+                                anim.snapTo(
+                                    (anim.value + amount).coerceIn(-axisSize, axisSize),
+                                )
+                            }
+                        },
+                    )
+                }
+            } else {
+                gestures.pointerInput(pageIndex, pages.size, pageAnim) {
                     detectHorizontalDragGestures(
                         onDragStart = { scope.launch { anim.stop() } },
                         onDragEnd = {
-                            val w = size.width.toFloat()
                             val v = anim.value
                             when {
-                                v < -w * 0.22f && pageIndex < pages.size - 1 -> flip(1)
-                                v > w * 0.22f && pageIndex > 0 -> flip(-1)
+                                v < -axisSize * 0.22f && pageIndex < pages.size - 1 -> flip(1)
+                                v > axisSize * 0.22f && pageIndex > 0 -> flip(-1)
                                 else -> scope.launch { anim.animateTo(0f, tween(200)) }
                             }
                         },
@@ -2703,63 +3562,218 @@ private fun TxtPageContent(
                         onHorizontalDrag = { change, amount ->
                             change.consume()
                             scope.launch {
-                                anim.snapTo((anim.value + amount).coerceIn(-size.width.toFloat(), size.width.toFloat()))
+                                anim.snapTo(
+                                    (anim.value + amount).coerceIn(-axisSize, axisSize),
+                                )
                             }
                         },
                     )
                 }
-                .pointerInput(pageIndex, pages.size) {
-                    detectTapGestures { offset ->
-                        if (anim.value != 0f) return@detectTapGestures
-                        val w = size.width.toFloat()
-                        when {
-                            offset.x < w / 3f -> flip(-1)
-                            offset.x > w * 2f / 3f -> flip(1)
-                            else -> onTapCenter()
-                        }
+            }
+        }
+        gestures = gestures.pointerInput(pageIndex, pages.size, pageAnim) {
+            detectTapGestures(
+                onTap = { offset ->
+                    if (anim.value != 0f) return@detectTapGestures
+                    when {
+                        vertical && offset.y < heightPx / 3f -> flip(-1)
+                        vertical && offset.y > heightPx * 2f / 3f -> flip(1)
+                        !vertical && offset.x < widthPx / 3f -> flip(-1)
+                        !vertical && offset.x > widthPx * 2f / 3f -> flip(1)
+                        else -> onTapCenter()
                     }
                 },
+                onLongPress = { offset ->
+                    if (anim.value != 0f) return@detectTapGestures
+                    val para = sliceBounds.entries
+                        .firstOrNull { offset.y.toInt() in it.value }?.key
+                    if (para != null) onLongPressPara(para)
+                },
+            )
+        }
+
+        val current = pages.getOrNull(pageIndex)
+        val nextPage = pages.getOrNull(pageIndex + 1)
+        val prevPage = pages.getOrNull(pageIndex - 1)
+        val off = anim.value
+
+        @Composable
+        fun pageColumn(page: TxtPage, report: Boolean, mod: Modifier) {
+            TxtPageColumn(
+                page = page,
+                fontSize = fontSize,
+                lineHeight = lineHeight,
+                paraSpacing = paraSpacing,
+                marginDp = marginDp,
+                textColor = palette.text,
+                fontSpec = fontSpec,
+                indentChars = indentChars,
+                justify = justify,
+                reportBounds = report,
+                onSliceBounds = onSliceBounds,
+                modifier = mod,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .then(gestures),
         ) {
-            if (current != null) {
-                val off = anim.value
-                TxtPageColumn(
-                    page = current,
-                    fontSize = fontSize,
-                    lineHeight = lineHeight,
-                    paraSpacing = paraSpacing,
-                    marginDp = marginDp,
-                    textColor = palette.text,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset { IntOffset(off.roundToInt(), 0) },
-                )
-                if (off < 0f) {
-                    pages.getOrNull(pageIndex + 1)?.let { next ->
-                        TxtPageColumn(
-                            page = next,
-                            fontSize = fontSize,
-                            lineHeight = lineHeight,
-                            paraSpacing = paraSpacing,
-                            marginDp = marginDp,
-                            textColor = palette.text,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .offset { IntOffset((off + widthPx).roundToInt(), 0) },
+            when {
+                current == null -> Unit
+                pageAnim == TxtReaderStore.ANIM_NONE || off == 0f -> {
+                    pageColumn(current, true, Modifier.fillMaxSize())
+                }
+                pageAnim == TxtReaderStore.ANIM_COVER -> {
+                    // 覆盖：下一页自右盖入；上一页靠当前页向右滑开露出
+                    if (off < 0f) {
+                        pageColumn(current, false, Modifier.fillMaxSize())
+                        if (nextPage != null) {
+                            pageColumn(
+                                nextPage, false,
+                                Modifier.fillMaxSize().offset {
+                                    IntOffset((widthPx + off).roundToInt(), 0)
+                                },
+                            )
+                        }
+                    } else {
+                        if (prevPage != null) pageColumn(prevPage, false, Modifier.fillMaxSize())
+                        pageColumn(
+                            current, false,
+                            Modifier.fillMaxSize().offset { IntOffset(off.roundToInt(), 0) },
                         )
                     }
                 }
-                if (off > 0f) {
-                    pages.getOrNull(pageIndex - 1)?.let { prev ->
-                        TxtPageColumn(
-                            page = prev,
-                            fontSize = fontSize,
-                            lineHeight = lineHeight,
-                            paraSpacing = paraSpacing,
-                            marginDp = marginDp,
-                            textColor = palette.text,
+                pageAnim == TxtReaderStore.ANIM_CURL -> {
+                    // 仿真（简化卷页近似）：下一页在下层，当前页从右向左被卷走——
+                    // 只绘制未卷部分并在卷边叠压暗/亮边/投影渐变，不做物理引擎
+                    val fullWidthDp = with(density) { widthPx.toDp() }
+                    if (off < 0f) {
+                        if (nextPage != null) pageColumn(nextPage, false, Modifier.fillMaxSize())
+                        val visiblePx = (widthPx + off).coerceAtLeast(0f)
+                        val visibleDp = with(density) { visiblePx.toDp() }
+                        Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .offset { IntOffset((off - widthPx).roundToInt(), 0) },
+                                .width(visibleDp)
+                                .fillMaxHeight()
+                                .clipToBounds(),
+                        ) {
+                            pageColumn(
+                                current, false,
+                                Modifier.requiredWidth(fullWidthDp).fillMaxHeight(),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(30.dp)
+                                .offset(x = visibleDp - 30.dp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.25f),
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(24.dp)
+                                .offset(x = visibleDp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.20f),
+                                            Color.Black.copy(alpha = 0.18f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
+                        )
+                    } else {
+                        if (prevPage != null) pageColumn(prevPage, false, Modifier.fillMaxSize())
+                        pageColumn(
+                            current, false,
+                            Modifier.fillMaxSize().offset { IntOffset(off.roundToInt(), 0) },
+                        )
+                        val edgeDp = with(density) { off.toDp() }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(24.dp)
+                                .offset(x = edgeDp - 24.dp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.20f),
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(30.dp)
+                                .offset(x = edgeDp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Black.copy(alpha = 0.22f),
+                                            Color.White.copy(alpha = 0.10f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
+                        )
+                    }
+                }
+                vertical -> {
+                    pageColumn(
+                        current, false,
+                        Modifier.fillMaxSize().offset { IntOffset(0, off.roundToInt()) },
+                    )
+                    if (off < 0f && nextPage != null) {
+                        pageColumn(
+                            nextPage, false,
+                            Modifier.fillMaxSize().offset {
+                                IntOffset(0, (off + heightPx).roundToInt())
+                            },
+                        )
+                    }
+                    if (off > 0f && prevPage != null) {
+                        pageColumn(
+                            prevPage, false,
+                            Modifier.fillMaxSize().offset {
+                                IntOffset(0, (off - heightPx).roundToInt())
+                            },
+                        )
+                    }
+                }
+                else -> {
+                    // 左右平移（fork.27 原样）
+                    pageColumn(
+                        current, false,
+                        Modifier.fillMaxSize().offset { IntOffset(off.roundToInt(), 0) },
+                    )
+                    if (off < 0f && nextPage != null) {
+                        pageColumn(
+                            nextPage, false,
+                            Modifier.fillMaxSize().offset {
+                                IntOffset((off + widthPx).roundToInt(), 0)
+                            },
+                        )
+                    }
+                    if (off > 0f && prevPage != null) {
+                        pageColumn(
+                            prevPage, false,
+                            Modifier.fillMaxSize().offset {
+                                IntOffset((off - widthPx).roundToInt(), 0)
+                            },
                         )
                     }
                 }
@@ -2776,22 +3790,56 @@ private fun TxtPageColumn(
     paraSpacing: Float,
     marginDp: Float,
     textColor: Color,
+    fontSpec: TxtFontSpec,
+    indentChars: Int,
+    justify: Boolean,
+    reportBounds: Boolean,
+    onSliceBounds: (Int, Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val align = if (justify) {
+        androidx.compose.ui.text.style.TextAlign.Justify
+    } else {
+        androidx.compose.ui.text.style.TextAlign.Left
+    }
     Column(modifier.padding(horizontal = marginDp.dp, vertical = 16.dp)) {
         page.slices.forEachIndexed { idx, slice ->
             Text(
-                text = slice.text,
+                // 首行缩进（fork.30）：段首切片渲染时补全角空格；切片文本与
+                // 字符偏移仍是原段坐标，缩进不进存储、不污染锚点
+                text = if (!slice.chapter && slice.startChar == 0 && indentChars > 0) {
+                    "　".repeat(indentChars) + slice.text
+                } else {
+                    slice.text
+                },
                 style = TextStyle(
                     fontSize = if (slice.chapter) (fontSize + 2).sp else fontSize.sp,
                     lineHeight = ((if (slice.chapter) fontSize + 2 else fontSize) * lineHeight).sp,
-                    fontWeight = if (slice.chapter) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if (slice.chapter) FontWeight.SemiBold else fontSpec.weight,
+                    fontFamily = fontSpec.family,
+                    textAlign = align,
                 ),
                 color = textColor,
-                modifier = Modifier.padding(
-                    top = if (slice.chapter && idx > 0) (paraSpacing * 2 + 4).dp else 0.dp,
-                    bottom = paraSpacing.dp,
-                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (reportBounds) {
+                            Modifier.onGloballyPositioned { coords ->
+                                val pos = coords.positionInParent()
+                                onSliceBounds(
+                                    slice.paragraph,
+                                    pos.y.toInt(),
+                                    (pos.y + coords.size.height).toInt(),
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(
+                        top = if (slice.chapter && idx > 0) (paraSpacing * 2 + 4).dp else 0.dp,
+                        bottom = paraSpacing.dp,
+                    ),
             )
         }
     }

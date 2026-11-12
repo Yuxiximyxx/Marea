@@ -1,6 +1,9 @@
 package dev.dsh.miuixbrowser
 
 import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,8 +42,99 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
+
+
+/**
+ * fork.30 功能批的统一状态：简繁转换 / 文本重排 / 自定义字体 / 首行缩进 /
+ * 两端对齐 / 翻页动画 / 页脚元素 / 目录倒序。读写都走 TxtReaderStore 的
+ * 单份存储，书内设置弹层与书架「阅读设置」页共用同一类——阅读屏也直接
+ * 读它驱动渲染，不存在第二份状态。
+ */
+class TxtFeatureState(private val appContext: android.content.Context) {
+    var convertMode by mutableStateOf(TxtReaderStore.convertMode(appContext))
+        private set
+    var reflow by mutableStateOf(TxtReaderStore.reflow(appContext))
+        private set
+    var fontFile by mutableStateOf(TxtReaderStore.fontFile(appContext))
+        private set
+    var fontWeight by mutableStateOf(TxtReaderStore.fontWeight(appContext))
+        private set
+    var indentChars by mutableStateOf(TxtReaderStore.indentChars(appContext))
+        private set
+    var justify by mutableStateOf(TxtReaderStore.justify(appContext))
+        private set
+    var pageAnim by mutableStateOf(TxtReaderStore.pageAnim(appContext))
+        private set
+    var tocReversed by mutableStateOf(TxtReaderStore.tocReversed(appContext))
+        private set
+    var footerChapter by mutableStateOf(TxtReaderStore.footerShow(appContext, "chapter"))
+        private set
+    var footerPage by mutableStateOf(TxtReaderStore.footerShow(appContext, "page"))
+        private set
+    var footerPercent by mutableStateOf(TxtReaderStore.footerShow(appContext, "percent"))
+        private set
+    var footerTime by mutableStateOf(TxtReaderStore.footerShow(appContext, "time"))
+        private set
+    var footerBattery by mutableStateOf(TxtReaderStore.footerShow(appContext, "battery"))
+        private set
+
+    fun setConvertMode(value: String) {
+        convertMode = value
+        TxtReaderStore.setConvertMode(appContext, value)
+    }
+
+    fun setReflow(value: Boolean) {
+        reflow = value
+        TxtReaderStore.setReflow(appContext, value)
+    }
+
+    fun setFontFile(value: String) {
+        fontFile = value
+        TxtReaderStore.setFontFile(appContext, value)
+    }
+
+    fun setFontWeight(value: Int) {
+        fontWeight = value
+        TxtReaderStore.setFontWeight(appContext, value)
+    }
+
+    fun setIndentChars(value: Int) {
+        indentChars = value
+        TxtReaderStore.setIndentChars(appContext, value)
+    }
+
+    fun setJustify(value: Boolean) {
+        justify = value
+        TxtReaderStore.setJustify(appContext, value)
+    }
+
+    fun setPageAnim(value: String) {
+        pageAnim = value
+        TxtReaderStore.setPageAnim(appContext, value)
+    }
+
+    fun setTocReversed(value: Boolean) {
+        tocReversed = value
+        TxtReaderStore.setTocReversed(appContext, value)
+    }
+
+    fun setFooter(key: String, value: Boolean) {
+        when (key) {
+            "chapter" -> footerChapter = value
+            "page" -> footerPage = value
+            "percent" -> footerPercent = value
+            "time" -> footerTime = value
+            "battery" -> footerBattery = value
+        }
+        TxtReaderStore.setFooterShow(appContext, key, value)
+    }
+}
 
 /**
  * 阅读设置导航状态（fork.29）：统一设置组件的二级页状态，书内弹层与
@@ -55,6 +150,10 @@ class TxtReaderSettingsNav {
         const val SECTION_PAGE_DISPLAY = "page_display"
         const val SECTION_TYPESET = "typeset"
         const val SECTION_BG = "bg"
+        const val SECTION_FONT = "font"
+        const val SECTION_TEXT = "text"
+        const val SECTION_FOOTER = "footer"
+        const val SECTION_SYNC = "sync"
     }
 }
 
@@ -81,6 +180,10 @@ private fun txtReaderSectionTitle(section: String?): String = when (section) {
     TxtReaderSettingsNav.SECTION_PAGE_DISPLAY -> "翻页与显示"
     TxtReaderSettingsNav.SECTION_TYPESET -> "排版"
     TxtReaderSettingsNav.SECTION_BG -> "背景"
+    TxtReaderSettingsNav.SECTION_FONT -> "字体"
+    TxtReaderSettingsNav.SECTION_TEXT -> "文字处理"
+    TxtReaderSettingsNav.SECTION_FOOTER -> "页眉页脚"
+    TxtReaderSettingsNav.SECTION_SYNC -> "同步"
     else -> "设置"
 }
 
@@ -127,11 +230,15 @@ fun TxtReaderSettingsContent(
     glassBackdrop: LayerBackdrop? = null,
     glassLiquid: com.kyant.backdrop.Backdrop? = null,
     glassBlurEnabled: Boolean = true,
+    features: TxtFeatureState,
     book: TxtSettingsBookContext?,
     nav: TxtReaderSettingsNav,
     modifier: Modifier = Modifier,
 ) {
     var brightnessDrag by remember { mutableStateOf<Float?>(null) }
+    val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext }
+    val scope = rememberCoroutineScope()
     Column(modifier = modifier) {
         if (nav.section == null) {
             Column(
@@ -263,6 +370,38 @@ fun TxtReaderSettingsContent(
                             summary = txtReaderBgLabel(readerBg),
                             onClick = { nav.section = TxtReaderSettingsNav.SECTION_BG },
                         )
+                        ReaderEntryRow(
+                            title = "字体",
+                            summary = (if (features.fontFile.isBlank()) {
+                                "系统默认"
+                            } else {
+                                features.fontFile.substringBeforeLast('.')
+                            }) + " · 字重 ${features.fontWeight}",
+                            onClick = { nav.section = TxtReaderSettingsNav.SECTION_FONT },
+                        )
+                        ReaderEntryRow(
+                            title = "文字处理",
+                            summary = "简繁" + when (features.convertMode) {
+                                TxtConvert.T2S -> "繁转简"
+                                TxtConvert.S2T -> "简转繁"
+                                else -> "关"
+                            } + " · 重排${if (features.reflow) "开" else "关"}",
+                            onClick = { nav.section = TxtReaderSettingsNav.SECTION_TEXT },
+                        )
+                        ReaderEntryRow(
+                            title = "页眉页脚",
+                            summary = "底部信息行显示的元素",
+                            onClick = { nav.section = TxtReaderSettingsNav.SECTION_FOOTER },
+                        )
+                        ReaderEntryRow(
+                            title = "同步",
+                            summary = if (TxtSync.config(appContext) == null) {
+                                "WebDAV 未配置"
+                            } else {
+                                TxtSync.lastResult(appContext) ?: "WebDAV 已配置"
+                            },
+                            onClick = { nav.section = TxtReaderSettingsNav.SECTION_SYNC },
+                        )
                     }
                 }
                 if (book == null) {
@@ -376,6 +515,48 @@ fun TxtReaderSettingsContent(
                                 onClick = { onReadModeChange(TxtReaderStore.MODE_PAGE) },
                             )
                         }
+                        if (readMode == TxtReaderStore.MODE_PAGE) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = "翻页动画",
+                                fontSize = 14.sp,
+                                color = MiuixTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                ReaderSettingsChip(
+                                    text = "平移",
+                                    selected = features.pageAnim == TxtReaderStore.ANIM_SLIDE,
+                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_SLIDE) },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                ReaderSettingsChip(
+                                    text = "覆盖",
+                                    selected = features.pageAnim == TxtReaderStore.ANIM_COVER,
+                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_COVER) },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                ReaderSettingsChip(
+                                    text = "上下",
+                                    selected = features.pageAnim == TxtReaderStore.ANIM_VERTICAL,
+                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_VERTICAL) },
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                ReaderSettingsChip(
+                                    text = "仿真",
+                                    selected = features.pageAnim == TxtReaderStore.ANIM_CURL,
+                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_CURL) },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                ReaderSettingsChip(
+                                    text = "无动画",
+                                    selected = features.pageAnim == TxtReaderStore.ANIM_NONE,
+                                    onClick = { features.setPageAnim(TxtReaderStore.ANIM_NONE) },
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(16.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -430,11 +611,331 @@ fun TxtReaderSettingsContent(
                             onValueChange = onMarginChange,
                             onCommit = onTypesetCommit,
                         )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "首行缩进",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row {
+                            ReaderSettingsChip(
+                                text = "不缩进",
+                                selected = features.indentChars == 0,
+                                onClick = { features.setIndentChars(0) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            ReaderSettingsChip(
+                                text = "1 字",
+                                selected = features.indentChars == 1,
+                                onClick = { features.setIndentChars(1) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            ReaderSettingsChip(
+                                text = "2 字",
+                                selected = features.indentChars == 2,
+                                onClick = { features.setIndentChars(2) },
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "两端对齐",
+                                    fontSize = 14.sp,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "正文左右两端对齐（章节标题不参与）",
+                                    fontSize = 12.sp,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            AppSwitch(
+                                checked = features.justify,
+                                onCheckedChange = { features.setJustify(it) },
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             text = "排版对滚动与左右翻页两种模式同时生效，调整后分页立即重排，阅读位置保持不变。",
                             fontSize = 12.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+
+                TxtReaderSettingsNav.SECTION_FONT -> {
+                    var fontList by remember { mutableStateOf(TxtFonts.list(appContext)) }
+                    var weightDrag by remember { mutableStateOf<Float?>(null) }
+                    val fontLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        if (uri != null) {
+                            scope.launch {
+                                val imported = withContext(Dispatchers.IO) {
+                                    TxtFonts.importFont(appContext, uri)
+                                }
+                                fontList = TxtFonts.list(appContext)
+                                if (imported != null) {
+                                    features.setFontFile(imported)
+                                    Toast.makeText(context, "字体已导入", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(
+                                        context, "导入失败：不是有效的字体文件",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        ReaderFontOptionRow(
+                            label = "系统默认",
+                            selected = features.fontFile.isBlank(),
+                            onClick = { features.setFontFile("") },
+                            onDelete = null,
+                        )
+                        fontList.forEach { entry ->
+                            ReaderFontOptionRow(
+                                label = entry.label,
+                                selected = features.fontFile == entry.fileName,
+                                onClick = { features.setFontFile(entry.fileName) },
+                                onDelete = {
+                                    TxtFonts.delete(appContext, entry.fileName)
+                                    if (features.fontFile == entry.fileName) {
+                                        features.setFontFile("")
+                                    }
+                                    fontList = TxtFonts.list(appContext)
+                                },
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(
+                            text = "导入字体（ttf / otf）",
+                            onClick = {
+                                fontLauncher.launch(
+                                    arrayOf(
+                                        "font/ttf", "font/otf",
+                                        "application/octet-stream", "*/*",
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "字重",
+                                fontSize = 14.sp,
+                                color = MiuixTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "${weightDrag?.toInt() ?: features.fontWeight}",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                        Slider(
+                            value = weightDrag ?: features.fontWeight.toFloat(),
+                            onValueChange = { weightDrag = it },
+                            onValueChangeFinished = {
+                                weightDrag?.let { features.setFontWeight(it.toInt()) }
+                                weightDrag = null
+                            },
+                            valueRange = 300f..800f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = "字体与字重对正文渲染和翻页分页使用同一份，改完立即重排、位置保持。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+
+                TxtReaderSettingsNav.SECTION_TEXT -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        Text(
+                            text = "简繁转换",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row {
+                            ReaderSettingsChip(
+                                text = "关",
+                                selected = features.convertMode == TxtConvert.OFF,
+                                onClick = { features.setConvertMode(TxtConvert.OFF) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            ReaderSettingsChip(
+                                text = "繁转简",
+                                selected = features.convertMode == TxtConvert.T2S,
+                                onClick = { features.setConvertMode(TxtConvert.T2S) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            ReaderSettingsChip(
+                                text = "简转繁",
+                                selected = features.convertMode == TxtConvert.S2T,
+                                onClick = { features.setConvertMode(TxtConvert.S2T) },
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "在解码后、切章前对全文转换；目录、搜索与进度都以转换后文本为准。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "文本重排",
+                                    fontSize = 14.sp,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "智能合并被硬换行拆断的段落、清理多余空行，治排版乱的 txt",
+                                    fontSize = 12.sp,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            AppSwitch(
+                                checked = features.reflow,
+                                onCheckedChange = { features.setReflow(it) },
+                            )
+                        }
+                    }
+                }
+
+                TxtReaderSettingsNav.SECTION_FOOTER -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        ReaderFooterSwitchRow("章节名", features.footerChapter) {
+                            features.setFooter("chapter", it)
+                        }
+                        ReaderFooterSwitchRow("本章页码", features.footerPage) {
+                            features.setFooter("page", it)
+                        }
+                        ReaderFooterSwitchRow("全书百分比", features.footerPercent) {
+                            features.setFooter("percent", it)
+                        }
+                        ReaderFooterSwitchRow("当前时间", features.footerTime) {
+                            features.setFooter("time", it)
+                        }
+                        ReaderFooterSwitchRow("电量", features.footerBattery) {
+                            features.setFooter("battery", it)
+                        }
+                        Text(
+                            text = "作用于阅读页底部信息行；关掉的元素不显示、也不占位。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+
+                TxtReaderSettingsNav.SECTION_SYNC -> {
+                    var savedCfg by remember { mutableStateOf(TxtSync.config(appContext)) }
+                    var urlText by remember { mutableStateOf(savedCfg?.url ?: "") }
+                    var userText by remember { mutableStateOf(savedCfg?.user ?: "") }
+                    var passText by remember { mutableStateOf(savedCfg?.pass ?: "") }
+                    var status by remember {
+                        mutableStateOf(TxtSync.lastResult(appContext) ?: "尚未同步")
+                    }
+                    var syncing by remember { mutableStateOf(false) }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        TextField(
+                            value = urlText,
+                            onValueChange = { urlText = it },
+                            label = "服务器地址（如 https://dav.example.com/）",
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextField(
+                            value = userText,
+                            onValueChange = { userText = it },
+                            label = "账号",
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextField(
+                            value = passText,
+                            onValueChange = { passText = it },
+                            label = "密码（只存本机应用私有存储，不上传到别处）",
+                            singleLine = true,
+                            visualTransformation =
+                                androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row {
+                            TextButton(
+                                text = "保存配置",
+                                onClick = {
+                                    TxtSync.saveConfig(
+                                        appContext, urlText.trim(), userText.trim(), passText,
+                                    )
+                                    savedCfg = TxtSync.config(appContext)
+                                    status = if (savedCfg == null) {
+                                        "地址为空，未保存"
+                                    } else {
+                                        "配置已保存"
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                text = if (syncing) "同步中…" else "立即同步",
+                                enabled = savedCfg != null && !syncing,
+                                onClick = {
+                                    syncing = true
+                                    scope.launch {
+                                        status = TxtSync.sync(appContext)
+                                        syncing = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = status,
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "同步书架、各书进度与每本书的目录规则选择，合并按每条记录的时间戳取新者；" +
+                                "文件放在服务器的 marea-reader/sync.json。配好后打开书籍或书架时也会静默同步一次。" +
+                                "设置类偏好不同步；书架删除暂不向远端传播（远端仍有的书可能在同步后回到书架）。",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     }
                 }
@@ -533,6 +1034,62 @@ private fun ReaderTypesetSlider(
     Spacer(Modifier.height(10.dp))
 }
 
+
+@Composable
+private fun ReaderFontOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (selected) "●" else "○",
+            fontSize = 13.sp,
+            color = if (selected) MiuixTheme.colorScheme.primary
+            else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        if (onDelete != null) {
+            TextButton(text = "删除", onClick = onDelete)
+        }
+    }
+}
+
+@Composable
+private fun ReaderFooterSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            fontSize = 15.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        AppSwitch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
 @Composable
 private fun ReaderEntryRow(title: String, summary: String, onClick: () -> Unit) {
     Row(
@@ -593,6 +1150,7 @@ fun TxtReaderSettingsScreen(
         }.getOrDefault(0.55f)
     }
     val tocRules = TxtTocRules.load(appContext)
+    val features = remember { TxtFeatureState(appContext) }
 
     BackHandler(enabled = nav.section != null) { nav.section = null }
 
@@ -644,6 +1202,7 @@ fun TxtReaderSettingsScreen(
             tocRulesCount = tocRules.size,
             tocRulesEnabled = tocRules.count { it.enabled },
             onOpenTocRulesPage = onOpenTocRules,
+            features = features,
             book = null,
             nav = nav,
             modifier = Modifier

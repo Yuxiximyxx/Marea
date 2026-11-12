@@ -48,8 +48,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 271
-        versionName = "v1.8.28-fork.29"
+        versionCode = 272
+        versionName = "v1.8.28-fork.30"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
