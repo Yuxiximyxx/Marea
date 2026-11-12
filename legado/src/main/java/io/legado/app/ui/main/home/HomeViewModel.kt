@@ -174,8 +174,6 @@ class HomeViewModel(
         }
     }
 
-    }
-
     private fun setSectionVisible(
         section: HomeDashboardSection,
         visible: Boolean,

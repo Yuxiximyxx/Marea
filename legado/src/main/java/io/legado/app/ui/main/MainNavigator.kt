@@ -68,8 +68,6 @@ object MainNavigator {
             }
         }
 
-        }
-
         // 朗读通知的「回到正在读的书」不带 bookUrl（空即最后读过的那本），路由键和栈顶那份必然不相等。
         // 栈顶已经是阅读页时再压一份，返回就要连点同样多次才出得了阅读页，所以在这里收住不压栈。
         if (route is MainRouteReadBook &&

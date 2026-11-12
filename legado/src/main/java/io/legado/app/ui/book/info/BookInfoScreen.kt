@@ -59,12 +59,9 @@ import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.SnackbarResult
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,6 +99,7 @@ import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import coil3.size.Size
 import io.legado.app.R
+import top.yukonga.miuix.kmp.basic.FloatingActionButton as MiuixFloatingActionButton
 import io.legado.app.constant.BookType
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookGroup
@@ -116,7 +114,6 @@ import io.legado.app.ui.theme.LocalHazeState
 import io.legado.app.ui.theme.LocalLegadoThemeColors
 import io.legado.app.ui.theme.ProvideColorSchemeOverride
 import io.legado.app.ui.theme.ThemeOverrideState
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.theme.animateColorSchemeAsState
 import io.legado.app.ui.theme.fadingEdge
 import io.legado.app.ui.theme.rememberImageSeedColor
@@ -152,7 +149,6 @@ import io.legado.app.ui.widget.components.text.HtmlContent
 import io.legado.app.ui.widget.components.text.MarkdownBlock
 import io.legado.app.ui.widget.components.topbar.GlassTopAppBarDefaults
 import io.legado.app.ui.widget.components.topbar.GlassTopAppBarScrollBehavior
-import io.legado.app.ui.widget.components.topbar.M3GlassScrollBehavior
 import io.legado.app.ui.widget.components.topbar.MiuixGlassScrollBehavior
 import io.legado.app.ui.widget.components.topbar.TopBarActionButton
 import io.legado.app.ui.widget.components.topbar.TopBarActionsRow
@@ -289,12 +285,7 @@ private fun BookInfoScreenContent(
     usesDefaultCover: Boolean,
     onNetworkCoverLoadError: (String?) -> Unit,
 ) {
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
-    val scrollBehavior = if (isMiuix) {
-        MiuixGlassScrollBehavior(MiuixScrollBehavior())
-    } else {
-        M3GlassScrollBehavior(TopAppBarDefaults.exitUntilCollapsedScrollBehavior())
-    }
+    val scrollBehavior = MiuixGlassScrollBehavior(MiuixScrollBehavior())
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -331,13 +322,26 @@ private fun BookInfoScreenContent(
         floatingActionButton = {
             // 未验证时不提供"直接开始阅读"的入口，避免绕过验证
             if (!state.privateLocked) {
-                ExtendedFloatingActionButton(
+                MiuixFloatingActionButton(
                     onClick = { onIntent(BookInfoIntent.ReadClick) },
                     containerColor = LegadoTheme.colorScheme.primaryContainer,
-                    contentColor = LegadoTheme.colorScheme.onPrimaryContainer,
-                    icon = { AppIcon(Icons.Default.Book, null) },
-                    text = { AppText(stringResource(R.string.reading)) },
-                )
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        AppIcon(
+                            Icons.Default.Book,
+                            null,
+                            tint = LegadoTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        AppText(
+                            stringResource(R.string.reading),
+                            color = LegadoTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             }
         },
         alwaysDrawBehindBars = true,
@@ -672,20 +676,11 @@ private fun BookInfoTransparentTopAppBar(
     scrollBehavior: GlassTopAppBarScrollBehavior,
 ) {
     val hazeState = LocalHazeState.current
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
-    val collapsedColor = if (isMiuix) {
-        GlassTopAppBarDefaults.getMiuixAppBarColor()
-    } else {
-        GlassTopAppBarDefaults.scrolledContainerColor()
-    }
+    val collapsedColor = GlassTopAppBarDefaults.getMiuixAppBarColor()
     val isAtTop = scrollBehavior.collapsedFraction <= 0.001f
     val resolvedColor = if (isAtTop) Color.Transparent else collapsedColor
-    val topBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = resolvedColor,
-        scrolledContainerColor = resolvedColor,
-    )
 
-    if (isMiuix) {
+    run {
         MiuixTopAppBar(
             modifier = hazeState?.let { Modifier.responsiveHazeEffectFixedStyle(it) } ?: Modifier,
             title = "",
@@ -709,26 +704,6 @@ private fun BookInfoTransparentTopAppBar(
             navigationIconPadding = miuixTopBarSlotPadding(),
             actionIconPadding = miuixTopBarSlotPadding(),
             scrollBehavior = (scrollBehavior as? MiuixGlassScrollBehavior)?.miuixBehavior,
-        )
-    } else {
-        MediumFlexibleTopAppBar(
-            modifier = hazeState?.let { Modifier.responsiveHazeEffectFixedStyle(it) } ?: Modifier,
-            title = { AppText(text = "", maxLines = 1) },
-            navigationIcon = {
-                TopBarNavigationButton(onClick = onBackPressed)
-            },
-            actions = {
-                Box(modifier = Modifier.padding(end = 12.dp)) {
-                    TopBarActionsRow {
-                        BookInfoTopBarActions(
-                            state = state,
-                            onMenuAction = onMenuAction,
-                        )
-                    }
-                }
-            },
-            scrollBehavior = (scrollBehavior as? M3GlassScrollBehavior)?.m3Behavior,
-            colors = topBarColors,
         )
     }
 }

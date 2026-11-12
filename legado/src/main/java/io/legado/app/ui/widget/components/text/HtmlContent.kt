@@ -13,8 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,6 +44,7 @@ import androidx.core.graphics.toColorInt
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.widget.components.text.AppText
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 import org.jsoup.Jsoup
@@ -288,7 +288,7 @@ private fun HtmlButtonChip(
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
+        AppText(
             text = button.name,
             style = buttonStyle,
             color = LegadoTheme.colorScheme.onSurface,
@@ -375,7 +375,7 @@ internal data class HtmlParagraph(
 )
 
 internal sealed interface HtmlInline {
-    data class Text(
+    data class AppText(
         val value: String,
         val style: HtmlTextStyle,
         val link: String? = null,

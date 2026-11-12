@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material3.Surface
+import top.yukonga.miuix.kmp.basic.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,7 +112,6 @@ private fun BaseCard(
         shape = resolvedShape,
         color = if (isTransparent) Color.Transparent else resolvedContainerColor,
         contentColor = contentColor ?: LegadoTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
         shadowElevation = elevation,
         border = resolvedBorder
     ) {

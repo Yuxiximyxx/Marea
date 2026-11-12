@@ -799,6 +799,7 @@ fun MainActivity.mainEntryProvider(
                             parent,
                             resultCode == Activity.RESULT_OK
                         )
+                    }
                 }
                 popped
             },

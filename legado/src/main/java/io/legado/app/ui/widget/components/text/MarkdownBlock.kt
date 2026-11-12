@@ -18,11 +18,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import io.legado.app.R
+import io.legado.app.ui.widget.components.text.AppText
 import io.legado.app.ui.theme.LegadoTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -630,7 +630,7 @@ private fun MarkdownCodeBlock(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (!language.isNullOrBlank()) {
-                Text(
+                AppText(
                     text = language,
                     style = LegadoTheme.typography.labelSmall,
                     color = LegadoTheme.colorScheme.onSurfaceVariant,
@@ -668,7 +668,7 @@ private fun MarkdownCodeBlock(
             )
         }
         if (canCollapse) {
-            Text(
+            AppText(
                 text = if (isExpanded) "▲ 收起" else "▼ 展开 (${codeLines.size} 行)",
                 style = LegadoTheme.typography.labelSmall,
                 color = LegadoTheme.colorScheme.primary,

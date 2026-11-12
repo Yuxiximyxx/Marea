@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Book
@@ -33,9 +34,6 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.ui.widget.components.icon.AppIcon
+import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import io.legado.app.ui.book.info.ChangeCoverSheet
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.fadingEdge
@@ -292,11 +294,7 @@ fun BookTypeDropdown(
         textFieldState.setTextAndPlaceCursorAtEnd(selectedTypeLabel)
     }
 
-    ExposedDropdownMenuBox(
-        modifier = Modifier.padding(horizontal = 8.dp),
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
+    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
         AppTextField(
             state = textFieldState,
             readOnly = true,
@@ -304,14 +302,21 @@ fun BookTypeDropdown(
             label = stringResource(R.string.book_type_label),
             backgroundColor = LegadoTheme.colorScheme.surfaceInput,
             trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                AppIcon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    modifier = Modifier.rotate(if (expanded) 180f else 0f)
+                )
             },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(
-                    ExposedDropdownMenuAnchorType.PrimaryEditable,
-                    enabled = true
-                ),
+                .matchParentSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { expanded = !expanded }
         )
 
         RoundDropdownMenu(

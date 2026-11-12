@@ -23,11 +23,11 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import io.legado.app.R
+import io.legado.app.ui.widget.components.button.AppIconButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -548,7 +548,7 @@ fun FloatingBottomBar(
         }
         // 菜单位于根容器最上层，背景采样与指示器不参与它的触摸命中。
         if (compactProgress > 0f) {
-            IconButton(
+            AppIconButton(
                 onClick = onRestoreNavigation,
                 enabled = compactProgress > 0.35f,
                 modifier = Modifier

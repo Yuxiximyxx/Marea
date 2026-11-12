@@ -220,7 +220,7 @@ fun HomeRouteScreen(
         onNavigateToReadRecordOverview = onNavigateToReadRecordOverview,
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
-    ) )
+    )
 
 }
 
