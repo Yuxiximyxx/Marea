@@ -4,14 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,10 +22,19 @@ import io.legado.app.R
 import io.legado.app.data.repository.ReadPreferences
 import io.legado.app.data.repository.ReadSettingsRepository
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ProvideAppDensity
+import io.legado.app.ui.widget.components.AppTextField
+import io.legado.app.ui.widget.components.alert.AppAlertDialog
+import io.legado.app.ui.widget.components.text.AppText
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
+/**
+ * exp.13：MD3 AlertDialog/OutlinedTextField/TextButton 换项目已收敛的
+ * [AppAlertDialog]（Miuix WindowDialog）+ [AppTextField]（Miuix）。
+ * 语义不变：「重置」只清空两个输入框不关弹窗；「确定」保存后关闭；
+ * 外部点击/返回关闭不保存。按键码录入的 onKeyEvent 逻辑原样保留。
+ * 滚动由 AppAlertDialog 的内容列承担（原实现为 text 槽内自带 verticalScroll）。
+ */
 @Composable
 fun PageKeyConfigSheet(
     onDismissRequest: () -> Unit,
@@ -50,97 +52,79 @@ fun PageKeyConfigSheet(
         nextKeys = preferences.nextKeys
     }
 
-    AlertDialog(
+    AppAlertDialog(
+        show = true,
         onDismissRequest = onDismissRequest,
-        containerColor = LegadoTheme.colorScheme.surfaceContainer,
-        title = { ProvideAppDensity { Text(stringResource(R.string.custom_page_key)) } },
-        text = {
-            ProvideAppDensity {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                ) {
-                    OutlinedTextField(
-                        value = prevKeys,
-                        onValueChange = { prevKeys = it },
-                        label = { Text(stringResource(R.string.prev_page_key)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onKeyEvent { event ->
-                                val keyCode = event.nativeKeyEvent.keyCode
-                                if (keyCode != android.view.KeyEvent.KEYCODE_BACK &&
-                                    keyCode != android.view.KeyEvent.KEYCODE_DEL
-                                ) {
-                                    prevKeys = if (prevKeys.isEmpty() || prevKeys.endsWith(",")) {
-                                        "$prevKeys$keyCode"
-                                    } else {
-                                        "$prevKeys,$keyCode"
-                                    }
-                                    true
+        title = stringResource(R.string.custom_page_key),
+        content = {
+            Column {
+                AppTextField(
+                    value = prevKeys,
+                    onValueChange = { prevKeys = it },
+                    label = stringResource(R.string.prev_page_key),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onKeyEvent { event ->
+                            val keyCode = event.nativeKeyEvent.keyCode
+                            if (keyCode != android.view.KeyEvent.KEYCODE_BACK &&
+                                keyCode != android.view.KeyEvent.KEYCODE_DEL
+                            ) {
+                                prevKeys = if (prevKeys.isEmpty() || prevKeys.endsWith(",")) {
+                                    "$prevKeys$keyCode"
                                 } else {
-                                    false
+                                    "$prevKeys,$keyCode"
                                 }
-                            },
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = nextKeys,
-                        onValueChange = { nextKeys = it },
-                        label = { Text(stringResource(R.string.next_page_key)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onKeyEvent { event ->
-                                val keyCode = event.nativeKeyEvent.keyCode
-                                if (keyCode != android.view.KeyEvent.KEYCODE_BACK &&
-                                    keyCode != android.view.KeyEvent.KEYCODE_DEL
-                                ) {
-                                    nextKeys = if (nextKeys.isEmpty() || nextKeys.endsWith(",")) {
-                                        "$nextKeys$keyCode"
-                                    } else {
-                                        "$nextKeys,$keyCode"
-                                    }
-                                    true
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                AppTextField(
+                    value = nextKeys,
+                    onValueChange = { nextKeys = it },
+                    label = stringResource(R.string.next_page_key),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onKeyEvent { event ->
+                            val keyCode = event.nativeKeyEvent.keyCode
+                            if (keyCode != android.view.KeyEvent.KEYCODE_BACK &&
+                                keyCode != android.view.KeyEvent.KEYCODE_DEL
+                            ) {
+                                nextKeys = if (nextKeys.isEmpty() || nextKeys.endsWith(",")) {
+                                    "$nextKeys$keyCode"
                                 } else {
-                                    false
+                                    "$nextKeys,$keyCode"
                                 }
-                            },
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.page_key_set_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                AppText(
+                    text = stringResource(R.string.page_key_set_help),
+                    style = LegadoTheme.typography.bodySmall,
+                    color = LegadoTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
-        dismissButton = {
-            ProvideAppDensity {
-                TextButton(
-                    onClick = {
-                        prevKeys = ""
-                        nextKeys = ""
-                    },
-                ) {
-                    Text(stringResource(R.string.reset))
-                }
-            }
+        dismissText = stringResource(R.string.reset),
+        onDismiss = {
+            prevKeys = ""
+            nextKeys = ""
         },
-        confirmButton = {
-            ProvideAppDensity {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            readSettingsRepository.setPageKeys(prevKeys, nextKeys)
-                            onDismissRequest()
-                        }
-                    },
-                ) {
-                    Text(stringResource(R.string.ok))
-                }
+        confirmText = stringResource(R.string.ok),
+        onConfirm = {
+            scope.launch {
+                readSettingsRepository.setPageKeys(prevKeys, nextKeys)
+                onDismissRequest()
             }
         },
     )

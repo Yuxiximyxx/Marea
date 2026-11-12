@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
+import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.data.repository.ReadPreferences
 import io.legado.app.data.repository.ReadSettingsRepository
 import io.legado.app.ui.book.read.ConfigUpdate
@@ -90,11 +91,11 @@ fun AutoReadContent(
         ) {
             Text(
                 text = stringResource(R.string.auto_page_speed),
-                style = MaterialTheme.typography.titleSmall,
+                style = LegadoTheme.typography.titleSmall,
             )
             Text(
                 text = String.format(Locale.ROOT, "%ds", speed.roundToInt()),
-                style = MaterialTheme.typography.bodyLarge,
+                style = LegadoTheme.typography.bodyLarge,
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
@@ -158,16 +159,20 @@ private fun ActionButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        androidx.compose.material3.FilledTonalIconButton(onClick = onClick) {
+        IconButton(
+            onClick = onClick,
+            backgroundColor = LegadoTheme.colorScheme.secondaryContainer,
+        ) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = label,
+                tint = LegadoTheme.colorScheme.onSecondaryContainer,
             )
         }
         Spacer(Modifier.height(4.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = LegadoTheme.typography.labelSmall,
         )
     }
 }

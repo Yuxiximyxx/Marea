@@ -103,6 +103,9 @@ fun SimulatedReadingSheet(
         onDismiss = onDismissRequest,
     )
 
+    // exp.13 点名保留 MD3：本地 Miuix 源码树没有日历型日期选择器（只有 NumberPicker
+    // 数字滚轮），用滚轮拼年月日要自造月份天数/闰年联动与交互，属重写行为，按口径
+    // 不自造——本弹窗的日历选择继续用 MD3 DatePicker，其余控件已随家族收敛为 Miuix。
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = startDate.atStartOfDay(ZoneId.systemDefault()).toInstant()
             .toEpochMilli(),

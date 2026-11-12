@@ -496,19 +496,22 @@ fun MainActivity.mainEntryProvider(
     }
 
     entry<MainRouteCache> { route ->
-        BookshelfManageRouteScreen(
-            groupId = route.groupId,
-            onBackClick = { onNavigateBack() },
-            onOpenBookInfo = { name, author, bookUrl ->
-                onNavigateToRoute(
-                    MainRouteBookInfo(
-                        name = name,
-                        author = author,
-                        bookUrl = bookUrl
+        // exp.13：书架管理页整页纳入 MiuixSurface（exp.12 只随共享组件层跟随）
+        MiuixSurface {
+            BookshelfManageRouteScreen(
+                groupId = route.groupId,
+                onBackClick = { onNavigateBack() },
+                onOpenBookInfo = { name, author, bookUrl ->
+                    onNavigateToRoute(
+                        MainRouteBookInfo(
+                            name = name,
+                            author = author,
+                            bookUrl = bookUrl
+                        )
                     )
-                )
-            }
-        )
+                }
+            )
+        }
     }
 
     entry<MainRouteBookCacheManage> {

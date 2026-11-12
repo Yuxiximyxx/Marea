@@ -1,12 +1,9 @@
 package io.legado.app.ui.book.read.sheet
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,9 +15,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.model.ReadBook
-import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ProvideAppDensity
+import io.legado.app.ui.widget.components.AppTextField
+import io.legado.app.ui.widget.components.alert.AppAlertDialog
 
+/**
+ * exp.13：MD3 AlertDialog/OutlinedTextField/TextButton 换项目已收敛的
+ * [AppAlertDialog]（Miuix WindowDialog）+ [AppTextField]（Miuix）。
+ * 确认语义不变：起止章节解析失败或起 > 止时不关闭、不下载。
+ */
 @Composable
 fun DownloadSheet(
     onDismissRequest: () -> Unit,
@@ -30,53 +32,39 @@ fun DownloadSheet(
     var startChapter by remember { mutableStateOf(((book?.durChapterIndex ?: 0) + 1).toString()) }
     var endChapter by remember { mutableStateOf((book?.totalChapterNum ?: 0).toString()) }
 
-    AlertDialog(
+    AppAlertDialog(
+        show = true,
         onDismissRequest = onDismissRequest,
-        containerColor = LegadoTheme.colorScheme.surfaceContainer,
-        title = { ProvideAppDensity { Text(stringResource(R.string.offline_cache)) } },
-        text = {
-            ProvideAppDensity {
-                androidx.compose.foundation.layout.Column {
-                    OutlinedTextField(
-                        value = startChapter,
-                        onValueChange = { startChapter = it },
-                        label = { Text(stringResource(R.string.start_chapter)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = endChapter,
-                        onValueChange = { endChapter = it },
-                        label = { Text(stringResource(R.string.end_chapter)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                }
+        title = stringResource(R.string.offline_cache),
+        content = {
+            Column {
+                AppTextField(
+                    value = startChapter,
+                    onValueChange = { startChapter = it },
+                    label = stringResource(R.string.start_chapter),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                AppTextField(
+                    value = endChapter,
+                    onValueChange = { endChapter = it },
+                    label = stringResource(R.string.end_chapter),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
             }
         },
-        confirmButton = {
-            ProvideAppDensity {
-                TextButton(
-                    onClick = {
-                        val start = startChapter.toIntOrNull() ?: return@TextButton
-                        val end = endChapter.toIntOrNull() ?: return@TextButton
-                        if (start <= end) {
-                            onDownload(start, end)
-                            onDismissRequest()
-                        }
-                    },
-                ) {
-                    Text(stringResource(R.string.ok))
-                }
+        confirmText = stringResource(R.string.ok),
+        onConfirm = {
+            val start = startChapter.toIntOrNull() ?: return@AppAlertDialog
+            val end = endChapter.toIntOrNull() ?: return@AppAlertDialog
+            if (start <= end) {
+                onDownload(start, end)
+                onDismissRequest()
             }
         },
-        dismissButton = {
-            ProvideAppDensity {
-                TextButton(onClick = onDismissRequest) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        },
+        dismissText = stringResource(R.string.cancel),
+        onDismiss = onDismissRequest,
     )
 }

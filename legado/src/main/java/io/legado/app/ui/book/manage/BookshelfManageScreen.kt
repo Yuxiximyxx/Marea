@@ -45,9 +45,7 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.VerticalDivider
+import top.yukonga.miuix.kmp.basic.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,6 +81,8 @@ import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.theme.adaptiveContentPadding
 import io.legado.app.ui.widget.components.AppFloatingActionButtonMenu
 import io.legado.app.ui.widget.components.AppTextField
+import io.legado.app.ui.widget.components.AppRadioButton
+import io.legado.app.ui.widget.components.checkBox.AppCheckbox
 import io.legado.app.ui.widget.components.FabMenuItem
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.button.series.MediumTonalButton
@@ -783,7 +783,7 @@ private fun BookshelfManageScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Start
                     ) {
-                        Checkbox(
+                        AppCheckbox(
                             checked = deleteOriginalBookFile,
                             onCheckedChange = { checked ->
                                 deleteOriginalBookFile = checked
@@ -1102,7 +1102,7 @@ private fun BookshelfManageScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    RadioButton(
+                    AppRadioButton(
                         selected = customExportAllChapter,
                         onClick = { customExportAllChapter = true }
                     )
@@ -1115,7 +1115,7 @@ private fun BookshelfManageScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    RadioButton(
+                    AppRadioButton(
                         selected = !customExportAllChapter,
                         onClick = { customExportAllChapter = false }
                     )
