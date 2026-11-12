@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 实验分支 exp/legado-reader：与并入的 Legado 库的 file_paths 取并集，
+     保证 Legado 的分享/导出（外部存储根、cache 根）与本应用原有相机路径都可用 -->
 <paths>
     <cache-path name="camera" path="camera/" />
     <external-cache-path name="external_camera" path="camera/" />
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
     <files-path name="files" path="." />
     <external-files-path name="external_files" path="." />
+    <external-path name="external_storage_root" path="." />
 </paths>
