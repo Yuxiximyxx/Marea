@@ -55,7 +55,6 @@ class CrashHandler(val context: Context) : Thread.UncaughtExceptionHandler {
             AppLog.put("发生未捕获的异常\n${ex.localizedMessage}", ex)
             Looper.loop()
         } else {
-            ReadAloud.stop(context)
             if (handleException(ex)) {
                 Process.killProcess(Process.myPid())
                 exitProcess(10)

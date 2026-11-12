@@ -592,7 +592,6 @@ val appModule = module {
             bookExportSettingsGateway = get(),
             batchCacheDownloadUseCase = get(),
             cacheBookChaptersUseCase = get(),
-            changeBookSourceUseCase = get(),
             clearBookCacheUseCase = get(),
             deleteBooksUseCase = get(),
             updateBooksGroupUseCase = get(),

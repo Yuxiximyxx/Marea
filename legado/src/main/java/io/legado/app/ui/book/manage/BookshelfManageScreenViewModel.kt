@@ -18,12 +18,7 @@ import io.legado.app.domain.gateway.BookshelfSettingsGateway
 import io.legado.app.domain.gateway.DownloadCacheSettingsGateway
 import io.legado.app.domain.model.settings.BookExportSettings
 import io.legado.app.domain.usecase.BatchCacheDownloadUseCase
-import io.legado.app.domain.usecase.BatchChangeSourceCandidate
-import io.legado.app.domain.usecase.BatchChangeSourcePreviewItem
-import io.legado.app.domain.usecase.BatchChangeSourcePreviewStatus
 import io.legado.app.domain.usecase.CacheBookChaptersUseCase
-import io.legado.app.domain.usecase.ChangeBookSourceUseCase
-import io.legado.app.domain.usecase.ChangeSourceMigrationOptions
 import io.legado.app.domain.usecase.ClearBookCacheUseCase
 import io.legado.app.domain.usecase.DeleteBooksUseCase
 import io.legado.app.domain.usecase.UpdateBooksGroupUseCase
@@ -113,16 +108,9 @@ data class BookshelfManageScreenUiState(
     val bookSort: Int = bookshelfSettingsGateway.currentSettings.bookshelfSort,
     val bookSortOrder: Int = bookshelfSettingsGateway.currentSettings.bookshelfSortOrder,
     val isDownloadRunning: Boolean = false,
-    val isChangingSource: Boolean = false,
-    val changeSourceProgress: String? = null,
-    val changeSourceMessage: String? = null,
-    val changeSourceError: String? = null,
-    val batchChangePreviewItems: List<BatchChangeSourcePreviewItem> = emptyList(),
-    val batchChangeOptions: ChangeSourceMigrationOptions = ChangeSourceMigrationOptions(),
     val cacheVersion: Long = 0,
     val deleteBookOriginal: Boolean = LocalConfig.deleteBookOriginal,
     val exportConfig: BookshelfManageScreenExportConfig = BookshelfManageScreenExportConfig(),
-    val bookSources: ImmutableList<BookSourcePart> = persistentListOf(),
 )
 
 sealed interface BookshelfManageScreenIntent {
@@ -145,33 +133,7 @@ sealed interface BookshelfManageScreenIntent {
     data class ClearCachesForBooks(val bookUrls: Set<String>) : BookshelfManageScreenIntent
     data class MoveBookOrder(val fromIndex: Int, val toIndex: Int) : BookshelfManageScreenIntent
     data class DownloadBooks(val bookUrls: Set<String>, val downloadAllChapters: Boolean) : BookshelfManageScreenIntent
-    data class ChangeBookSource(
-        val oldBookUrl: String,
-        val source: BookSource,
-        val book: Book,
-        val chapters: List<BookChapter>,
-        val options: ChangeSourceMigrationOptions,
-    ) : BookshelfManageScreenIntent
-    data class BatchChangeBookSource(
-        val bookUrls: Set<String>,
-        val sources: List<BookSource>,
-        val options: ChangeSourceMigrationOptions,
-    ) : BookshelfManageScreenIntent
-    data class MigratePreviewItem(val oldBookUrl: String) : BookshelfManageScreenIntent
-    data class SkipPreviewItem(val oldBookUrl: String) : BookshelfManageScreenIntent
-    data class SelectPreviewCandidate(val oldBookUrl: String, val candidateIndex: Int) : BookshelfManageScreenIntent
-    data class UpdatePreviewItem(
-        val oldBookUrl: String,
-        val source: BookSource,
-        val book: Book,
-        val chapterCount: Int,
-    ) : BookshelfManageScreenIntent
-    data class AddPreviewItemToShelf(val oldBookUrl: String) : BookshelfManageScreenIntent
     data class OpenBookInfoPreview(val book: Book, val inBookshelf: Boolean) : BookshelfManageScreenIntent
-    data object MigrateAllPreviewItems : BookshelfManageScreenIntent
-    data object AddAllPreviewItemsToShelf : BookshelfManageScreenIntent
-    data object DismissChangeSourceStatus : BookshelfManageScreenIntent
-    data object DismissBatchChangePreview : BookshelfManageScreenIntent
     data class SetExportUseReplace(val enabled: Boolean) : BookshelfManageScreenIntent
     data class SetEnableCustomExport(val enabled: Boolean) : BookshelfManageScreenIntent
     data class SetExportNoChapterName(val enabled: Boolean) : BookshelfManageScreenIntent
@@ -200,7 +162,6 @@ class BookshelfManageScreenViewModel(
     private val bookExportSettingsGateway: BookExportSettingsGateway,
     private val batchCacheDownloadUseCase: BatchCacheDownloadUseCase,
     private val cacheBookChaptersUseCase: CacheBookChaptersUseCase,
-    private val changeBookSourceUseCase: ChangeBookSourceUseCase,
     private val clearBookCacheUseCase: ClearBookCacheUseCase,
     private val deleteBooksUseCase: DeleteBooksUseCase,
     private val updateBooksGroupUseCase: UpdateBooksGroupUseCase,
@@ -231,11 +192,6 @@ class BookshelfManageScreenViewModel(
     init {
         viewModelScope.launch {
             bookExportSettingsGateway.settings.collect(::syncExportConfig)
-        }
-        viewModelScope.launch {
-            bookSourceRepository.flowEnabled().collect { sources ->
-                _uiState.update { it.copy(bookSources = sources.toImmutableList()) }
-            }
         }
     }
     @Volatile
@@ -269,58 +225,10 @@ class BookshelfManageScreenViewModel(
             is BookshelfManageScreenIntent.ClearCachesForBooks -> clearCachesForBooks(intent.bookUrls)
             is BookshelfManageScreenIntent.MoveBookOrder -> moveBookOrder(intent.fromIndex, intent.toIndex)
             is BookshelfManageScreenIntent.DownloadBooks -> downloadBooks(intent.bookUrls, intent.downloadAllChapters)
-            is BookshelfManageScreenIntent.ChangeBookSource -> changeBookSource(
-                intent.oldBookUrl,
-                intent.source,
-                intent.book,
-                intent.chapters,
-                intent.options
-            )
-
-            is BookshelfManageScreenIntent.BatchChangeBookSource -> batchChangeBookSource(
-                intent.bookUrls,
-                intent.sources,
-                intent.options
-            )
-
-            is BookshelfManageScreenIntent.MigratePreviewItem -> migratePreviewItem(intent.oldBookUrl)
-            is BookshelfManageScreenIntent.SkipPreviewItem -> skipPreviewItem(intent.oldBookUrl)
-            is BookshelfManageScreenIntent.SelectPreviewCandidate -> selectPreviewCandidate(
-                intent.oldBookUrl,
-                intent.candidateIndex
-            )
-
-            is BookshelfManageScreenIntent.UpdatePreviewItem -> updatePreviewItem(
-                intent.oldBookUrl,
-                intent.source,
-                intent.book,
-                intent.chapterCount
-            )
-
-            is BookshelfManageScreenIntent.AddPreviewItemToShelf -> addPreviewItemToShelf(intent.oldBookUrl)
             is BookshelfManageScreenIntent.OpenBookInfoPreview -> openBookInfoPreview(
                 intent.book,
                 intent.inBookshelf
             )
-
-            BookshelfManageScreenIntent.MigrateAllPreviewItems -> migrateAllPreviewItems()
-
-            BookshelfManageScreenIntent.AddAllPreviewItemsToShelf -> addAllPreviewItemsToShelf()
-
-            BookshelfManageScreenIntent.DismissChangeSourceStatus -> {
-                _uiState.update {
-                    it.copy(
-                        changeSourceProgress = null,
-                        changeSourceMessage = null,
-                        changeSourceError = null,
-                    )
-                }
-            }
-
-            BookshelfManageScreenIntent.DismissBatchChangePreview -> {
-                _uiState.update { it.copy(batchChangePreviewItems = emptyList()) }
-            }
-
             is BookshelfManageScreenIntent.SetExportUseReplace -> {
                 updateExportSetting { it.copy(exportUseReplace = intent.enabled) }
                 val msg = if (intent.enabled) "替换净化功能已开启" else "替换净化功能已关闭"
@@ -802,215 +710,6 @@ class BookshelfManageScreenViewModel(
         }
     }
 
-    private fun changeBookSource(
-        oldBookUrl: String,
-        source: BookSource,
-        book: Book,
-        chapters: List<BookChapter>,
-        options: ChangeSourceMigrationOptions,
-    ) {
-        execute {
-            val oldBook = bookRepository.getBook(oldBookUrl) ?: return@execute null
-            changeBookSourceUseCase.changeTo(oldBook, book, chapters, options)
-        }.onSuccess { result ->
-            result ?: return@onSuccess
-            cacheCounts.remove(result.oldBookUrl)
-            cacheCounts[result.book.bookUrl] = 0
-            emitBookChanged(result.book.bookUrl)
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("换源完成"))
-        }.onError {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("换源失败\n${it.localizedMessage}"))
-        }
-    }
-
-    private fun batchChangeBookSource(
-        bookUrls: Set<String>,
-        sources: List<BookSource>,
-        options: ChangeSourceMigrationOptions,
-    ) {
-        if (bookUrls.isEmpty()) {
-            _uiState.update { it.copy(changeSourceError = "未选择书籍") }
-            return
-        }
-        if (sources.isEmpty()) {
-            _uiState.update { it.copy(changeSourceError = "未选择书源") }
-            return
-        }
-        execute {
-            val concurrency = downloadCacheSettingsGateway.currentSettings.threadCount.coerceAtLeast(1)
-            _uiState.update {
-                it.copy(
-                    isChangingSource = true,
-                    changeSourceProgress = "0 / ${bookUrls.size}",
-                    changeSourceMessage = "开始查找：${bookUrls.size} 本，${sources.size} 个书源，并发 $concurrency",
-                    changeSourceError = null,
-                    batchChangeOptions = options,
-                    batchChangePreviewItems = emptyList()
-                )
-            }
-            val books = bookUrls.mapNotNull { bookRepository.getBook(it) }
-            changeBookSourceUseCase.prepareBatchChange(
-                books = books,
-                sources = sources,
-                concurrency = concurrency,
-            ) { current, total, bookName ->
-                _uiState.update {
-                    it.copy(changeSourceProgress = "$current / $total  $bookName")
-                }
-            }
-        }.onSuccess { previewItems ->
-            _uiState.update {
-                it.copy(
-                    batchChangePreviewItems = previewItems,
-                    isChangingSource = false,
-                    changeSourceProgress = null
-                )
-            }
-            val matchedCount = previewItems.count { it.canMigrate }
-            val skippedCount = previewItems.count {
-                it.status == BatchChangeSourcePreviewStatus.Skipped
-            }
-            val notFoundCount = previewItems.size - matchedCount - skippedCount
-            _uiState.update {
-                it.copy(
-                    changeSourceMessage = "查找完成：可迁移 $matchedCount 本，未找到 $notFoundCount 本，跳过 $skippedCount 本",
-                    changeSourceError = null
-                )
-            }
-        }.onError {
-            val progress = uiState.value.changeSourceProgress.orEmpty()
-            _uiState.update { state ->
-                state.copy(
-                    changeSourceError = "批量换源查找失败${if (progress.isBlank()) "" else "\n进度：$progress"}\n${it.localizedMessage}"
-                )
-            }
-        }.onFinally {
-            _uiState.update {
-                it.copy(
-                    isChangingSource = false,
-                    changeSourceProgress = null
-                )
-            }
-        }
-    }
-
-    private fun migratePreviewItem(oldBookUrl: String) {
-        val item = uiState.value.batchChangePreviewItems.firstOrNull {
-            it.oldBook.bookUrl == oldBookUrl
-        } ?: return
-        val candidate = item.selectedCandidate ?: return
-        execute {
-            val oldBook = bookRepository.getBook(oldBookUrl) ?: item.oldBook
-            val chapters = changeBookSourceUseCase.loadCandidateChapters(
-                candidate.source,
-                candidate.book
-            ) ?: error("获取目录失败")
-            changeBookSourceUseCase.changeTo(
-                oldBook = oldBook,
-                newBook = candidate.book,
-                chapters = chapters,
-                options = uiState.value.batchChangeOptions,
-            )
-        }.onSuccess { result ->
-            cacheCounts.remove(result.oldBookUrl)
-            cacheCounts[result.book.bookUrl] = 0
-            removePreviewItem(oldBookUrl)
-            emitBookChanged(result.book.bookUrl)
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("迁移完成"))
-        }.onError {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("迁移失败\n${it.localizedMessage}"))
-        }
-    }
-
-    private fun skipPreviewItem(oldBookUrl: String) {
-        _uiState.update { state ->
-            state.copy(
-                batchChangePreviewItems = state.batchChangePreviewItems.map { item ->
-                    if (item.oldBook.bookUrl == oldBookUrl) {
-                        item.copy(status = BatchChangeSourcePreviewStatus.Skipped)
-                    } else {
-                        item
-                    }
-                }
-            )
-        }
-    }
-
-    private fun selectPreviewCandidate(oldBookUrl: String, candidateIndex: Int) {
-        _uiState.update { state ->
-            state.copy(
-                batchChangePreviewItems = state.batchChangePreviewItems.map { item ->
-                    if (item.oldBook.bookUrl == oldBookUrl) {
-                        item.copy(
-                            selectedCandidateIndex = candidateIndex.coerceIn(
-                                0,
-                                (item.candidates.size - 1).coerceAtLeast(0)
-                            ),
-                            status = BatchChangeSourcePreviewStatus.Matched
-                        )
-                    } else {
-                        item
-                    }
-                }
-            )
-        }
-    }
-
-    private fun updatePreviewItem(
-        oldBookUrl: String,
-        source: BookSource,
-        book: Book,
-        chapterCount: Int,
-    ) {
-        _uiState.update { state ->
-            state.copy(
-                batchChangePreviewItems = state.batchChangePreviewItems.map { item ->
-                    if (item.oldBook.bookUrl == oldBookUrl) {
-                        book.totalChapterNum = chapterCount
-                        item.copy(
-                            candidates = listOf(
-                                BatchChangeSourceCandidate(
-                                    source = source,
-                                    book = book,
-                                    chapterCount = chapterCount
-                                )
-                            ) +
-                                    item.candidates,
-                            selectedCandidateIndex = 0,
-                            status = BatchChangeSourcePreviewStatus.Matched
-                        )
-                    } else {
-                        item
-                    }
-                }
-            )
-        }
-    }
-
-    private fun addPreviewItemToShelf(oldBookUrl: String) {
-        val item = uiState.value.batchChangePreviewItems.firstOrNull {
-            it.oldBook.bookUrl == oldBookUrl
-        } ?: return
-        val candidate = item.selectedCandidate ?: return
-        execute {
-            val chapters = changeBookSourceUseCase.loadCandidateChapters(
-                candidate.source,
-                candidate.book
-            ) ?: error("获取目录失败")
-            candidate.book.removeType(BookType.notShelf)
-            if (candidate.book.order == 0) {
-                candidate.book.order = bookRepository.getMinOrder() - 1
-            }
-            bookRepository.insert(candidate.book)
-            bookRepository.insertChapters(*chapters.toTypedArray())
-            candidate.book
-        }.onSuccess {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("已添加到书架"))
-        }.onError {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("添加书籍失败\n${it.localizedMessage}"))
-        }
-    }
-
     private fun openBookInfoPreview(book: Book, inBookshelf: Boolean) {
         execute {
             if (!inBookshelf) {
@@ -1019,97 +718,6 @@ class BookshelfManageScreenViewModel(
             book
         }.onSuccess {
             _effects.tryEmit(BookshelfManageScreenEffect.OpenBookInfo(it.bookUrl, it.name, it.author))
-        }
-    }
-
-    private fun removePreviewItem(oldBookUrl: String) {
-        _uiState.update {
-            it.copy(
-                batchChangePreviewItems = it.batchChangePreviewItems.filterNot { item ->
-                    item.oldBook.bookUrl == oldBookUrl
-                },
-                cacheVersion = it.cacheVersion + 1
-            )
-        }
-    }
-
-    private fun migrateAllPreviewItems() {
-        val items = uiState.value.batchChangePreviewItems.filter { it.canMigrate }
-        if (items.isEmpty()) return
-        execute {
-            _uiState.update {
-                it.copy(isChangingSource = true, changeSourceProgress = "0 / ${items.size}")
-            }
-            items.forEachIndexed { index, item ->
-                _uiState.update {
-                    it.copy(changeSourceProgress = "${index + 1} / ${items.size}  ${item.oldBook.name}")
-                }
-                val candidate = item.selectedCandidate ?: return@forEachIndexed
-                val oldBook = bookRepository.getBook(item.oldBook.bookUrl) ?: item.oldBook
-                val chapters = changeBookSourceUseCase.loadCandidateChapters(
-                    candidate.source,
-                    candidate.book
-                ) ?: return@forEachIndexed
-                changeBookSourceUseCase.changeTo(
-                    oldBook = oldBook,
-                    newBook = candidate.book,
-                    chapters = chapters,
-                    options = uiState.value.batchChangeOptions,
-                )
-            }
-        }.onSuccess {
-            cacheCounts.clear()
-            _uiState.update { it.copy(batchChangePreviewItems = emptyList()) }
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("批量迁移完成"))
-        }.onError {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("批量迁移失败\n${it.localizedMessage}"))
-        }.onFinally {
-            _uiState.update {
-                it.copy(
-                    isChangingSource = false,
-                    changeSourceProgress = null,
-                    cacheVersion = it.cacheVersion + 1
-                )
-            }
-        }
-    }
-
-    private fun addAllPreviewItemsToShelf() {
-        val items = uiState.value.batchChangePreviewItems.filter { it.canMigrate }
-        if (items.isEmpty()) return
-        execute {
-            _uiState.update {
-                it.copy(isChangingSource = true, changeSourceProgress = "0 / ${items.size}")
-            }
-            items.forEachIndexed { index, item ->
-                _uiState.update {
-                    it.copy(changeSourceProgress = "${index + 1} / ${items.size}  ${item.oldBook.name}")
-                }
-                val candidate = item.selectedCandidate ?: return@forEachIndexed
-                val chapters = changeBookSourceUseCase.loadCandidateChapters(
-                    candidate.source,
-                    candidate.book
-                ) ?: return@forEachIndexed
-                candidate.book.removeType(BookType.notShelf)
-                if (candidate.book.order == 0) {
-                    candidate.book.order = bookRepository.getMinOrder() - 1
-                }
-                bookRepository.insert(candidate.book)
-                bookRepository.insertChapters(*chapters.toTypedArray())
-            }
-        }.onSuccess {
-            _uiState.update { it.copy(batchChangePreviewItems = emptyList()) }
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("批量添加完成"))
-        }.onError {
-            _effects.tryEmit(BookshelfManageScreenEffect.ShowMessage("批量添加失败\n${it.localizedMessage}"))
-        }.onFinally {
-            _uiState.update {
-                it.copy(
-                    isChangingSource = false,
-                    changeSourceProgress = null,
-                    cacheVersion = it.cacheVersion + 1
-                )
-            }
         }
     }
 

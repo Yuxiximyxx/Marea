@@ -363,8 +363,7 @@ object BookCastStore {
         ReadBook.loadContent(
             chapterIndex,
             resetPageOffset = false,
-            preserveReadAloudPosition = BaseReadAloudService.isRun &&
-                    BaseReadAloudService.currentChapterIndex == chapterIndex,
+            preserveReadAloudPosition = false,
         )
     }
 }
