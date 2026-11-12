@@ -179,7 +179,9 @@ dependencies {
     implementation(libs.miuix.preference.android)
     implementation(libs.miuix.icons.android)
     implementation(libs.miuix.blur.android)
-    implementation(libs.miuix.core)
+    // catalog 的 miuix-core 是无后缀 KMP 根坐标，在本仓 includeBuild 替换下
+    // 落不到 android 变体；改用与 app 模块同款的 -android 后缀坐标（0.9.4）
+    implementation("top.yukonga.miuix.kmp:miuix-core-android:0.9.4")
     implementation(libs.capsule)
     implementation(libs.backdrop)
     implementation(libs.lyricViewx)
