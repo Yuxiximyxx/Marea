@@ -335,10 +335,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                                 ReadBookIntent.TocRegexResult(result.rule)
                             )
 
-                            is BookPageResult.SourceEdited -> readBookViewModel.onIntent(
-                                ReadBookIntent.SourceEditResult(result.sourceUrl)
-                            )
-
                             BookPageResult.RulesClosed -> readBookViewModel.onIntent(
                                 ReadBookIntent.ReplaceRuleResult
                             )
@@ -610,10 +606,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                                 )
                             }
                         },
-                        onOpenCharacterList = { },
-                        onOpenCharacterNetwork = { },
-                        onOpenKnowledgeList = { },
-                        onOpenEventList = { },
                     )
                 }
             },
