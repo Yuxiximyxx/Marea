@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- exp.3 应用名定版：legado 库在 zh-rCN/HK/TW 本地化目录里定义了 app_name
+     （阅读/閲讀/閱讀），资源解析按语言匹配会盖过 app 默认目录的 Marea；
+     在 app 模块以相同限定符各定一份，靠 app > 库的合并优先级夺回。 -->
+<resources>
+    <string name="app_name">Marea</string>
+</resources>

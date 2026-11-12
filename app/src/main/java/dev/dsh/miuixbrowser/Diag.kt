@@ -58,6 +58,46 @@ object Diag {
         runCatching { writeRaw("${time.format(Date())}  $message") }
     }
 
+    /** 导出诊断日志用：按与 init 相同的目录口径解析 diag.txt 路径。 */
+    fun fileFor(context: Context): File {
+        val dir = context.externalMediaDirs.firstOrNull() ?: context.filesDir
+        return File(dir, "diag.txt")
+    }
+
+    /**
+     * 设置页「导出诊断日志」：把最近崩溃堆栈（CrashCapture 的 last_crash.txt、
+     * 旧版写外部目录的 crash.txt）与 Diag 日志尾部打包成一个文本文件
+     * （cacheDir），供系统分享发回。失败返回 null。
+     */
+    fun buildExportFile(context: Context): File? = runCatching {
+        val diagText = fileFor(context).takeIf { it.exists() }?.let { f ->
+            val bytes = f.readBytes()
+            val limit = 256 * 1024
+            if (bytes.size > limit) {
+                String(bytes, bytes.size - limit, limit, Charsets.UTF_8)
+            } else {
+                String(bytes, Charsets.UTF_8)
+            }
+        }
+        val legacyCrash = runCatching {
+            val dir = context.externalMediaDirs.firstOrNull()
+                ?: context.getExternalFilesDir(null) ?: context.filesDir
+            File(dir, "crash.txt").takeIf { it.exists() }?.readText()
+        }.getOrNull()
+        val sb = StringBuilder()
+        sb.append("Marea 诊断导出\n")
+        sb.append("导出时间：").append(fullTime.format(Date())).append('\n')
+        sb.append("\n===== last_crash.txt（最近一次崩溃堆栈） =====\n")
+        sb.append(CrashCapture.read(context) ?: "（无记录）").append('\n')
+        sb.append("\n===== crash.txt（旧版崩溃记录） =====\n")
+        sb.append(legacyCrash ?: "（无记录）").append('\n')
+        sb.append("\n===== diag.txt（Diag 运行日志，尾部至多 256KB） =====\n")
+        sb.append(diagText ?: "（无记录）").append('\n')
+        val name = "marea-diag-" +
+            SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".txt"
+        File(context.cacheDir, name).apply { writeText(sb.toString()) }
+    }.getOrNull()
+
     /** 追加一行并同步落盘；未 init（file 为 null）时静默丢弃，与旧行为一致。 */
     private fun writeRaw(line: String) {
         synchronized(lock) {

@@ -1172,6 +1172,7 @@ class TxtReaderActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Diag.init(this)
+        CrashCapture.install(this)
         // fork.28：全幅铺满——窗口不避让系统栏，状态栏/导航条透明常显，
         // 内容侧用 windowInsetsPadding 给系统栏让位（与 MainActivity 同口径）
         WindowCompat.setDecorFitsSystemWindows(window, false)

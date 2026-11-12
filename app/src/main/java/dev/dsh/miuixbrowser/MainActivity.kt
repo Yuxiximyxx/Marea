@@ -398,22 +398,9 @@ class MainActivity : ComponentActivity() {
 
     /** 把未捕获异常写到应用外部目录，方便没有 adb 时排查。 */
     private fun installCrashLogger() {
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching {
-                val dir = externalMediaDirs.firstOrNull() ?: getExternalFilesDir(null) ?: filesDir
-                dir.mkdirs()
-                val file = java.io.File(dir, "crash.txt")
-                file.writeText(
-                    buildString {
-                        appendLine("time=" + java.util.Date())
-                        appendLine("thread=" + thread.name)
-                        appendLine(error.toString())
-                        error.stackTraceToString().lines().take(80).forEach { appendLine(it) }
-                    },
-                )
-            }
-            previous?.uncaughtException(thread, error)
-        }
+        // exp.3 起统一走 CrashCapture（落盘应用私有目录 last_crash.txt，
+        // 设置页「导出诊断日志」连同 Diag 一起打包）；旧版写外部目录
+        // crash.txt 的记录仍会被导出捎带，不丢历史证据。
+        CrashCapture.install(this)
     }
 }

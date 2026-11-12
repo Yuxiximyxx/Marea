@@ -112,6 +112,9 @@ class LegadoReaderHostActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Diag.init(this)
+        // 阅读路径是当前黑屏闪退的取证对象：进阅读前先把崩溃落盘装上
+        // （冷进程被外部 VIEW 直拉进本页、MainActivity 没跑过的情形也要有）
+        CrashCapture.install(this)
         // 与 Legado 自家宿主 BaseComposeActivity 对齐：阅读页按 edge-to-edge 布局
         enableEdgeToEdge()
         val uri: Uri? = intent?.getStringExtra(EXTRA_URI)?.let { runCatching { Uri.parse(it) }.getOrNull() }

@@ -86,6 +86,7 @@ class DownloadDialogActivity : ComponentActivity() {
         // （主界面不在场），它内部的 Diag.log 会因 file 未初始化被静默丢弃。补上初始化
         // （追加模式 + 进程内只初始化一次，重复调用无副作用）。
         Diag.init(this)
+        CrashCapture.install(this)
         Diag.log("DownloadDialogActivity.onCreate: action=${intent?.action} type=${intent?.type}")
         // 冷进程直达：先恢复落盘任务再建任务，否则 persistNow 会整表覆盖旧任务
         // fork.6 防御：恢复 / 初始化异常不许把弹窗 Activity 直接带崩（外部看就是「点了没反应」）

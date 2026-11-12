@@ -33,6 +33,7 @@ class ExternalLinkActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Diag.init(this)
+        CrashCapture.install(this)
         handleIntent(intent)
         finish()
         @Suppress("DEPRECATION")

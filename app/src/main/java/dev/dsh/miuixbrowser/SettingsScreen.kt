@@ -4,6 +4,7 @@ import android.content.Intent
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.content.FileProvider
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -388,6 +389,46 @@ fun SettingsScreen(
                         title = "关于 Marea",
                         summary = "版本 " + BuildConfig.VERSION_NAME,
                         onClick = onOpenAbout,
+                    )
+                    SettingsRow(
+                        title = "导出诊断日志",
+                        summary = "Diag 运行日志 + 最近一次崩溃堆栈，打包成文本文件分享出去",
+                        onClick = {
+                            scope.launch {
+                                val file = withContext(Dispatchers.IO) {
+                                    Diag.buildExportFile(context)
+                                }
+                                if (file == null) {
+                                    Toast.makeText(
+                                        context, "导出失败：诊断文件生成出错",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    runCatching {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            context.packageName + ".fileProvider",
+                                            file,
+                                        )
+                                        context.startActivity(
+                                            Intent.createChooser(
+                                                Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                },
+                                                "导出诊断日志",
+                                            ),
+                                        )
+                                    }.onFailure {
+                                        Toast.makeText(
+                                            context, "已生成诊断文件：${file.absolutePath}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                }
+                            }
+                        },
                     )
                 }
             }
