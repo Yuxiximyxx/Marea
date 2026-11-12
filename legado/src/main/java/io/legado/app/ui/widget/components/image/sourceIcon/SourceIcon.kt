@@ -2,6 +2,7 @@ package io.legado.app.ui.widget.components.image.sourceIcon
 
 import android.graphics.drawable.Animatable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -96,7 +97,7 @@ fun SourceIcon(
     }
 
     Box(
-        modifier = modifier.clip(MaterialTheme.shapes.medium),
+        modifier = modifier.clip(RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (path == null || (path is String && path.isEmpty())) {

@@ -241,6 +241,8 @@ fun HomeScreen(
     val scrollBehavior = GlassTopAppBarDefaults.defaultScrollBehavior()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var showPageMenu by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AppScaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),

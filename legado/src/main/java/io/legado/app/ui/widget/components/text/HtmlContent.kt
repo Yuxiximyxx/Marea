@@ -375,7 +375,7 @@ internal data class HtmlParagraph(
 )
 
 internal sealed interface HtmlInline {
-    data class AppText(
+    data class Text(
         val value: String,
         val style: HtmlTextStyle,
         val link: String? = null,

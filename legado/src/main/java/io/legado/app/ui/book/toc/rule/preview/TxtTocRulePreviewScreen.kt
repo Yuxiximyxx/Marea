@@ -385,7 +385,7 @@ private fun RulePreviewListItem(
             Column(
                 modifier = Modifier.weight(1f),
             ) {
-                Text(
+                AppText(
                     text = item.rule.name,
                     style = LegadoTheme.typography.bodyLarge,
                     maxLines = 1,
@@ -393,7 +393,7 @@ private fun RulePreviewListItem(
                 )
                 item.rule.example?.let { example ->
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
+                    AppText(
                         text = example,
                         style = LegadoTheme.typography.bodySmall,
                         color = LegadoTheme.colorScheme.onSurfaceVariant,
@@ -410,14 +410,14 @@ private fun RulePreviewListItem(
                 color = LegadoTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
             ) {
                 if (item.totalCount < 0) {
-                    CircularProgressIndicator(
+                    AppCircularProgressIndicator(
                         modifier = Modifier
                             .size(16.dp)
                             .padding(4.dp),
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Text(
+                    AppText(
                         text = stringResource(
                             R.string.chapter_count_format,
                             item.totalCount
@@ -441,7 +441,7 @@ private fun ChapterListSheetContent(
             .fillMaxWidth()
             .padding(16.dp),
     ) {
-        Text(
+        AppText(
             text = stringResource(R.string.chapter_count_format, item.totalCount),
             style = LegadoTheme.typography.bodyMedium,
             color = LegadoTheme.colorScheme.onSurfaceVariant,
@@ -456,7 +456,7 @@ private fun ChapterListSheetContent(
                 .heightIn(max = 400.dp),
         ) {
             itemsIndexed(item.chapters.toList()) { _, chapter ->
-                Text(
+                AppText(
                     text = chapter,
                     style = LegadoTheme.typography.bodyMedium,
                     modifier = Modifier
@@ -468,7 +468,7 @@ private fun ChapterListSheetContent(
             }
             if (item.chapters.size >= 500) {
                 item {
-                    Text(
+                    AppText(
                         text = stringResource(R.string.chapter_list_preview_limit),
                         style = LegadoTheme.typography.bodySmall,
                         color = LegadoTheme.colorScheme.onSurfaceVariant,
