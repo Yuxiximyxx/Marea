@@ -114,7 +114,12 @@ android {
 // 删除（只剩 dynamiccolor.DynamicScheme）。仲裁取高版 6.0.0 时 utilities 能进包、
 // 唯独 kolor 要的那个类不在，开书照样 NoClassDefFoundError（exp.5 首发实测：
 // SchemeTonalSpot/Hct 已定义、DynamicScheme$Platform 仍缺，门禁拦截后补此钉版）。
-// miuix-ui 用到的 Hct/Scheme*/dynamiccolor.DynamicScheme/ColorSpec 在 5.0.1 均在位。
+// kolor 5.0.1 的两处跨包引用（scheme.DynamicScheme$Platform 与
+// dynamiccolor.ColorSpec$SpecVersion）在 5.0.1 里都有定义。反面：miuix-ui 的
+// ThemeController 按 6.0.0 布局引用 dynamiccolor.DynamicScheme，该类不在 5.0.1
+// 中——但其动态配色生成路径在 Marea 里没有被接线（exp.1–exp.4 在 utilities
+// 整包缺失时浏览器一直正常使用可证），属存量休眠不一致、非本钉版引入的回归；
+// 将来接线 miuix 动态配色前须先处理此冲突（届时考虑升 kolor 到与 6.0.0 对齐的版本）。
 configurations.configureEach {
     resolutionStrategy {
         force("com.materialkolor:material-color-utilities:5.0.1")
