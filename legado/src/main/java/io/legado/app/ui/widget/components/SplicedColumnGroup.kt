@@ -112,6 +112,7 @@ fun SplicedColumnGroup(
             }
         }
     }
+}
 
 @Composable
 fun SplicedColumnDivider() {
