@@ -57,7 +57,6 @@ fun Fragment.startActivityForBook(
     configIntent: Intent.() -> Unit = {},
 ) {
     val intent = when {
-        book.isAudio -> MainActivity.createAudioPlayIntent(requireActivity(), book.bookUrl)
         !book.isLocal && book.isImage && mangaSettingsGateway.currentSettings.showMangaUi ->
             MainActivity.createReadMangaIntent(requireActivity(), book.bookUrl)
 

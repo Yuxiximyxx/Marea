@@ -9,11 +9,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.domain.gateway.ReadAloudSettingsGateway
 import io.legado.app.help.LifecycleHelp
-import io.legado.app.model.AudioPlay
-import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
-import io.legado.app.service.AudioPlayService
-import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.LogUtils
 import io.legado.app.utils.getPrefBoolean
@@ -54,7 +50,7 @@ class MediaButtonReceiver : BroadcastReceiver() {
                             if (context.getPrefBoolean(PreferKey.mediaButtonPerNext, false)) {
                                 ReadBook.moveToPrevChapter(true)
                             } else {
-                                ReadAloud.prevParagraph(context)
+                                Unit
                             }
                         }
 
@@ -62,7 +58,7 @@ class MediaButtonReceiver : BroadcastReceiver() {
                             if (context.getPrefBoolean(PreferKey.mediaButtonPerNext, false)) {
                                 ReadBook.moveToNextChapter(true)
                             } else {
-                                ReadAloud.nextParagraph(context)
+                                Unit
                             }
                         }
 
@@ -75,29 +71,11 @@ class MediaButtonReceiver : BroadcastReceiver() {
 
         fun readAloud(context: Context, isMediaKey: Boolean = true) {
             when {
-                BaseReadAloudService.isRun -> {
-                    if (BaseReadAloudService.isPlay()) {
-                        ReadAloud.pause(context)
-                        AudioPlay.pause(context)
-                    } else {
-                        ReadAloud.resume(context)
-                        AudioPlay.resume(context)
-                    }
-                }
-
-                AudioPlayService.isRun -> {
-                    if (AudioPlayService.pause) {
-                        AudioPlay.resume(context)
-                    } else {
-                        AudioPlay.pause(context)
-                    }
-                }
-
                 isMediaKey && !aloudSettingsGateway.currentSettings.readAloudByMediaButton -> {
                     // break
                 }
 
-                MainActivity.hasActiveReadBookRoute || MainActivity.hasActiveAudioPlayRoute ->
+                MainActivity.hasActiveReadBookRoute ->
                     postEvent(EventBus.MEDIA_BUTTON, true)
 
                 else -> Unit

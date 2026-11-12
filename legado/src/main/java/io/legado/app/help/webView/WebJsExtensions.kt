@@ -13,13 +13,11 @@ import io.legado.app.data.entities.RssSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
 import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.model.AudioPlay
 import io.legado.app.model.Debug
 import io.legado.app.model.ReadBook
 import io.legado.app.model.analyzeRule.AnalyzeRule
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setChapter
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setCoroutineContext
-import io.legado.app.ui.rss.read.RssJsExtensions
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.isJsonObject
@@ -72,10 +70,6 @@ class WebJsExtensions(
                 }
             }
 
-            BookType.audio -> {
-                book = AudioPlay.book
-                chapter = AudioPlay.durChapter
-            }
         }
         Pair(book, chapter)
     }

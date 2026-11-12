@@ -8,7 +8,6 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.ui.login.SourceLoginJsExtensions
 import io.legado.app.utils.isTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

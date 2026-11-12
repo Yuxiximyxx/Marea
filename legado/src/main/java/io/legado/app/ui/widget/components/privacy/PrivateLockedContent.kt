@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import coil3.request.allowHardware
 import coil3.request.transformations
 import coil3.size.Size
-import io.legado.app.core.ui.morph.BookCoverMorphAnchors
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.button.PrimaryButton
 import io.legado.app.ui.widget.components.icon.AppIcon

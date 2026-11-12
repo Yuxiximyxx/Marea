@@ -74,14 +74,13 @@ fun Context.startActivityForBook(
     configIntent: Intent.() -> Unit = {},
 ) {
     val intent = when {
-        book.isAudio -> MainActivity.createAudioPlayIntent(this, book.bookUrl)
         book.isImage && mangaSettingsGateway.currentSettings.showMangaUi ->
             MainActivity.createReadMangaIntent(this, book.bookUrl)
 
         else -> MainActivity.createReadBookIntent(this, book.bookUrl)
     }
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    if (book.isAudio || (book.isImage && mangaSettingsGateway.currentSettings.showMangaUi)) {
+    if (book.isImage && mangaSettingsGateway.currentSettings.showMangaUi) {
         intent.putExtra("bookUrl", book.bookUrl)
     }
     intent.apply(configIntent)
@@ -93,14 +92,13 @@ fun Context.startActivityForBook(
     configIntent: Intent.() -> Unit = {},
 ) {
     val intent = when {
-        book.isAudio -> MainActivity.createAudioPlayIntent(this, book.bookUrl)
         book.isImage && mangaSettingsGateway.currentSettings.showMangaUi ->
             MainActivity.createReadMangaIntent(this, book.bookUrl)
 
         else -> MainActivity.createReadBookIntent(this, book.bookUrl)
     }
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    if (book.isAudio || (book.isImage && mangaSettingsGateway.currentSettings.showMangaUi)) {
+    if (book.isImage && mangaSettingsGateway.currentSettings.showMangaUi) {
         intent.putExtra("bookUrl", book.bookUrl)
     }
     intent.apply(configIntent)

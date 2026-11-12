@@ -65,14 +65,10 @@ import io.legado.app.R
 import io.legado.app.base.BaseComposeActivity
 import io.legado.app.constant.AppConst.appInfo
 import io.legado.app.constant.EventBus
-import io.legado.app.core.ui.player.playerUnderlaySemantics
 import io.legado.app.data.repository.ReadAloudSettingsRepository
 import io.legado.app.domain.gateway.BackupSettingsGateway
 import io.legado.app.domain.gateway.MangaSettingsGateway
 import io.legado.app.domain.gateway.OtherSettingsGateway
-import io.legado.app.domain.gateway.PlaybackCapsuleGateway
-import io.legado.app.domain.model.PlaybackCapsuleSource
-import io.legado.app.domain.model.PlaybackCapsuleState
 import io.legado.app.help.LocalNetworkAccess
 import io.legado.app.help.MareaSpace
 import io.legado.app.help.book.BookHelp
@@ -82,21 +78,12 @@ import io.legado.app.help.http.LocalNetworkBlockedNotifier
 import io.legado.app.help.storage.Backup
 import io.legado.app.help.update.AppUpdateGitHub
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.model.AudioPlay
 import io.legado.app.ui.about.MarkdownSheet
 import io.legado.app.ui.about.UpdateDialog
-import io.legado.app.ui.book.audio.AudioPlayViewModel
 import io.legado.app.ui.book.read.ReadAloudControlsRequestBus
 import io.legado.app.ui.book.read.ReadBookInputHandler
 import io.legado.app.ui.book.read.ReadBookRouteHost
 import io.legado.app.ui.book.read.page.entities.PageDirection
-import io.legado.app.ui.book.readaloud.ReadAloudPlayerMorphHost
-import io.legado.app.ui.book.readaloud.ReadAloudPlayerOverlayBus
-import io.legado.app.ui.book.readaloud.ReadAloudShellHost
-import io.legado.app.ui.book.readaloud.morph.CapsuleAnchorKind
-import io.legado.app.ui.book.readaloud.morph.LocalReadAloudMorph
-import io.legado.app.ui.book.readaloud.morph.rememberReadAloudMorphState
-import io.legado.app.ui.book.readaloud.player.ReadAloudPlayerViewModel
 import io.legado.app.ui.main.bookshelf.BookshelfCoverPreloader
 import io.legado.app.ui.theme.LocalAppUiConfiguration
 import io.legado.app.ui.welcome.WelcomeActivity
@@ -128,7 +115,7 @@ import kotlin.coroutines.suspendCoroutine
 /**
  * 主界面
  */
-open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
+open class MainActivity : BaseComposeActivity() {
 
     private data class RouteEvent(
         val route: NavKey,
@@ -136,7 +123,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
     )
 
     /** 当前激活的有声书播放器 ViewModel（由有声书路由在生命周期内设置/清理） */
-    internal var activeAudioPlayViewModel: AudioPlayViewModel? = null
 
     /** 全局 Compose 文本弹层状态，供遗留命令式路径展示 Markdown/文本内容 */
     private val textSheetFlow = MutableStateFlow<TextSheetData?>(null)
@@ -164,7 +150,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         var hasActiveReadBookRoute: Boolean = false
 
         @Volatile
-        var hasActiveAudioPlayRoute: Boolean = false
 
         @Volatile
         var hasActiveSourceLoginRoute: Boolean = false
@@ -267,98 +252,8 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
             inBookshelf = inBookshelf,
             chapterChanged = chapterChanged,
         )
-
-        fun createAudioPlayIntent(
-            context: Context,
-            bookUrl: String? = null,
-            inBookshelf: Boolean = true,
-        ): Intent = MainIntent.createAudioPlayIntent(
-            context = context,
-            bookUrl = bookUrl,
-            inBookshelf = inBookshelf,
-        )
-
-        fun createSearchIntent(
-            context: Context,
-            key: String? = null,
-            scopeRaw: String? = null
-        ): Intent = MainIntent.createSearchIntent(context, key, scopeRaw)
-
-        fun createBookInfoIntent(
-            context: Context,
-            name: String? = null,
-            author: String? = null,
-            bookUrl: String,
-            origin: String? = null,
-            coverPath: String? = null
-        ): Intent =
-            MainIntent.createBookInfoIntent(context, name, author, bookUrl, origin, coverPath)
-
-        fun createBookCharacterDetailIntent(
-            context: Context,
-            bookUrl: String,
-            characterId: String? = null,
-        ): Intent = MainIntent.createBookCharacterDetailIntent(context, bookUrl, characterId)
-
-        fun createBookCharacterNetworkIntent(
-            context: Context,
-            bookUrl: String,
-        ): Intent = MainIntent.createBookCharacterNetworkIntent(context, bookUrl)
-
-        fun createBookKnowledgeListIntent(
-            context: Context,
-            bookUrl: String,
-        ): Intent = MainIntent.createBookKnowledgeListIntent(context, bookUrl)
-
-        fun createBookCharacterListIntent(
-            context: Context,
-            bookUrl: String,
-        ): Intent = MainIntent.createBookCharacterListIntent(context, bookUrl)
-
-        fun createBookKnowledgeDetailIntent(
-            context: Context,
-            bookUrl: String,
-            entryId: String? = null,
-        ): Intent = MainIntent.createBookKnowledgeDetailIntent(context, bookUrl, entryId)
-
-        fun createBookEventListIntent(
-            context: Context,
-            bookUrl: String,
-        ): Intent = MainIntent.createBookEventListIntent(context, bookUrl)
-
-        fun createBookEventDetailIntent(
-            context: Context,
-            bookUrl: String,
-            eventId: String? = null,
-        ): Intent = MainIntent.createBookEventDetailIntent(context, bookUrl, eventId)
-
-        fun createExploreShowIntent(
-            context: Context,
-            exploreName: String? = null,
-            sourceUrl: String,
-            exploreUrl: String? = null,
-        ): Intent = MainIntent.createExploreShowIntent(context, exploreName, sourceUrl, exploreUrl)
     }
 
-    private val viewModel by viewModel<MainViewModel>()
-    private val bookshelfCoverPreloader by inject<BookshelfCoverPreloader>()
-    private val otherSettingsGateway by inject<OtherSettingsGateway>()
-    private val mangaSettingsGateway by inject<MangaSettingsGateway>()
-    private val backupSettingsGateway by inject<BackupSettingsGateway>()
-    internal val navRouteTracker by inject<MainNavRouteTracker>()
-    private val routeEvents = MutableSharedFlow<RouteEvent>(extraBufferCapacity = 1)
-    /**
-     * Web 服务与「局域网请求」各自持有独立的 launcher：授权结果互不影响，也不需要用一个可变字段
-     * 记录「本次申请的目的」——那种写法在配置变更/进程重建后会丢失，导致结果被误判为 Web 服务申请。
-     */
-    private val localNetworkRequestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        // 授权后由用户重试原操作；未授权时提示授予方式。
-        if (!granted) {
-            toastOnUi(R.string.local_network_permission_required)
-        }
-    }
     private var shouldApplyDefaultToRead = true
     private var restoredReadBookRoute: MainRouteReadBook? = null
     internal var activeReadBookInputHandler: ReadBookInputHandler? = null
@@ -735,10 +630,7 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
                 // 关闭预见性返回时由宿主在导航层之前接管返回：手势不跟手预览，
                 // 松手后走普通出栈，popTransitionSpec 的返回动画照常播放。
                 BackHandler(
-                    enabled = shouldHandleActivityBack(
-                        predictiveBackEnabled = configuration.appShell.predictiveBackEnabled,
-                        playerPresent = false,
-                    )
+                    enabled = !configuration.appShell.predictiveBackEnabled
                 ) {
                     MainNavigator.navigateBack(this@MainActivity, backStack)
                 }
@@ -938,20 +830,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         if (!BuildConfig.DEBUG) {
             Backup.autoBack(this)
         }
-    }
-
-    // ===== AudioPlay.CallBack（有声书播放器路由注册，转发加载状态给当前播放器）=====
-
-    override fun upLoading(loading: Boolean) {
-        activeAudioPlayViewModel?.onLoadingChanged(loading)
-    }
-
-    override fun upLyric(lyric: String?) {
-        activeAudioPlayViewModel?.onLyricChanged()
-    }
-
-    override fun upLyricP(position: Int) {
-        // 歌词暂不在界面展示
     }
 
 }

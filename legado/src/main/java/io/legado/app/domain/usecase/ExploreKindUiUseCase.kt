@@ -8,7 +8,6 @@ import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.rule.ExploreKind
 import io.legado.app.help.source.getExploreInfoMap
-import io.legado.app.ui.login.SourceLoginJsExtensions
 import io.legado.app.utils.InfoMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

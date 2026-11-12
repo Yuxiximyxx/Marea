@@ -453,6 +453,7 @@ private fun BookInfoScreenContent(
                                                 onIntent(BookInfoIntent.IntroImageLongClick(source))
                                             },
                                         )
+                                    }
                                 }
                             }
                         }
@@ -1383,6 +1384,44 @@ private fun BookInfoActions(
             label = stringResource(R.string.read_record),
             onClick = onReadRecordClick
         )
+    }
+}
+
+@Composable
+private fun BookInfoActionCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    label: String,
+    contentDescription: String = label,
+    containerColor: Color = LegadoTheme.colorScheme.surfaceContainerLow,
+    contentColor: Color = LegadoTheme.colorScheme.onSurface,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    GlassCard(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            role = Role.Button
+            this.contentDescription = contentDescription
+        },
+        onLongClick = onLongClick,
+        onClick = onClick,
+        containerColor = containerColor,
+        contentColor = contentColor,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            AppIcon(icon, null)
+            AnimatedTextLine(
+                text = label,
+                style = LegadoTheme.typography.bodySmall,
+                maxLines = 2,
+            )
+        }
     }
 }
 

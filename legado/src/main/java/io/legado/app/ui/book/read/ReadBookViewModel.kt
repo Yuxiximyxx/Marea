@@ -65,8 +65,6 @@ import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.model.ImageProvider
-import io.legado.app.model.ReadAloud
-import io.legado.app.model.ReadAloudSessionStore
 import io.legado.app.model.ReadBook
 import io.legado.app.model.ReaderSession
 import io.legado.app.model.ReaderSessionEvent
@@ -77,7 +75,6 @@ import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setChapter
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setCoroutineContext
 import io.legado.app.model.reader.isPayable
 import io.legado.app.model.translation.TranslationChapterStatus
-import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.sheet.ReaderBookSheetTab
 import io.legado.app.ui.book.searchContent.SearchResult
 import io.legado.app.utils.GSON
@@ -777,8 +774,6 @@ class ReadBookViewModel(
             is ReadBookIntent.OpenChapterResult -> {
                 ReadBook.saveReadingAnchorBeforeChapterJump(intent.index, intent.chapterPos)
                 openChapter(intent.index, intent.chapterPos)
-            }
-                if (it.pendingEditedSource == intent.sourceUrl) it.copy(pendingEditedSource = null) else it
             }
             is ReadBookIntent.ReplaceRuleResult -> replaceRuleDelegate.rulesChanged()
             is ReadBookIntent.BookInfoResult -> {

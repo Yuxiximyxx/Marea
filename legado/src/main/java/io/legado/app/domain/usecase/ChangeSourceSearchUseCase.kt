@@ -13,7 +13,6 @@ import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.releaseHtmlData
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.model.webBook.WebBook
-import io.legado.app.ui.book.changesource.ObservableSourceConfig
 import io.legado.app.utils.internString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

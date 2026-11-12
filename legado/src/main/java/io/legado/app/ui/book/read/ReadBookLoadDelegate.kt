@@ -28,8 +28,6 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.webBook.WebBook
-import io.legado.app.service.BaseReadAloudService
-import io.legado.app.model.ReadAloud
 import io.legado.app.utils.mapParallelSafe
 import io.legado.app.utils.postEvent
 import kotlinx.coroutines.CoroutineScope

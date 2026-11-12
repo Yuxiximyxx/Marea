@@ -1,7 +1,6 @@
 package io.legado.app.ui.main
 
 import androidx.navigation3.runtime.NavKey
-import io.legado.app.ui.login.SourceLoginType
 import io.legado.app.ui.replace.ReplaceEditRoute
 import kotlinx.serialization.Serializable
 

@@ -4,18 +4,13 @@ import androidx.compose.runtime.Composable
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import io.legado.app.ui.rss.read.MainRouteRssRead
 import kotlin.reflect.KClass
 
 /** 阅读与宿主浮层拥有专门的呈现，不参与普通页面的父子双栏。 */
 private val standaloneMainRoutes = setOf(
     MainRouteReadBook::class,
     MainRouteReadManga::class,
-    MainRouteAudioPlay::class,
-    MainRouteReadAloudPlayer::class,
     MainRouteSearchContent::class,
-    MainRouteSourceLogin::class,
-    MainRouteRssRead::class,
 )
 
 internal fun supportsMainPanes(type: KClass<out NavKey>): Boolean = type !in standaloneMainRoutes

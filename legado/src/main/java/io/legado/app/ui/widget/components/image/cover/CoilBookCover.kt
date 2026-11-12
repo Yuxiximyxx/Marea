@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.withSave
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
-import io.legado.app.core.ui.morph.BookCoverMorphAnchors
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.LocalAppUiConfiguration
 import org.koin.compose.koinInject

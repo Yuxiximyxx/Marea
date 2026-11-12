@@ -14,7 +14,6 @@ import io.legado.app.constant.AppLog
 import io.legado.app.domain.gateway.BackupSettingsGateway
 import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.exception.NoStackTraceException
-import io.legado.app.model.ReadAloud
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.createFileIfNotExist

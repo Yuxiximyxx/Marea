@@ -87,11 +87,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import io.legado.app.R
-import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleEndPadding
-import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleSize
-import io.legado.app.ui.book.readaloud.ReadAloudBarCapsuleSlot
-import io.legado.app.ui.book.readaloud.ReadAloudPlayerOverlayBus
-import io.legado.app.ui.book.readaloud.morph.ReadAloudMorphState
 import io.legado.app.ui.main.bookshelf.BookShelfItem
 import io.legado.app.ui.main.bookshelf.BookshelfRouteScreen
 import io.legado.app.ui.main.bookshelf.BookshelfViewModel
@@ -257,10 +252,7 @@ fun MainScreen(
     val labelVisibilityMode = mainUiState.labelVisibilityMode
     val isUnlabeled = labelVisibilityMode == "unlabeled"
     val useFloatingBottomBar =
-        shouldUseHomePlaybackCapsule(
-            onMainRoute = true, showBottomView = mainUiState.showBottomView,
-            useFloatingBottomBar = mainUiState.useFloatingBottomBar, useRail = useRail,
-        )
+        mainUiState.showBottomView && mainUiState.useFloatingBottomBar && !useRail
     // exp.9：悬浮底栏/听书胶囊的材质改由 Marea 档位单独总控，Legado 自身的
     // useFloatingBottomBarLiquidGlass 在此表面让位、不再参与判定：
     // 关档→实色且不采样；磨砂档→模糊（无透镜）；液态档→模糊+透镜。

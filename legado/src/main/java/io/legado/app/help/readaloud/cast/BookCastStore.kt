@@ -6,7 +6,6 @@ import io.legado.app.domain.model.readaloud.BookVoiceBinding
 import io.legado.app.feature.reader.core.cast.CastMarkers
 import io.legado.app.help.readaloud.effect.VoiceEffectStore
 import io.legado.app.model.ReadBook
-import io.legado.app.service.BaseReadAloudService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID

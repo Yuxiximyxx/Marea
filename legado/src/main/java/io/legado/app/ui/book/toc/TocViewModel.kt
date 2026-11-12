@@ -31,7 +31,6 @@ import io.legado.app.help.bookmark.BookmarkExporter
 import io.legado.app.help.readaloud.cast.CastAssignmentStore
 import io.legado.app.help.readaloud.playback.ReadAloudAudioStore
 import io.legado.app.model.CacheBook
-import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.model.cache.CacheBookDownloadState
 import io.legado.app.model.localBook.EpubFile
