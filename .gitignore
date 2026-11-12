@@ -22,3 +22,5 @@ _mafari_extract/
 miuix/docs/.vitepress/cache/
 miuix/docs/.vitepress/dist/
 node_modules/
+
+__pycache__/
