@@ -310,13 +310,24 @@ fun DownloadsScreen(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable(enabled = task.state == DownloadState.DONE && task.uri != null) {
-                                                runCatching {
-                                                    context.startActivity(
-                                                        Intent(Intent.ACTION_VIEW).apply {
-                                                            setDataAndType(task.uri, task.mime ?: "*/*")
-                                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                        },
-                                                    )
+                                                val doneUri = task.uri
+                                                if (doneUri != null && TxtReaderActivity.isTxt(task.name, task.mime)) {
+                                                    // fork.26：.txt 直接进内置阅读器（带任务所属
+                                                    // 空间，隐私下载的阅读进度不落普通空间）
+                                                    runCatching {
+                                                        context.startActivity(
+                                                            TxtReaderActivity.intent(context, doneUri, task.name, task.space),
+                                                        )
+                                                    }
+                                                } else {
+                                                    runCatching {
+                                                        context.startActivity(
+                                                            Intent(Intent.ACTION_VIEW).apply {
+                                                                setDataAndType(task.uri, task.mime ?: "*/*")
+                                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                            },
+                                                        )
+                                                    }
                                                 }
                                             },
                                         verticalAlignment = Alignment.CenterVertically,

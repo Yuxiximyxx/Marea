@@ -43,6 +43,7 @@ enum class MenuAction(
     Settings("settings", "设置", MiuixIcons.Glass.Settings),
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
+    OpenFile("open_file", "打开文件", MiuixIcons.Glass.File),
     ScriptMenu("script_menu", "脚本", AppIcons.Script),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),

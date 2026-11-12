@@ -558,6 +558,29 @@ fun BrowserScreen(
         }
     }
 
+    // TXT 阅读器（fork.26）：菜单「打开文件」走系统选择器选文本文件，选中直接进
+    // 阅读器；空间按当前隐私模式状态带过去，阅读进度落在对应空间的存储里
+    val txtPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            runCatching {
+                context.startActivity(
+                    TxtReaderActivity.intent(
+                        context, uri, null,
+                        if (PrivacyMode.active) 1 else 0,
+                    ),
+                )
+            }
+        }
+    }
+
     // 拍照 / 录像
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -1753,6 +1776,7 @@ fun BrowserScreen(
                             MenuAction.AddToDesktop -> ShortcutHelper.addToDesktop(context, scope, tab)
                             MenuAction.Home -> state.goHome(tab)
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
+                            MenuAction.OpenFile -> txtPickerLauncher.launch(arrayOf("text/plain"))
                             MenuAction.ScriptMenu -> {
                                 scriptSheetShow = true
                                 refreshScriptSheet()

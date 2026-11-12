@@ -347,6 +347,24 @@
             </intent-filter>
         </activity>
 
+        <!-- TXT 阅读器（fork.26）：下载列表点 .txt、菜单「打开文件」、其他应用
+             VIEW 送来的本地文本文件三处汇合于此。过滤器只声明 content / file
+             两种 scheme + text/plain——http(s) 意图仍归 ExternalLinkActivity
+             的 fork.24/25 链路，两者不重叠 -->
+        <activity
+            android:name=".TxtReaderActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
+            android:theme="@style/Theme.MiuixBrowser">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- 应用图标：同一时间只启用一个 alias，见 AppIconManager -->
         <activity-alias
             android:name=".IconDefault"
