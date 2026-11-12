@@ -17,6 +17,7 @@ import top.yukonga.miuix.kmp.icon.glass.GridView
 import top.yukonga.miuix.kmp.icon.glass.Favorites
 import top.yukonga.miuix.kmp.icon.glass.Folder
 import top.yukonga.miuix.kmp.icon.glass.File
+import top.yukonga.miuix.kmp.icon.glass.Book
 
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Copy
@@ -44,6 +45,7 @@ enum class MenuAction(
     Home("home", "主页", MiuixIcons.Home),
     Downloads("downloads", "下载", MiuixIcons.Glass.Download),
     OpenFile("open_file", "打开文件", MiuixIcons.Glass.File),
+    Bookshelf("bookshelf", "书架", MiuixIcons.Glass.Book),
     ScriptMenu("script_menu", "脚本", AppIcons.Script),
     History("history", "历史", MiuixIcons.Glass.WorldClock),
     CloseTab("close", "关闭标签", MiuixIcons.Glass.Close),

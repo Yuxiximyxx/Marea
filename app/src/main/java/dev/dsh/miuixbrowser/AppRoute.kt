@@ -35,4 +35,7 @@ sealed interface AppRoute : NavKey {
 
     /** 书签 / 历史库。[tab] 0 = 书签，1 = 历史。 */
     data class Library(val tab: Int) : AppRoute
+
+    /** TXT 阅读器书架（fork.27），空间按进入时的隐私模式状态取 */
+    data object Bookshelf : AppRoute
 }

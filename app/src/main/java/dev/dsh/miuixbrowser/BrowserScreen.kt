@@ -1777,6 +1777,7 @@ fun BrowserScreen(
                             MenuAction.Home -> state.goHome(tab)
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
                             MenuAction.OpenFile -> txtPickerLauncher.launch(arrayOf("text/plain"))
+                            MenuAction.Bookshelf -> pushPage(AppRoute.Bookshelf)
                             MenuAction.ScriptMenu -> {
                                 scriptSheetShow = true
                                 refreshScriptSheet()
@@ -2449,6 +2450,12 @@ fun BrowserScreen(
             onMultiThreadMinMbChange = { settings.updateDownloadMultiThreadMinMb(it) },
             maxConcurrent = settings.downloadMaxConcurrent,
             onMaxConcurrentChange = { settings.updateDownloadMaxConcurrent(it) },
+        )
+    }
+    entry<AppRoute.Bookshelf> {
+        BookshelfScreen(
+            space = if (PrivacyMode.active) 1 else 0,
+            onBack = { popPage() },
         )
     }
     entry<AppRoute.AdBlockPage> {
