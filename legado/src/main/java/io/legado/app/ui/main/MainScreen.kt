@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -58,10 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -118,6 +122,7 @@ import io.legado.app.utils.startActivityForBook
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
@@ -546,13 +551,59 @@ fun MainScreen(
                 }
             },
             // The row owns side cutouts, child pages own top bars, and this scaffold owns the bottom.
-            contentWindowInsets = mainAdaptiveInsets.only(WindowInsetsSides.Bottom)
+            contentWindowInsets = mainAdaptiveInsets.only(WindowInsetsSides.Bottom),
+            // exp.10 返工一：让 AppScaffold 把 scaffoldPadding 原样交回本层决定，
+            // 不再由它先行 padding——悬浮底栏模式下底部那条带的归属见下方内容根注释。
+            alwaysDrawBehindBars = true
         ) { padding ->
+            // exp.10 返工一（导航条黑带）：犯病的只有带悬浮底栏的两个一级页。旧结构里
+            // scaffold 依 contentWindowInsets 底部（导航条 inset）算出 bottomPadding，
+            // 内容根 .padding(padding) 把 pager 与底栏整体抬离窗口底沿，留下的带只剩
+            // scaffold Surface 一层兜底——exp.7 改窗口背景/组合根底色层、exp.9 改
+            // AppScaffold 容器色都没能让真机上这条带变色，说明它不由那几层决定。
+            // 修法落在容器层：悬浮模式下内容根不再让出底部，页面底色在本层全幅铺到
+            // 窗口底沿；FloatingNavigationContainer 本就带 windowInsetsPadding
+            // （父级未消费底部 inset 时自行让位，见其注释），底栏位置与旧结构一致。
+            val layoutDirection = LocalLayoutDirection.current
+            val effectivePadding = if (useFloatingBottomBar) {
+                PaddingValues(
+                    start = padding.calculateStartPadding(layoutDirection),
+                    end = padding.calculateEndPadding(layoutDirection),
+                    top = padding.calculateTopPadding(),
+                    bottom = 0.dp,
+                )
+            } else {
+                padding
+            }
+            val pageBackground = if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
+                MiuixTheme.colorScheme.background
+            } else {
+                LegadoTheme.colorScheme.background
+            }
+            val miuixColorsDiag = if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) {
+                " miuixBackground=#%08X miuixSurface=#%08X".format(
+                    MiuixTheme.colorScheme.background.toArgb(),
+                    MiuixTheme.colorScheme.surface.toArgb(),
+                )
+            } else {
+                ""
+            }
+            LaunchedEffect(useFloatingBottomBar, padding.calculateBottomPadding()) {
+                GlassDiag.log(
+                    context, "MainImmersion",
+                    "floating=$useFloatingBottomBar " +
+                        "scaffoldBottomPadding=${padding.calculateBottomPadding()} " +
+                        "engine=${LegadoTheme.composeEngine} " +
+                        "pageBackground=#%08X".format(pageBackground.toArgb()) +
+                        miuixColorsDiag
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .consumeWindowInsets(padding)
+                    .background(pageBackground)
+                    .padding(effectivePadding)
+                    .consumeWindowInsets(effectivePadding)
             ) {
                 Box(
                     modifier = Modifier.then(
