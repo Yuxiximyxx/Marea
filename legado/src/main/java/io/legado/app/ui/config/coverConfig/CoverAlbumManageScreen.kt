@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -361,12 +360,10 @@ private fun CoverAlbumEditorSheet(
                             .align(Alignment.TopEnd)
                             .padding(4.dp)
                             .size(28.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = LegadoTheme.colorScheme.surfaceContainer.copy(
-                                alpha = 0.82f
-                            )
+                        miuixBackgroundColor = LegadoTheme.colorScheme.surfaceContainer.copy(
+                            alpha = 0.82f
                         ),
-                        shape = CircleShape,
+                        miuixCornerRadius = 14.dp,
                     ) {
                         AppIcon(
                             imageVector = Icons.Default.Close,

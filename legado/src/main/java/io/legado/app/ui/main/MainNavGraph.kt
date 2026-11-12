@@ -74,6 +74,7 @@ import io.legado.app.ui.book.toc.TocViewModel
 import io.legado.app.ui.book.toc.rule.TxtRuleRouteScreen
 import io.legado.app.ui.book.toc.rule.preview.TxtTocRulePreviewRouteScreen
 import io.legado.app.ui.config.ConfigNavScreen
+import io.legado.app.ui.theme.MiuixSurface
 import io.legado.app.ui.config.backupConfig.BackupConfigRouteScreen
 import io.legado.app.ui.config.coverConfig.CoverAlbumManageRouteScreen
 import io.legado.app.ui.config.coverConfig.CoverConfigRouteScreen
@@ -357,53 +358,74 @@ fun MainActivity.mainEntryProvider(
     }
 
     entry<MainRouteSettings> {
-        ConfigNavScreen(
-            onBackClick = { onNavigateBack() },
-            onNavigateToOther = { pushRoute(MainRouteSettingsOther) },
-            onNavigateToRead = { pushRoute(MainRouteSettingsRead) },
-            // 朗读规则 hub：入口从「我的」移到设置，页面标题与这里统一叫「朗读设置」
-            onNavigateToCover = { pushRoute(MainRouteSettingsCover) },
-            onNavigateToTheme = { pushRoute(MainRouteSettingsTheme) },
-            onNavigateToBackup = { pushRoute(MainRouteSettingsBackup) },
-            onNavigateToDownloadCache = { pushRoute(MainRouteSettingsDownloadCache) },
-            onNavigateToTranslation = { pushRoute(MainRouteSettingsTranslation) },
-            onNavigateToLab = { pushRoute(MainRouteSettingsLabConfig) },
-            onNavigateToPrivate = { pushRoute(MainRouteSettingsPrivate) }
-        )
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                ConfigNavScreen(
+                    onBackClick = { onNavigateBack() },
+                    onNavigateToOther = { pushRoute(MainRouteSettingsOther) },
+                    onNavigateToRead = { pushRoute(MainRouteSettingsRead) },
+                    // 朗读规则 hub：入口从「我的」移到设置，页面标题与这里统一叫「朗读设置」
+                    onNavigateToCover = { pushRoute(MainRouteSettingsCover) },
+                    onNavigateToTheme = { pushRoute(MainRouteSettingsTheme) },
+                    onNavigateToBackup = { pushRoute(MainRouteSettingsBackup) },
+                    onNavigateToDownloadCache = { pushRoute(MainRouteSettingsDownloadCache) },
+                    onNavigateToTranslation = { pushRoute(MainRouteSettingsTranslation) },
+                    onNavigateToLab = { pushRoute(MainRouteSettingsLabConfig) },
+                    onNavigateToPrivate = { pushRoute(MainRouteSettingsPrivate) }
+                )
+        }
+        }
 
     entry<MainRouteSettingsOther> {
-        OtherConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                OtherConfigRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteSettingsRead> {
-        ReadConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                ReadConfigRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteSettingsCover> {
-        CoverConfigRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onNavigateToCoverAlbums = {
-                pushRoute(MainRouteSettingsCoverAlbums)
-            },
-        )
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                CoverConfigRouteScreen(
+                    onBackClick = { onNavigateBack() },
+                    onNavigateToCoverAlbums = {
+                        pushRoute(MainRouteSettingsCoverAlbums)
+                    },
+                )
+        }
+        }
 
     entry<MainRouteSettingsCoverAlbums> {
-        CoverAlbumManageRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                CoverAlbumManageRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteSettingsTheme> {
-        ThemeConfigRouteScreen(
-            onBackClick = { onNavigateBack() },
-            onNavigateToCustomTheme = { pushRoute(MainRouteSettingsCustomTheme) },
-            onNavigateToThemeManage = { pushRoute(MainRouteSettingsThemeManage) }
-        )
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                ThemeConfigRouteScreen(
+                    onBackClick = { onNavigateBack() },
+                    onNavigateToCustomTheme = { pushRoute(MainRouteSettingsCustomTheme) },
+                    onNavigateToThemeManage = { pushRoute(MainRouteSettingsThemeManage) }
+                )
+        }
+        }
 
     entry<MainRouteSettingsBackup> {
-        BackupConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                BackupConfigRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
 
 
@@ -412,36 +434,54 @@ fun MainActivity.mainEntryProvider(
 
 
     entry<MainRouteSettingsDownloadCache> {
-        DownloadCacheConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                DownloadCacheConfigRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteSettingsTranslation> {
-        TranslationConfigRouteScreen(
-            onBackClick = { onNavigateBack() },
-        )
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                TranslationConfigRouteScreen(
+                    onBackClick = { onNavigateBack() },
+                )
+        }
+        }
 
     entry<MainRouteSettingsLabConfig> {
-        LabConfigRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                LabConfigRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteSettingsPrivate> {
         // 隐私设置页可以关掉三种验证时机，所以进入前要求确认身份（生物或密码）。
         // 只校验、不授予：进来一次不该顺带解锁私密内容。
         PrivateVerifyGate(onCancel = { onNavigateBack() }) {
-            PrivateConfigRouteScreen(onBackClick = { onNavigateBack() })
+            // exp.12：同其它设置页，根部补 Miuix 表面环境
+            MiuixSurface {
+                PrivateConfigRouteScreen(onBackClick = { onNavigateBack() })
+            }
         }
     }
 
     entry<MainRouteSettingsCustomTheme> {
-        CustomThemeRouteScreen(
-            onBackClick = { onNavigateBack() }
-        )
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                CustomThemeRouteScreen(
+                    onBackClick = { onNavigateBack() }
+                )
+        }
+        }
 
     entry<MainRouteSettingsThemeManage> {
-        ThemeManageRouteScreen(onBackClick = { onNavigateBack() })
-    }
+        // exp.12：设置主界面已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+        MiuixSurface {
+                ThemeManageRouteScreen(onBackClick = { onNavigateBack() })
+        }
+        }
 
     entry<MainRouteImportLocal> {
         ImportBookRouteScreen(

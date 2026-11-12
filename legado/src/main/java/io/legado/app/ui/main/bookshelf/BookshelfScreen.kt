@@ -73,9 +73,9 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
+import top.yukonga.miuix.kmp.basic.SnackbarHost
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
+import top.yukonga.miuix.kmp.basic.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -115,6 +115,7 @@ import io.legado.app.ui.book.group.GroupEditSheet
 import io.legado.app.ui.book.info.GroupSelectSheet
 import io.legado.app.ui.main.bookCoverSharedElementKey
 import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.theme.MiuixSurface
 import io.legado.app.ui.theme.ProvideAppDensity
 import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.theme.adaptiveContentPaddingBookshelf
@@ -200,6 +201,8 @@ fun BookshelfRouteScreen(
         // 可见期间持续跟随最新状态，快照因此不会残留成过期版本（例如点了私密书但没跳转）
         snapshotFlow { state }.collect { leavingShelfState = it }
     }
+    // exp.12：书架页已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+    MiuixSurface {
     BookshelfScreen(
         uiState = if (isLeavingShelf) leavingShelfState ?: state else state,
         onIntent = viewModel::onIntent,
@@ -216,6 +219,7 @@ fun BookshelfRouteScreen(
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
     )
+    }
 }
 
 @OptIn(
@@ -571,7 +575,7 @@ fun BookshelfScreen(
         contentWindowInsets = WindowInsets(0),
         snackbarHost = {
             SnackbarHost(
-                hostState = snackbarHostState,
+                state = snackbarHostState,
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
                     .padding(bottom = 72.dp)
@@ -1698,8 +1702,8 @@ fun BookshelfPage(
     val bookItemCoverShadow = uiState.settings.bookshelfCoverShadow
     val showFastScroll = uiState.settings.showBookshelfFastScroller
     val listContentDescription = stringResource(R.string.bookshelf)
-    val totalHorizontalPadding =
-        if (ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)) 12.dp else 16.dp
+    // exp.12：引擎分支已去除，横向边距收敛为原 miuix 分支取值
+    val totalHorizontalPadding = 12.dp
     val gridContentHorizontalPadding = totalHorizontalPadding / 2
     val gridInnerHorizontalPadding = totalHorizontalPadding / 2
     val hapticFeedback = LocalHapticFeedback.current

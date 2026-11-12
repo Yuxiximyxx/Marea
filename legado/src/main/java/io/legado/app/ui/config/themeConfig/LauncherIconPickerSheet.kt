@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -82,7 +82,7 @@ fun LauncherIconPickerSheet(
                     Box(
                         modifier = Modifier
                             .aspectRatio(1f)
-                            .clip(MaterialTheme.shapes.large)
+                            .clip(RoundedCornerShape(16.dp))
                             .background(
                                 if (isSelected)
                                     LegadoTheme.colorScheme.secondaryContainer
@@ -94,7 +94,7 @@ fun LauncherIconPickerSheet(
                                     Modifier.border(
                                         width = 2.dp,
                                         color = LegadoTheme.colorScheme.primary,
-                                        shape = MaterialTheme.shapes.large
+                                        shape = RoundedCornerShape(16.dp)
                                     )
                                 } else {
                                     Modifier

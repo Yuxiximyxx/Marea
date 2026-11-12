@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
 import io.legado.app.ui.file.FileManageActivity
+import io.legado.app.ui.theme.MiuixSurface
 import io.legado.app.ui.theme.adaptiveContentPadding
 import io.legado.app.ui.widget.components.AppScaffold
 import io.legado.app.ui.widget.components.SplicedColumnGroup
@@ -74,12 +75,15 @@ fun MyRouteScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    MyScreen(
-        state = uiState,
-        onIntent = viewModel::onIntent,
-        onOpenSettings = onOpenSettings,
-        onNavigate = onNavigate,
-    )
+    // exp.12：「我的」页已去 MD3、只用 Miuix 组件，根部补 Miuix 表面环境
+    MiuixSurface {
+        MyScreen(
+            state = uiState,
+            onIntent = viewModel::onIntent,
+            onOpenSettings = onOpenSettings,
+            onNavigate = onNavigate,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)

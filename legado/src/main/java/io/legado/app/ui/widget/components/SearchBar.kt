@@ -3,13 +3,9 @@ package io.legado.app.ui.widget.components
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,14 +26,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.icon.AppIcons
 import io.legado.app.ui.widget.components.text.AppText
 import kotlinx.coroutines.CoroutineScope
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchBar(
     modifier: Modifier = Modifier,
@@ -52,7 +46,7 @@ fun SearchBar(
             contentDescription = null
         )
     },
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    backgroundColor: Color = Color.Unspecified,
     scrollState: LazyListState? = null,
     scope: CoroutineScope = rememberCoroutineScope(),
     trailingIcon: @Composable (() -> Unit)? = null,
@@ -100,57 +94,31 @@ fun SearchBar(
             }
     }
 
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
+    // exp.12：引擎分支已去除，只保留原 miuix 分支（Miuix SearchBar 输入形态）
     val resolvedBackgroundColor = if (backgroundColor != Color.Unspecified) {
         backgroundColor
     } else {
-        if (isMiuix) MiuixTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerLow
+        MiuixTheme.colorScheme.surfaceContainer
     }
     val resolvedPlaceholder = placeholder ?: stringResource(R.string.search_placeholder)
 
-    if (isMiuix) {
-        AppDenseTextField(
-            state = textFieldState,
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .focusRequester(focusRequester),
-            placeholder = { AppText(resolvedPlaceholder) },
-            leadingIcon = leadingIcon,
-            trailingIcon = trailingIcon,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            onKeyboardAction = {
-                submitSearch(textFieldState.text.toString())
-            },
-            lineLimits = TextFieldLineLimits.SingleLine,
-            backgroundColor = resolvedBackgroundColor,
-            miuixUseSearchBarInputField = true,
-            miuixSearchBarLabel = resolvedPlaceholder,
-            miuixOnSearch = submitSearch,
-        )
-    } else {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp),
-            shape = RoundedCornerShape(32.dp),
-            color = resolvedBackgroundColor
-        ) {
-            AppDenseTextField(
-                state = textFieldState,
-                modifier = modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester),
-                placeholder = { AppText(resolvedPlaceholder) },
-                leadingIcon = leadingIcon,
-                trailingIcon = trailingIcon,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                onKeyboardAction = {
-                    submitSearch(textFieldState.text.toString())
-                },
-                lineLimits = TextFieldLineLimits.SingleLine,
-                backgroundColor = Color.Transparent
-            )
-        }
-    }
+    AppDenseTextField(
+        state = textFieldState,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .focusRequester(focusRequester),
+        placeholder = { AppText(resolvedPlaceholder) },
+        leadingIcon = leadingIcon,
+        trailingIcon = trailingIcon,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        onKeyboardAction = {
+            submitSearch(textFieldState.text.toString())
+        },
+        lineLimits = TextFieldLineLimits.SingleLine,
+        backgroundColor = resolvedBackgroundColor,
+        miuixUseSearchBarInputField = true,
+        miuixSearchBarLabel = resolvedPlaceholder,
+        miuixOnSearch = submitSearch,
+    )
 }
