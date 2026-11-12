@@ -198,9 +198,6 @@ open class MainActivity : BaseComposeActivity() {
             chapterChanged = chapterChanged,
         )
 
-        fun createReadBookMediaControlIntent(context: Context): Intent =
-            MainIntent.createReadBookMediaControlIntent(context)
-
         fun createReadMangaIntent(
             context: Context,
             bookUrl: String? = null,

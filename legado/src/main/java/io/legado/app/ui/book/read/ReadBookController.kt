@@ -2484,11 +2484,9 @@ class ReadBookController(
             }
 
             // Launcher-dependent effects — handled by route layer, ignored here
-            is ReadBookEffect.OpenSourceEdit,
             is ReadBookEffect.OpenChapterList,
             is ReadBookEffect.OpenBookInfo,
             is ReadBookEffect.OpenSearch,
-            is ReadBookEffect.ShowLogin,
             is ReadBookEffect.MenuSettingReplace,
             is ReadBookEffect.TextActionReplace,
             is ReadBookEffect.OpenReplaceEditor,

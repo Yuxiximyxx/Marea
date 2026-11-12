@@ -91,7 +91,6 @@ import io.legado.app.ui.highlightTagRule.HighlightTagRuleRouteScreen
 import io.legado.app.ui.replace.ReplaceRuleRouteScreen
 import io.legado.app.ui.replace.edit.ReplaceEditRouteScreen
 import io.legado.app.ui.replace.edit.ReplaceEditViewModel
-import io.legado.app.ui.widget.components.changeSource.ChangeSourceSheet
 import io.legado.app.ui.widget.components.privacy.PrivateReadGate
 import io.legado.app.ui.widget.components.privacy.PrivateVerifyGate
 import io.legado.app.utils.openUrl
@@ -873,18 +872,6 @@ fun MainActivity.mainEntryProvider(
             },
             onNavigateToBookInfo = { name, author, bookUrl, origin, coverPath ->
                 onNavigateToRoute(MainRouteBookInfo(name, author, bookUrl, origin, coverPath))
-            },
-            onOpenCharacterNetwork = { bookUrl ->
-                onNavigateToRoute(MainRouteBookCharacterNetwork(bookUrl))
-            },
-            onOpenCharacterList = { bookUrl ->
-                onNavigateToRoute(MainRouteBookCharacterList(bookUrl))
-            },
-            onOpenKnowledgeList = { bookUrl ->
-                onNavigateToRoute(MainRouteBookKnowledgeList(bookUrl))
-            },
-            onOpenEventList = { bookUrl ->
-                onNavigateToRoute(MainRouteBookEventList(bookUrl))
             },
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = LocalNavAnimatedContentScope.current,

@@ -109,19 +109,6 @@ object MainIntent {
         }
     }
 
-    fun createReadBookMediaControlIntent(context: Context): Intent =
-        createReadBookIntent(context, bookUrl = io.legado.app.model.ReadAloud.bookSession.book?.bookUrl,
-            readAloud = true).apply {
-            // 复用 launcher Activity 并移除其上层的旧 Activity；Nav3 父栈另行重建，
-            // 让阅读页返回时始终落到主页。
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
-            putExtra(EXTRA_ROUTE_HOME_AS_PARENT, true)
-        }
-
     internal fun shouldOpenRouteWithHomeParent(intent: Intent?): Boolean =
         intent?.getBooleanExtra(EXTRA_ROUTE_HOME_AS_PARENT, false) == true
 

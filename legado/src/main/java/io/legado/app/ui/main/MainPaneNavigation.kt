@@ -75,8 +75,7 @@ internal class MainEntryNavigation(
         // 从左栏打开全屏内容时先退出旧右栏，使关闭阅读器后回到真实来源。
         // 播放、登录等浮层继续覆盖当前场景，不能移除其下的详情。
         if (supportsMainPanes(source::class) &&
-            (destination is MainRouteReadBook || destination is MainRouteReadManga ||
-                    destination is MainRouteRssRead)
+            (destination is MainRouteReadBook || destination is MainRouteReadManga)
         ) {
             while (backStack.lastIndex > sourceIndex) backStack.removeAt(backStack.lastIndex)
             tracker.onBackStackChanged(backStack)

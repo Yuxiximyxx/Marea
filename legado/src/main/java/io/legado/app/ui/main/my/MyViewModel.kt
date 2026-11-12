@@ -16,8 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @Stable
-data class MyUiState(
-)
+class MyUiState
 
 sealed class PrefClickEvent {
     data class OpenUrl(val url: String) : PrefClickEvent()
@@ -57,6 +56,7 @@ class MyViewModel(
 
     fun onIntent(intent: MyIntent) {
         when (intent) {
+            else -> Unit
         }
     }
 

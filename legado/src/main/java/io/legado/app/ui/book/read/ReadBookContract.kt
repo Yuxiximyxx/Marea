@@ -399,9 +399,7 @@ data class ReadBookUiState(
         }
         return copy(
             sheetStack = next.toImmutableList(),
-            pendingEditedSource = pendingEditedSource.takeIf {
-                next.any { it is ReadBookSheet.ChangeBookSource }
-            },
+            pendingEditedSource = null,
         )
     }
 
@@ -412,10 +410,6 @@ data class ReadBookUiState(
 
     val menuVisible: Boolean
         get() = menuState.visible
-
-    /** 朗读设置卡片是否打开；经典控制面板与听书播放界面共用同一份设置内容。 */
-    val isReadAloudConfigOpen: Boolean
-        get() = findSheet<ReadBookSheet.ReadAloudConfig>() != null
 }
 
 /** 护眼模式设置，来源是 ThemeSettings，与外观设置共用同一份值。 */
@@ -674,12 +668,10 @@ sealed interface ReadBookIntent {
     data object PayAction : ReadBookIntent
     data object ConfirmPayAction : ReadBookIntent
     data object DisableSource : ReadBookIntent
-    data class OpenSourceEditByUrl(val sourceUrl: String) : ReadBookIntent
     data object OpenBookInfo : ReadBookIntent
     data object OpenBookInfoDirect : ReadBookIntent
     data object OpenChapterList : ReadBookIntent
     data object OpenChapterUrl : ReadBookIntent
-    data class SourceCustomButton(val longClick: Boolean) : ReadBookIntent
     data object ToggleReadUrlInBrowser : ReadBookIntent
 
     // Content edit
@@ -980,8 +972,6 @@ sealed interface ReadBookEffect {
     data object ExitSearch : ReadBookEffect
 
     // Source actions
-    data class ShowLogin(val sourceUrl: String) : ReadBookEffect
-    data class OpenSourceEdit(val sourceUrl: String) : ReadBookEffect
     data class OpenBookInfo(val name: String, val author: String, val bookUrl: String) : ReadBookEffect
     data class OpenChapterList(val bookUrl: String) : ReadBookEffect
     // Menu actions that need Activity

@@ -69,7 +69,6 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.ReaderSession
 import io.legado.app.model.ReaderSessionEvent
 import io.legado.app.model.SourceCallBack
-import io.legado.app.model.activeReadAloudProgress
 import io.legado.app.model.analyzeRule.AnalyzeRule
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setChapter
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setCoroutineContext
@@ -875,22 +874,9 @@ class ReadBookViewModel(
                 readRecordAliasDelegate.resolve(intent.merge, intent.rememberChoice)
             is ReadBookIntent.ClearReadRecordAliasDecisions -> readRecordAliasDelegate.clearDecisions()
             is ReadBookIntent.DismissDialog -> _uiState.update { it.copy(activeDialog = null) }
-            is ReadBookIntent.ShowLogin -> {
-                ReadBook.bookSource?.bookSourceUrl?.let { sourceUrl ->
-                    _effects.tryEmit(ReadBookEffect.ShowLogin(sourceUrl))
-                }
-            }
             is ReadBookIntent.PayAction -> showPayDialog()
             is ReadBookIntent.ConfirmPayAction -> confirmPayAction()
             is ReadBookIntent.DisableSource -> disableSource()
-            is ReadBookIntent.OpenSourceEditByUrl -> {
-                _effects.tryEmit(ReadBookEffect.OpenSourceEdit(intent.sourceUrl))
-            }
-            is ReadBookIntent.OpenSourceEdit -> {
-                ReadBook.bookSource?.let { src ->
-                    _effects.tryEmit(ReadBookEffect.OpenSourceEdit(src.bookSourceUrl))
-                }
-            }
             is ReadBookIntent.OpenBookInfo -> openBookNavigation(ReaderBookSheetTab.Information) {
                 ReadBookEffect.OpenBookInfo(it.name, it.author, it.bookUrl)
             }
@@ -900,7 +886,6 @@ class ReadBookViewModel(
                 ReadBookEffect.OpenChapterList(it.bookUrl)
             }
             is ReadBookIntent.OpenChapterUrl -> openChapterUrl()
-            is ReadBookIntent.SourceCustomButton -> runSourceCustomButton(intent.longClick)
             is ReadBookIntent.ToggleReadUrlInBrowser -> toggleReadUrlInBrowser()
             is ReadBookIntent.OpenContentEdit -> contentEditDelegate.open()
             is ReadBookIntent.LoadContentEdit -> contentEditDelegate.load()
@@ -2140,37 +2125,9 @@ class ReadBookViewModel(
             if (useBrowser) {
                 context.openUrl(url.substringBefore(",{"))
             } else {
-                val bookSource = ReadBook.bookSource
-                _effects.tryEmit(
-                    ReadBookEffect.OpenWebView(
-                        title = chapter.title,
-                        url = url,
-                        sourceOrigin = bookSource?.bookSourceUrl,
-                        sourceName = bookSource?.bookSourceName,
-                        sourceType = bookSource?.getSourceType(),
-                    )
-                )
+                // exp.11：内置 WebView 已移除，章节链接一律走外部打开。
+                context.openUrl(url.substringBefore(",{"))
             }
-        }
-    }
-
-    private fun runSourceCustomButton(longClick: Boolean) {
-        val source = ReadBook.bookSource?.takeIf { it.customButton } ?: return
-        val book = ReadBook.book ?: return
-        viewModelScope.launch {
-            val chapter = currentChapter()
-            _effects.tryEmit(
-                ReadBookEffect.RunSourceCustomButton(
-                    event = if (longClick) {
-                        SourceCallBack.LONG_CLICK_CUSTOM_BUTTON
-                    } else {
-                        SourceCallBack.CLICK_CUSTOM_BUTTON
-                    },
-                    source = source,
-                    book = book,
-                    chapter = chapter,
-                )
-            )
         }
     }
 
@@ -2222,15 +2179,8 @@ class ReadBookViewModel(
             analyzeRule.evalJS(payAction).toString() to chapter
         }.onSuccess(IO) { (result, chapter) ->
             if (result.isAbsUrl()) {
-                _effects.tryEmit(
-                    ReadBookEffect.OpenWebView(
-                        title = context.getString(R.string.chapter_pay),
-                        url = result,
-                        sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
-                        sourceName = ReadBook.bookSource?.bookSourceName,
-                        sourceType = ReadBook.bookSource?.getSourceType(),
-                    )
-                )
+                // exp.11：内置 WebView 已移除，付费链接一律走外部打开。
+                context.openUrl(result)
             } else if (result.isTrue()) {
                 BookHelp.delContent(book, chapter)
                 loadChapterList(book)

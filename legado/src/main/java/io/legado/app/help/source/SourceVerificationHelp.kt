@@ -7,7 +7,6 @@ import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
 import io.legado.app.help.IntentData
-import io.legado.app.ui.association.VerificationCodeActivity
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.isMainThread
 import io.legado.app.utils.startActivity

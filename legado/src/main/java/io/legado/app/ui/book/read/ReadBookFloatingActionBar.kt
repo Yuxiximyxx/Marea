@@ -73,7 +73,6 @@ fun ReadBookFloatingActionBar(
 
 /** 朗读位置脱离当前显示页时：跳回朗读位置，或从当前页重新朗读。 */
 @Composable
-@Composable
 private fun ReadingAnchorCapsule(onIntent: (ReadBookIntent) -> Unit) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),

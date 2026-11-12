@@ -77,7 +77,6 @@ internal const val MAX_TITLE_BAR_ACTIONS = 6
 
 /** 顶栏按钮的长按二级菜单。 */
 internal enum class ReadMenuLongPressMenu {
-    ChangeSource,
     Refresh,
 }
 

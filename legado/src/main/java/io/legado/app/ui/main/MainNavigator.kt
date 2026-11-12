@@ -158,7 +158,7 @@ object MainNavigator {
                     currentRoute is MainRouteBookInfo ||
                     currentRoute is MainRouteCache ||
                     currentRoute is MainRouteReadBook ||
-                    currentRoute is MainRouteReadManga ||
+                    currentRoute is MainRouteReadManga
                 ) {
                     backStack.add(route)
                 } else {

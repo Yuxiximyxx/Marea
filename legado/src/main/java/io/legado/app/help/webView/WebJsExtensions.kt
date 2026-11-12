@@ -101,7 +101,7 @@ class WebJsExtensions(
                 "ajaxAwait" -> {
                     ajax(
                         p0 ?: throw NoStackTraceException("error url null"),
-                        p1?.toLongOrNull()
+                        p1?.toIntOrNull()
                     ).toString()
                 }
                 "connectAwait" -> {

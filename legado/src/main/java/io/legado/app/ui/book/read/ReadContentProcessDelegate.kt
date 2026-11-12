@@ -131,8 +131,8 @@ class ReadContentProcessDelegate(
      * 只在朗读服务正读这一章时保位：保位后重载落进 `ReadAloud.syncLayout()` 而不是重新起播，
      * 后者会按当前页重锚，读过的整段从头再来。别的章照旧（换章本来就要重开朗读）。
      */
-    private fun readsCurrentChapterAloud(chapterIndex: Int): Boolean =
-        BaseReadAloudService.isRun && BaseReadAloudService.currentChapterIndex == chapterIndex
+    // exp.11：朗读服务已移除，恒为 false（不再有朗读保位场景）。
+    private fun readsCurrentChapterAloud(chapterIndex: Int): Boolean = false
 
     /**
      * Reprocesses only the current chapter while retaining its last readable input/page snapshot.

@@ -169,11 +169,6 @@ fun OtherConfigScreen(
                         onClick = { onIntent(OtherConfigIntent.ShowOverlay(OtherConfigOverlay.BatteryOptimizationGuide)) }
                     )
 
-                SwitchSettingItem(
-                    title = stringResource(R.string.web_service_wake_lock),
-                    description = stringResource(R.string.web_service_wake_lock_summary),
-                )
-
                 InputSettingItem(
                     title = stringResource(R.string.source_edit_text_max_line),
                     value = state.sourceEditMaxLine.toString(),
@@ -185,12 +180,6 @@ fun OtherConfigScreen(
                     title = stringResource(R.string.direct_link_upload_rule),
                     description = stringResource(R.string.direct_link_upload_rule_summary),
                     onClick = { onIntent(OtherConfigIntent.ShowOverlay(OtherConfigOverlay.DirectLinkUpload)) }
-                )
-
-                InputSettingItem(
-                    title = stringResource(R.string.web_port_title),
-                    value = state.webPort.toString(),
-                    onConfirm = { onIntent(OtherConfigIntent.WebPortChanged(it.toInt())) }
                 )
 
                 ClickableSettingItem(

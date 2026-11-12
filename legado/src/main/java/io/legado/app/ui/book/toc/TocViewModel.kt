@@ -937,9 +937,6 @@ class TocViewModel(
             return@launch
         }
         indices.forEach { index -> action(book, index) }
-        if (ReadBook.book?.bookUrl == book.bookUrl) {
-            ReadAloud.refreshCastQueue(context)
-        }
         showMessage(context.getString(doneMessageRes, indices.size))
         withContext(Dispatchers.Main) { clearSelection() }
     }

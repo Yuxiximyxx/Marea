@@ -737,7 +737,6 @@ private fun MergedGlassDivider(tint: Color) {
 }
 
 @Composable
-@Composable
 private fun RefreshMenuItems(
     dismiss: () -> Unit,
     onRefreshDur: () -> Unit,

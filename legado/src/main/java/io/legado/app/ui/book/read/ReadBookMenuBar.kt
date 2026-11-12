@@ -80,7 +80,6 @@ import io.legado.app.constant.ReadMenuBlurMode
 import io.legado.app.data.repository.ReadPreferences
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
 import io.legado.app.ui.book.read.sheet.AutoReadContent
-import io.legado.app.ui.book.read.sheet.ReadAloudContent
 import io.legado.app.ui.book.read.sheet.ReadStyleContent
 import io.legado.app.ui.book.read.sheet.ThemeListContent
 import io.legado.app.ui.book.read.sheet.TypographyPage

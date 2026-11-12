@@ -57,7 +57,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
     @JavascriptInterface
     fun searchBook(key: String, searchScope: String?) {
         activityRef.get()?.let {
-            it.startActivity(MainActivity.createSearchIntent(it, key, searchScope))
+            it.toastOnUi("在线搜索已随书源功能移除")
         }
     }
 
@@ -112,13 +112,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     }
                     val sourceUrl = toSource.sourceUrl
                     withContext(Main) {
-                        activity.startActivity(
-                            MainActivity.createRssSortIntent(
-                                context = activity,
-                                sourceUrl = sourceUrl,
-                                sortUrl = sortUrl
-                            )
-                        )
+                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
 
@@ -139,14 +133,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     )
                     appDb.rssReadRecordDao.insertRecord(rssReadRecord)
                     withContext(Main) {
-                        activity.startActivity(
-                            MainActivity.createRssReadIntent(
-                                context = activity,
-                                title = title,
-                                origin = sourceUrl,
-                                openUrl = link
-                            )
-                        )
+                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
 
@@ -169,14 +156,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     } ?: (source as? BookSource) ?: return@launch
                     val sourceUrl = toSource.bookSourceUrl
                     withContext(Main) {
-                        activity.startActivity(
-                            MainActivity.createExploreShowIntent(
-                                context = activity,
-                                exploreName = title,
-                                sourceUrl = sourceUrl,
-                                exploreUrl = url
-                            )
-                        )
+                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
             }
