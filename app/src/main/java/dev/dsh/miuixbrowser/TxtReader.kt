@@ -736,7 +736,7 @@ class TxtReaderActivity : ComponentActivity() {
     }
 }
 
-internal class TxtBook(
+class TxtBook(
     val paragraphs: List<String>,
     val chapters: List<TxtChapter>,
     val chapterStarts: Set<Int>,
