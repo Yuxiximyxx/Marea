@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import splitties.init.appCtx
+import io.legado.app.ui.login.SourceLoginJsExtensions
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable

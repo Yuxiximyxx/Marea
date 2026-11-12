@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.widget.components.card.TextCard
 import io.legado.app.ui.widget.components.progressIndicator.AppLinearProgressIndicator
+import io.legado.app.core.ui.morph.BookCoverMorphAnchors
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable

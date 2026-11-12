@@ -9,6 +9,11 @@ import io.legado.app.domain.model.AiMessageRole
 import io.legado.app.domain.model.AiToolContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import io.legado.app.domain.model.AiMessagePart
+import io.legado.app.domain.model.AiToolCall
+import io.legado.app.domain.model.AiToolApprovalState
+import io.legado.app.utils.GSON
+import com.google.gson.JsonObject
 
 class AiToolAwareGenerationUseCase(
     private val aiTextGateway: AiTextGateway,
@@ -235,3 +240,35 @@ internal fun String.truncateToolOutput(): String {
     if (length <= 8_000) return this
     return take(8_000) + "\n\n[...truncated from ${length} chars]"
 }
+
+internal fun JsonObject.toBookResultPart(): AiMessagePart.BookResult? {
+    val bookUrl = string("bookUrl")?.takeIf { it.isNotBlank() } ?: return null
+    return AiMessagePart.BookResult(
+        bookUrl = bookUrl,
+        name = string("name").orEmpty(),
+        author = string("author").orEmpty(),
+        origin = string("origin") ?: string("originName"),
+        coverPath = string("coverPath") ?: string("coverUrl"),
+        latestChapterTitle = string("latestChapterTitle"),
+        currentChapterTitle = string("currentChapterTitle"),
+        intro = string("intro")
+    )
+}
+
+internal fun JsonObject.string(name: String): String? {
+    return get(name)?.takeIf { !it.isJsonNull }?.asString
+}
+
+internal fun JsonObject.getAsJsonObjectOrNull(name: String): JsonObject? {
+    return get(name)?.let { if (it.isJsonObject) it.asJsonObject else null }
+}
+
+internal fun JsonObject.getAsJsonArrayOrNull(name: String) = runCatching {
+    get(name)?.takeIf { !it.isJsonNull && it.isJsonArray }?.asJsonArray
+}.getOrNull()
+
+internal fun com.google.gson.JsonElement.asJsonObjectOrNull(): JsonObject? {
+    return takeIf { !it.isJsonNull && it.isJsonObject }?.asJsonObject
+}
+
+/** Truncate tool output to [AiChatGenerationUseCase.MAX_TOOL_OUTPUT_CHARS] to avoid overflowing context. */

@@ -25,6 +25,7 @@ import io.legado.app.utils.toastOnUi
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import kotlin.uuid.Uuid
+import io.legado.app.ui.rss.read.RssJsExtensions
 
 @Suppress("unused")
 class WebJsExtensions(
@@ -101,7 +102,7 @@ class WebJsExtensions(
                 "ajaxAwait" -> {
                     ajax(
                         p0 ?: throw NoStackTraceException("error url null"),
-                        p1?.toIntOrNull()
+                        p1?.toIntOrNull() ?: 0
                     ).toString()
                 }
                 "connectAwait" -> {

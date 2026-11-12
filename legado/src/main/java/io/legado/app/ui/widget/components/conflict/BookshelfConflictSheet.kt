@@ -38,6 +38,7 @@ import io.legado.app.ui.widget.components.image.cover.CoilBookCover
 import io.legado.app.ui.widget.components.modalBottomSheet.AppModalBottomSheet
 import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
 import io.legado.app.ui.widget.components.text.AppText
+import io.legado.app.ui.book.changesource.ChangeSourceMigrationOptionsSheet
 
 /**
  * [ChangeSourceMigrationOptions] 不是 Parcelable，默认 Saver 只认能塞进 Bundle 的类型，

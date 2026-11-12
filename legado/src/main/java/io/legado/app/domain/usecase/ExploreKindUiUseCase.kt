@@ -12,6 +12,7 @@ import io.legado.app.utils.InfoMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import io.legado.app.ui.login.SourceLoginJsExtensions
 
 class ExploreKindUiUseCase(
     private val bookSourceDao: BookSourceDao

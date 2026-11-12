@@ -322,12 +322,6 @@ internal fun buildTopBarActionDefs(
         ) {
             onIntent(ReadBookIntent.MenuRefreshDur)
         },
-        def(
-            "source_custom_button",
-            onLongClick = { onIntent(ReadBookIntent.SourceCustomButton(true)) },
-        ) {
-            onIntent(ReadBookIntent.SourceCustomButton(false))
-        },
         def("toc_rule") {
             onIntent(ReadBookIntent.MenuTocRegex)
         },

@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import io.legado.app.ui.rss.read.VisibleWebViewCompose
 
 @Composable
 fun DictSheet(

@@ -276,7 +276,6 @@ fun BookInfoEditContent(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
 fun BookTypeDropdown(
     bookTypes: List<Pair<BookInfoEditType, String>>,
     selectedType: BookInfoEditType,

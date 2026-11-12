@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import io.legado.app.ui.login.SourceLoginJsExtensions
 
 object SourceCallBack {
     const val CLICK_AUTHOR = "clickAuthor"

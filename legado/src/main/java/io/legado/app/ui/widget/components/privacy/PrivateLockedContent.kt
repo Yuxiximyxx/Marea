@@ -40,6 +40,7 @@ import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.image.cover.BookCoverImage
 import io.legado.app.ui.widget.components.image.cover.rememberSharedCoverTransitionRadius
 import io.legado.app.ui.widget.components.text.AppText
+import io.legado.app.core.ui.morph.BookCoverMorphAnchors
 
 /** 运行时模糊（`Modifier.blur`）从 API 31 起才生效，低版本是 no-op */
 val RuntimeBlurSupported: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

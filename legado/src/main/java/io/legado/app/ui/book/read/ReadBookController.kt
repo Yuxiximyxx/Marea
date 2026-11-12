@@ -112,6 +112,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
+import io.legado.app.ui.login.SourceLoginJsExtensions
 
 
 /**

@@ -57,6 +57,7 @@ import io.legado.app.ui.theme.LocalAppUiConfiguration
 import org.koin.compose.koinInject
 import java.util.concurrent.ConcurrentHashMap
 import io.legado.app.model.BookCover as BookCoverModel
+import io.legado.app.core.ui.morph.BookCoverMorphAnchors
 
 private const val SharedCoverRadiusCacheMaxSize = 256
 private const val CoverAspectRatioCacheMaxSize = 256

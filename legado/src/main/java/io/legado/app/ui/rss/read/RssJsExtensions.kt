@@ -112,7 +112,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     }
                     val sourceUrl = toSource.sourceUrl
                     withContext(Main) {
-                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
+                        activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
 
@@ -133,7 +133,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     )
                     appDb.rssReadRecordDao.insertRecord(rssReadRecord)
                     withContext(Main) {
-                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
+                        activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
 
@@ -156,7 +156,7 @@ open class RssJsExtensions(activity: AppCompatActivity?, source: BaseSource?) : 
                     } ?: (source as? BookSource) ?: return@launch
                     val sourceUrl = toSource.bookSourceUrl
                     withContext(Main) {
-                        activity.activity.toastOnUi("该功能已随书源/RSS 功能移除")
+                        activity.toastOnUi("该功能已随书源/RSS 功能移除")
                     }
                 }
             }

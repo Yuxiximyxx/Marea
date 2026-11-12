@@ -212,19 +212,6 @@ private fun ActionSquareHost(
             onMoreClick = { expanded = true },
         )
         when (action.id) {
-            "source_custom_button" -> RoundDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) { dismiss ->
-                RoundDropdownMenuItem(
-                    text = stringResource(R.string.source_custom_button_long_action),
-                    onClick = {
-                        dismiss()
-                        dispatch(ReadBookIntent.SourceCustomButton(true))
-                    },
-                )
-            }
-
             "refresh" -> RoundDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
@@ -297,11 +284,6 @@ private fun moreActionSpecs(
 ): List<MoreActionSpec> = listOf(
     // 换源/刷新/下载/目录规则/编码这类的适用条件统一走按钮注册表，
     // 免得同一本书在这里能看见、在底栏却被过滤掉（反之亦然）。
-    MoreActionSpec(
-        "source_custom_button", stringResource(R.string.custom_button), Icons.Default.Extension,
-        applicable = isReadMenuActionApplicable("source_custom_button", state),
-        onClick = { dispatch(ReadBookIntent.SourceCustomButton(false)) },
-    ),
     // 书源四项：顶栏那行在开胶囊或「精简顶部按钮」时不可达，这里作为兜底入口
     MoreActionSpec(
         "source_pay", stringResource(R.string.chapter_pay), Icons.Default.Payment,
