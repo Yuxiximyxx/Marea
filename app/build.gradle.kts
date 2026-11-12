@@ -50,8 +50,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 287
-        versionName = "v1.8.28-exp.13"
+        versionCode = 288
+        versionName = "v1.8.28-exp.14"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
         // exp.8 瘦身：原生库只留 arm64-v8a（仍出单个通用 APK，不用 splits）
         ndk {

@@ -2,6 +2,19 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.14] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十四版：去 MD3 长尾片收尾 + 清 exp.11 遗留死代码，行为与回调不变。
+
+- 全仓终盘点（legado 模块及 app 侧 Legado 相关面，口径：真实组件符号，排除 @OptIn 注解与主题层类型）：含 material3 组件 import 的文件由 exp.13 结束时的 81 个 / 组件 import 233 行，降至 14 个文件 / 41 行，且全部为本条逐项点名的保留项（见「点名保留」）。
+- A 类清扫（长尾组件换 Miuix 或已收敛 App* 组件）：共享组件层双引擎分支全删只留 Miuix——进度指示三件、AppSearchBar、AppFloatingActionButton 与其菜单、SelectionBottomBar、AppNavigationBar、ListScaffold/RuleListScaffold（Snackbar 换 Miuix 同名实现、FAB 显形动画改 AnimatedVisibility、ScreenOffset/ScaffoldDefaults 换等值常量）；页面层——书籍详情（顶栏与「开始阅读」FAB 只留 Miuix 分支）、书籍信息编辑与替换规则编辑的下拉框（ExposedDropdownMenuBox 摘除，改 Box+RoundDropdownMenu+尾部旋转箭头，字段点按展开靠覆盖层转发）、目录页、阅读记录、搜索内容（历史行改手工 Row、结果卡换 NormalCard）、导入本地/远程、关于/崩溃报告、ShelDelete/GroupManage 等的 Icon/Text/Button/Card/Divider/Checkbox 与 Snackbar 类型统一迁移；MainScreen 宽屏导航轨只留 Miuix 分支；MainNavGraph 其余 18 个入口（目录/详情/编辑/替换/导入/记录/搜索/规则/书签/关于/主页等）补齐 MiuixSurface 呈现环境；dialog 家族的 AssistChip 换 NormalCard 芯片、CustomTipDialog 输入框换 Miuix TextField（占位符光标插入与校验逻辑不变）；SeriesIconButton 的 MD3 令牌（触控尺寸/图标尺寸/圆角/ripple）换等值实现（48dp、24dp、全圆角、LocalIndication）。
+- C 类死代码（exp.11 遗留、入口已断）：主页模块 ui/main/homepage 整模块删除（书源已砍后内容无从供给、主页 tab 现只剩本地仪表盘卡片这一活功能，仪表盘本体与阅读目标/记录卡保留）；AI 领域层删除聊天网关与仓库、文本工厂/净化/章节摘要用例、翻译设置页整链（失效的「AI 章节翻译」设置行摘除）；漫画 ui/book/manga 整删（书源已砍后仅有的两个入口都要求非本地书籍、已无活入口；数据层 repository/gateway 与封面管线纠缠部分保留未动）；tools/__pycache__ 的 .pyc 移除并补 .gitignore。
+- C 类保留点名：书架「AI 自动分组」是唯一活着的 AI 消费点，其依赖最小集合保留——AiProfile/AiText 网关与 data/repository/ai 协议层、AiModels、AiArtifact 网关、AiTaskManager、IdentifyBookCharactersUseCase 及其 AiToolAware 工具链、TranslateChapterUseCase、RefineSpeechWithAiUseCase 与朗读 cast 残层用例（cast 残层不在本片范围）；readAloud* 字段保留——MainRouteReadBook.readAloud 在 MainNavGraph 有真实读点，ReadBookUiState 的 readAloud* 字段仍由 ReadBookViewModel 在状态构建时从 ReadBookConfig 写入，清除需动阅读状态构建、零收益有风险；词典保留（阅读页选词查词 DictSheet 在用，仅做组件清扫）；漫画数据层与 MangaPreviewCache/MangaImageFileOwner（被活封面管线引用）保留。
+- 点名保留 MD3（B 类，宁留勿伤，逐个说明）：①脚手架 AppScaffold 的 material 分支——与 Miuix 分支逐行同构、与 exp.9/10 沉浸收口（alwaysDrawBehindBars 的 padding 交接）强耦合，收敛它等于把双引擎脚手架统一成单一引擎，属结构工程而非组件替换，本片不动；②底部弹层 AppModalBottomSheet 容器本体——exp.7 独立窗口材质定版面，容器不动（内部普通控件已随各片换完）；③玻璃顶栏家族 GlassTopAppBar/GlassMediumFlexibleTopAppBar 与 TopBarButton、MiuixScrollBehavior 的 TopAppBarScrollBehavior 类型桥——玻璃/独立窗口定版面，其 material 分支是双引擎回退路径；④主题设置页 ThemeConfigScreen 的连接式 ToggleButton 组与主题预览 Card——exp.12/13 已两度复核，Miuix 树无连接式切换组、预览卡依赖边框与 shapes.large，本片复核结论不变（该页其余叶子控件已清扫）；⑤SimulatedReadingSheet 的 DatePicker 与 TimePickerDialog 的 TimePicker——Miuix 树无日历/时钟选择器（只有 NumberPicker），不自造；⑥SwipeActionContainer 的 SwipeToDismissBox 家族——Miuix 无滑动删除容器对应物，自造手势容器风险高；⑦MarkdownBlock 的 LocalTextStyle/ProvideTextStyle——排版级联环境（与逐段 style 计算一体），非界面组件，其 Text/Icon/Divider 叶子已换完；⑧MainAdaptiveLayout 的 material3.adaptive 窗口自适应信息 API（HingeInfo/currentWindowAdaptiveInfoV2）——布局基础设施而非组件；⑨主题层 ThemeComponents、LegadoTheme 的 ColorScheme/Typography 载体、materialkolor 桥与 ThemeColorSchemeOverride、HazeStyle/HazeLegado 的双引擎回退取色——数据与映射层，不动。
+- 修复：本片施工中发现并修复 exp.14 前段 C 类手术遗留的五处结构损坏（MainNavGraph 的 onFinish 缺闭合括号、MainNavigator 与 HomeViewModel 各一处孤儿括号、HomeScreen 一处多余右括号及两处被误删的状态声明、MainNavKey 一处重复 @Serializable 注解）——此前分支构建因此中断，本版恢复全绿。
+- 数据库、空间分架、WebDAV、glasskit/沉浸、阅读主链（正文/翻页/进度）均未动。
+- 发版前照例过 materialkolor 全引用闭合门禁（tools/check_materialkolor_closure.py）并做关键类抽查。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.13] - 2026-11-13
 
 Legado 阅读器整体移植实验线第十三版：去 MD3 第二片——阅读菜单与阅读弹层、通用设置行核心、书架管理页整页，行为与回调不变。
