@@ -9,23 +9,11 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,14 +26,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
-import io.legado.app.ui.theme.LegadoTheme
-import io.legado.app.ui.theme.ProvideAppDensity
-import io.legado.app.ui.theme.ThemeResolver
-import io.legado.app.ui.widget.components.icon.AppIcon
 import io.legado.app.ui.widget.components.icon.AppIcons
 import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenu
 import io.legado.app.ui.widget.components.menuItem.RoundDropdownMenuItem
-import io.legado.app.ui.widget.components.text.AppText
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.basic.FloatingToolbar as MiuixFloatingToolbar
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
@@ -65,7 +48,6 @@ data class ActionItem(
     val onClick: () -> Unit
 )
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SelectionBottomBar(
     modifier: Modifier = Modifier,
@@ -85,7 +67,6 @@ fun SelectionBottomBar(
     leadingAction: ActionItem? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
     val selectAllDescription = stringResource(R.string.select_all)
     val invertSelectionDescription = stringResource(R.string.invert_selection)
     val moreActionsDescription = stringResource(R.string.more_menu)
@@ -97,152 +78,73 @@ fun SelectionBottomBar(
         )
         .scale(if (compact) 0.85f else 1f)
 
-    if (isMiuix) {
-        MiuixFloatingToolbar(
-            modifier = safeModifier
+    MiuixFloatingToolbar(
+        modifier = safeModifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(8.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(8.dp)
-            ) {
-                MiuixIconButton(onClick = onSelectAll) {
-                    MiuixIcon(
-                        imageVector = Icons.Default.SelectAll,
-                        contentDescription = selectAllDescription
-                    )
-                }
-                MiuixIconButton(onClick = onSelectInvert) {
-                    MiuixIcon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = invertSelectionDescription
-                    )
-                }
+            MiuixIconButton(onClick = onSelectAll) {
+                MiuixIcon(
+                    imageVector = Icons.Default.SelectAll,
+                    contentDescription = selectAllDescription
+                )
+            }
+            MiuixIconButton(onClick = onSelectInvert) {
+                MiuixIcon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = invertSelectionDescription
+                )
+            }
 
-                // 前导动作（可选）：反选之后、主操作之前
-                leadingAction?.let { action ->
-                    MiuixIconButton(onClick = action.onClick) {
+            // 前导动作（可选）：反选之后、主操作之前
+            leadingAction?.let { action ->
+                MiuixIconButton(onClick = action.onClick) {
+                    MiuixIcon(
+                        imageVector = action.icon,
+                        contentDescription = action.text
+                    )
+                }
+            }
+
+            MiuixIconButton(
+                onClick = primaryAction.onClick,
+                backgroundColor = MiuixTheme.colorScheme.secondaryContainer,
+                minWidth = 64.dp
+            ) {
+                MiuixIcon(
+                    imageVector = primaryAction.icon,
+                    contentDescription = primaryAction.text,
+                    tint = MiuixTheme.colorScheme.onSecondaryContainer
+                )
+            }
+
+            if (secondaryActions.isNotEmpty()) {
+                Box {
+                    MiuixIconButton(onClick = { showMenu = true }) {
                         MiuixIcon(
-                            imageVector = action.icon,
-                            contentDescription = action.text
+                            imageVector = AppIcons.MoreVert,
+                            contentDescription = moreActionsDescription
                         )
                     }
-                }
-
-                MiuixIconButton(
-                    onClick = primaryAction.onClick,
-                    backgroundColor = MiuixTheme.colorScheme.secondaryContainer,
-                    minWidth = 64.dp
-                ) {
-                    MiuixIcon(
-                        imageVector = primaryAction.icon,
-                        contentDescription = primaryAction.text,
-                        tint = MiuixTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-
-                if (secondaryActions.isNotEmpty()) {
-                    Box {
-                        MiuixIconButton(onClick = { showMenu = true }) {
-                            MiuixIcon(
-                                imageVector = AppIcons.MoreVert,
-                                contentDescription = moreActionsDescription
+                    RoundDropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        secondaryActions.forEach { action ->
+                            RoundDropdownMenuItem(
+                                text = action.text,
+                                onClick = {
+                                    action.onClick()
+                                    showMenu = false
+                                }
                             )
-                        }
-                        RoundDropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            secondaryActions.forEach { action ->
-                                RoundDropdownMenuItem(
-                                    text = action.text,
-                                    onClick = {
-                                        action.onClick()
-                                        showMenu = false
-                                    }
-                                )
-                            }
                         }
                     }
                 }
             }
         }
-    } else {
-        HorizontalFloatingToolbar(
-            modifier = safeModifier,
-            expanded = true,
-            leadingContent = {
-                IconButton(onClick = onSelectAll) {
-                    AppIcon(
-                        imageVector = Icons.Default.SelectAll,
-                        contentDescription = selectAllDescription
-                    )
-                }
-                IconButton(onClick = onSelectInvert) {
-                    AppIcon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = invertSelectionDescription
-                    )
-                }
-                // 前导动作（可选）：反选之后、主操作之前
-                leadingAction?.let { action ->
-                    IconButton(onClick = action.onClick) {
-                        AppIcon(
-                            imageVector = action.icon,
-                            contentDescription = action.text
-                        )
-                    }
-                }
-            },
-            trailingContent = {
-                if (secondaryActions.isNotEmpty()) {
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            AppIcon(
-                                imageVector = AppIcons.MoreVert,
-                                contentDescription = moreActionsDescription
-                            )
-                        }
-                        RoundDropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            secondaryActions.forEach { action ->
-                                RoundDropdownMenuItem(
-                                    text = action.text,
-                                    onClick = {
-                                        action.onClick()
-                                        showMenu = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            content = {
-                TooltipBox(
-                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                        TooltipAnchorPosition.Above
-                    ),
-                    tooltip = { ProvideAppDensity { PlainTooltip { AppText(primaryAction.text) } } },
-                    state = rememberTooltipState(),
-                ) {
-                    FilledIconButton(
-                        modifier = Modifier.width(64.dp),
-                        onClick = primaryAction.onClick,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = LegadoTheme.colorScheme.secondaryContainer,
-                            contentColor = LegadoTheme.colorScheme.onSecondaryContainer,
-                        ),
-                    ) {
-                        AppIcon(
-                            imageVector = primaryAction.icon,
-                            contentDescription = primaryAction.text
-                        )
-                    }
-                }
-            }
-        )
     }
 }

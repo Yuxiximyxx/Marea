@@ -1,5 +1,6 @@
 package io.legado.app.ui.widget.components.navigation
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,11 +12,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.BottomAppBarDefaults
-import androidx.compose.material3.ShortNavigationBar
-import androidx.compose.material3.ShortNavigationBarItem
-import androidx.compose.material3.ShortNavigationBarItemDefaults
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -23,8 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.HorizontalAlignmentLine
-import androidx.compose.ui.layout.Measured
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,7 +27,6 @@ import io.legado.app.domain.model.settings.customColors
 import io.legado.app.ui.theme.LegadoTheme
 import io.legado.app.ui.theme.LocalAppUiConfiguration
 import io.legado.app.ui.theme.LocalHazeState
-import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.theme.regularHazeEffect
 import io.legado.app.ui.widget.components.GlassDefaults
 import io.legado.app.ui.widget.components.text.AnimatedText
@@ -49,7 +42,6 @@ fun AppNavigationBar(
     alwaysShowLabel: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
     val configuration = LocalAppUiConfiguration.current
     val themeSettings = configuration.theme
     val miuixMode = when {
@@ -68,52 +60,23 @@ fun AppNavigationBar(
         Modifier
     }
 
-    if (isMiuix) {
-        val baseColor =
-            if (hasCustomSecondary) {
-                Color(customSecondaryColor)
-            } else {
-                GlassDefaults.glassColor(
-                    noBlurColor = MiuixTheme.colorScheme.surface,
-                    blurAlpha = GlassDefaults.TransparentAlpha
-                )
-            }
-        val finalColor = baseColor.copy(alpha = (baseColor.alpha * opacity).coerceIn(0f, 1f))
+    val baseColor =
+        if (hasCustomSecondary) {
+            Color(customSecondaryColor)
+        } else {
+            GlassDefaults.glassColor(
+                noBlurColor = MiuixTheme.colorScheme.surface,
+                blurAlpha = GlassDefaults.TransparentAlpha
+            )
+        }
+    val finalColor = baseColor.copy(alpha = (baseColor.alpha * opacity).coerceIn(0f, 1f))
 
-        MiuixNavigationBar(
-            modifier = modifier.then(hazeModifier),
-            color = finalColor,
-            mode = miuixMode,
-            content = content
-        )
-    } else {
-        val baseColor =
-            if (hasCustomSecondary) {
-                Color(customSecondaryColor)
-            } else {
-                GlassDefaults.glassColor(
-                    noBlurColor = BottomAppBarDefaults.containerColor,
-                    blurAlpha = GlassDefaults.TransparentAlpha
-                )
-            }
-        val finalColor = baseColor.copy(alpha = (baseColor.alpha * opacity).coerceIn(0f, 1f))
-
-        ShortNavigationBar(
-            modifier = modifier.then(hazeModifier),
-            containerColor = finalColor,
-            content = {
-                ShortNavigationBarRowScope.content()
-            }
-        )
-    }
-}
-
-private object ShortNavigationBarRowScope : RowScope {
-    override fun Modifier.weight(weight: Float, fill: Boolean): Modifier = this
-    override fun Modifier.align(alignment: Alignment.Vertical): Modifier = this
-    override fun Modifier.alignBy(alignmentLine: HorizontalAlignmentLine): Modifier = this
-    override fun Modifier.alignByBaseline(): Modifier = this
-    override fun Modifier.alignBy(alignmentLineBlock: (Measured) -> Int): Modifier = this
+    MiuixNavigationBar(
+        modifier = modifier.then(hazeModifier),
+        color = finalColor,
+        mode = miuixMode,
+        content = content
+    )
 }
 
 @Composable
@@ -129,7 +92,6 @@ fun RowScope.AppNavigationBarItem(
     m3AlwaysShowLabel: Boolean = true,
     useCustomIcon: Boolean = false,
 ) {
-    val isMiuix = ThemeResolver.isMiuixEngine(LegadoTheme.composeEngine)
     val useCustomIconBox =
         useCustomIcon && LocalAppUiConfiguration.current.appShell.useFloatingBottomBar
 
@@ -140,7 +102,7 @@ fun RowScope.AppNavigationBarItem(
                 .fillMaxHeight()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = false, radius = 32.dp),
+                    indication = LocalIndication.current,
                     onClick = onClick
                 ),
             contentAlignment = Alignment.Center
@@ -156,7 +118,7 @@ fun RowScope.AppNavigationBarItem(
             }
             m3Icon()
         }
-    } else if (isMiuix && useCustomIcon) {
+    } else if (useCustomIcon) {
         MiuixCustomNavigationBarItem(
             selected = selected,
             onClick = onClick,
@@ -165,26 +127,13 @@ fun RowScope.AppNavigationBarItem(
             showLabel = m3ShowLabel && (m3AlwaysShowLabel || selected),
             icon = m3Icon,
         )
-    } else if (isMiuix) {
+    } else {
         MiuixNavigationBarItem(
             selected = selected,
             onClick = onClick,
             icon = iconVector,
             label = labelString,
             modifier = modifier
-        )
-    } else {
-        ShortNavigationBarItem(
-            selected = selected,
-            onClick = onClick,
-            modifier = modifier,
-            icon = m3Icon,
-            colors = ShortNavigationBarItemDefaults.colors(selectedIndicatorColor = m3IndicatorColor),
-            label = if (m3ShowLabel && (m3AlwaysShowLabel || selected)) {
-                {
-                    AnimatedText(labelString)
-                }
-            } else null
         )
     }
 }
