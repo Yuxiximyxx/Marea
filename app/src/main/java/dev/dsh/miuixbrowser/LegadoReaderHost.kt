@@ -588,7 +588,6 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                                 )
                             )
                         },
-                        onOpenMangaReader = { _, _, _ -> },
                     )
                 }
                 entry<MainRouteBookInfoEdit> { route ->
