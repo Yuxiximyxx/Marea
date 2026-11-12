@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -588,12 +590,13 @@ fun MainScreen(
             } else {
                 ""
             }
+            val engineDiag = LegadoTheme.composeEngine
             LaunchedEffect(useFloatingBottomBar, padding.calculateBottomPadding()) {
                 GlassDiag.log(
                     context, "MainImmersion",
                     "floating=$useFloatingBottomBar " +
                         "scaffoldBottomPadding=${padding.calculateBottomPadding()} " +
-                        "engine=${LegadoTheme.composeEngine} " +
+                        "engine=$engineDiag " +
                         "pageBackground=#%08X".format(pageBackground.toArgb()) +
                         miuixColorsDiag
                 )
