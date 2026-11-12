@@ -414,7 +414,7 @@ open class MainActivity : BaseComposeActivity() {
         val currentHasAdaptivePair by rememberUpdatedState(hasAdaptivePair)
         val activeRoute = backStack.lastOrNull()
         val fullScreenContent =
-            activeRoute is MainRouteReadBook || activeRoute is MainRouteReadManga
+            activeRoute is MainRouteReadBook
         val singleRegion = if (!hasAdaptivePair && !fullScreenContent &&
             adaptiveEnvironment.safeRegions().size > 1
         ) adaptiveEnvironment.singlePaneBounds() else null

@@ -55,9 +55,6 @@ import io.legado.app.ui.book.info.BookInfoViewModel
 import io.legado.app.ui.book.info.edit.BookInfoEditScreen
 import io.legado.app.ui.book.info.edit.BookInfoEditViewModel
 import io.legado.app.ui.book.manage.BookshelfManageRouteScreen
-import io.legado.app.ui.book.manga.MangaReaderIntent
-import io.legado.app.ui.book.manga.MangaReaderRouteScreen
-import io.legado.app.ui.book.manga.MangaReaderViewModel
 import io.legado.app.ui.book.read.ReadBookController
 import io.legado.app.ui.book.read.ReadBookInitRequest
 import io.legado.app.ui.book.read.ReadBookIntent
@@ -298,21 +295,12 @@ fun MainActivity.mainEntryProvider(
                 onNavigateToRoute(MainRouteBookCacheManage)
             },
             onOpenBookshelfBook = { book, sharedCoverKey ->
-                if (!book.isLocal && book.isImage && showMangaUi) {
-                    onNavigateToRoute(
-                        MainRouteReadManga(
-                            bookUrl = book.bookUrl,
-                            sharedCoverKey = sharedCoverKey
-                        )
+                onNavigateToRoute(
+                    MainRouteReadBook(
+                        bookUrl = book.bookUrl,
+                        sharedCoverKey = sharedCoverKey,
                     )
-                } else {
-                    onNavigateToRoute(
-                        MainRouteReadBook(
-                            bookUrl = book.bookUrl,
-                            sharedCoverKey = sharedCoverKey,
-                        )
-                    )
-                }
+                )
             },
             onNavigateToBackupSettings = {
                 onNavigateToRoute(MainRouteSettingsBackup)
@@ -704,65 +692,6 @@ fun MainActivity.mainEntryProvider(
         }
     }
 
-    entry<MainRouteReadManga>(
-        metadata = readerEntryMetadata(configuration.appShell.predictiveBackEnabled)
-    ) { route ->
-        val mangaViewModel = koinViewModel<MangaReaderViewModel>(
-            key = "ReadManga:${route.bookUrl ?: "last-read"}",
-        )
-        ConsumeBookPageResult(route, backStack.lastOrNull() == route, navRouteTracker) { result ->
-            when (result) {
-                is BookPageResult.ChapterSelected ->
-                    mangaViewModel.onIntent(
-                        MangaReaderIntent.OpenChapter(
-                            result.index,
-                            result.position
-                        )
-                    )
-
-                BookPageResult.BookDeleted -> MainNavigator.navigateBack(
-                    this@mainEntryProvider, backStack, navRouteTracker, fromRoute = route,
-                )
-
-                else -> Unit
-            }
-        }
-        MangaReaderRouteScreen(
-            bookUrl = route.bookUrl,
-            inBookshelf = route.inBookshelf,
-            chapterChanged = route.chapterChanged,
-            openRequestId = route.openRequestId,
-            viewModel = mangaViewModel,
-            onOpenToc = { bookUrl, page -> onNavigateToRoute(MainRouteToc(bookUrl, page)) },
-            restoreSystemBarsVisible = configuration.appShell.showStatusBar,
-            sharedTransitionScope = sharedTransitionScope.takeIf {
-                configuration.appShell.readerSharedElementEnabled
-            },
-            animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-            sharedCoverKey = route.sharedCoverKey,
-            isTopRoute = backStack.lastOrNull() == route,
-            onFinish = {
-                MainNavigator.navigateBack(
-                    this@mainEntryProvider,
-                    backStack,
-                    navRouteTracker,
-                    fromRoute = route,
-                )
-            },
-            onOpenBookInfo = { name, author, bookUrl ->
-                onNavigateToRoute(
-                    MainRouteBookInfo(
-                        name, author, bookUrl,
-                        openRequestId = System.nanoTime(),
-                    )
-                )
-            },
-        )
-    }
-
-
-    // 兼容已保存的导航栈。新入口在 MainActivity 直接打开同窗口播放浮层。
-
     entry<MainRouteSearchContent>(
         metadata = modalOverlayEntryMetadata() + ModalOverlaySceneStrategy.searchSlide()
     ) { route ->
@@ -870,9 +799,6 @@ fun MainActivity.mainEntryProvider(
                             parent,
                             resultCode == Activity.RESULT_OK
                         )
-                    } else if (parent is MainRouteReadManga && resultCode == Activity.RESULT_OK) {
-                        navRouteTracker.reportBookPageResult(parent, BookPageResult.BookDeleted)
-                    }
                 }
                 popped
             },
@@ -887,17 +813,6 @@ fun MainActivity.mainEntryProvider(
                         inBookshelf = inBookshelf,
                         chapterChanged = chapterChanged,
                         // 与详情页封面登记在同一个 key 上，封面才能从详情页继续飞进阅读页。
-                        sharedCoverKey = route.sharedCoverKey ?: bookCoverSharedElementKey(bookUrl),
-                    )
-                )
-            },
-            onOpenMangaReader = { bookUrl, inBookshelf, chapterChanged ->
-                onNavigateToRoute(
-                    MainRouteReadManga(
-                        bookUrl = bookUrl,
-                        inBookshelf = inBookshelf,
-                        chapterChanged = chapterChanged,
-                        openRequestId = System.nanoTime(),
                         sharedCoverKey = route.sharedCoverKey ?: bookCoverSharedElementKey(bookUrl),
                     )
                 )

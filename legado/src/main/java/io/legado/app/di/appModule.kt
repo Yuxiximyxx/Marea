@@ -230,7 +230,6 @@ import io.legado.app.ui.book.import.remote.ServersViewModel
 import io.legado.app.ui.book.info.BookInfoViewModel
 import io.legado.app.ui.book.info.edit.BookInfoEditViewModel
 import io.legado.app.ui.book.manage.BookshelfManageScreenViewModel
-import io.legado.app.ui.book.manga.MangaReaderViewModel
 import io.legado.app.ui.book.read.ReadBookViewModel
 import io.legado.app.ui.book.read.ReaderSessionViewModel
 import io.legado.app.ui.book.readRecord.ReadRecordOverviewViewModel

@@ -61,7 +61,6 @@ fun BookInfoRouteScreen(
     onOpenToc: (String) -> Unit,
     onOpenInfoEdit: (String) -> Unit,
     onOpenReader: (bookUrl: String, inBookshelf: Boolean, chapterChanged: Boolean) -> Unit = { _, _, _ -> },
-    onOpenMangaReader: (bookUrl: String, inBookshelf: Boolean, chapterChanged: Boolean) -> Unit = { _, _, _ -> },
     onNavigateToBookInfo: (name: String?, author: String?, bookUrl: String, origin: String?, coverPath: String?) -> Unit = { _, _, _, _, _ -> },
     /** 私密功能需要本地密码，未设置时引导去设置页（与书架同一条路径） */
     onOpenSettings: () -> Unit = {},
@@ -73,7 +72,6 @@ fun BookInfoRouteScreen(
     val activity = context as AppCompatActivity
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val showMangaUi by rememberUpdatedState(uiState.showMangaUi)
     // 资源串在 composable 作用域内解析，避免 LocalContext.current.getString 拿到过期值
     val unlockTitle = stringResource(R.string.private_unlock_title)
     val unlockSubtitle = stringResource(R.string.private_unlock_subtitle)
@@ -129,22 +127,11 @@ fun BookInfoRouteScreen(
                 }
 
                 is BookInfoEffect.OpenReader -> {
-                    when {
-                        !effect.book.isLocal && effect.book.isImage && showMangaUi -> {
-                            onOpenMangaReader(
-                                effect.book.bookUrl,
-                                effect.inBookshelf,
-                                effect.chapterChanged,
-                            )
-                        }
-                        else -> {
-                        onOpenReader(
-                            effect.book.bookUrl,
-                            effect.inBookshelf,
-                            effect.chapterChanged,
-                        )
-                        }
-                    }
+                    onOpenReader(
+                        effect.book.bookUrl,
+                        effect.inBookshelf,
+                        effect.chapterChanged,
+                    )
                 }
 
                 is BookInfoEffect.OpenToc -> {

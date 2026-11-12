@@ -68,15 +68,6 @@ object MainNavigator {
             }
         }
 
-        if (route is MainRouteReadManga) {
-            val existingReaderIndex = backStack.indexOfLast { it is MainRouteReadManga }
-            if (existingReaderIndex >= 0) {
-                while (backStack.lastIndex > existingReaderIndex) {
-                    backStack.removeAt(backStack.lastIndex)
-                }
-                backStack[existingReaderIndex] = route
-                return
-            }
         }
 
         // 朗读通知的「回到正在读的书」不带 bookUrl（空即最后读过的那本），路由键和栈顶那份必然不相等。
@@ -133,8 +124,7 @@ object MainNavigator {
             MainRouteImportRemote,
             is MainRouteCache,
             MainRouteBookCacheManage,
-            is MainRouteReadBook,
-            is MainRouteReadManga -> {
+            is MainRouteReadBook -> {
                 if (
                     currentRoute == MainRouteHome ||
                     currentRoute is MainRouteBookInfo
@@ -156,8 +146,7 @@ object MainNavigator {
                     currentRoute == MainRouteHome ||
                     currentRoute is MainRouteBookInfo ||
                     currentRoute is MainRouteCache ||
-                    currentRoute is MainRouteReadBook ||
-                    currentRoute is MainRouteReadManga
+                    currentRoute is MainRouteReadBook
                 ) {
                     backStack.add(route)
                 } else {
@@ -199,8 +188,7 @@ object MainNavigator {
                     currentRoute == MainRouteHome ||
                     currentRoute is MainRouteToc ||
                     currentRoute is MainRouteTxtTocRulePreview ||
-                    currentRoute is MainRouteReadBook ||
-                    currentRoute is MainRouteReadManga
+                    currentRoute is MainRouteReadBook
                 ) {
                     backStack.add(route)
                 } else {
@@ -292,15 +280,6 @@ object MainNavigator {
                     MainIntent.EXTRA_CHAPTER_CHANGED,
                     false
                 ) == true,
-            )
-            MainRouteConst.ROUTE_READ_MANGA -> MainRouteReadManga(
-                bookUrl = intent?.getStringExtra(MainIntent.EXTRA_BOOK_URL),
-                inBookshelf = intent?.getBooleanExtra(MainIntent.EXTRA_IN_BOOKSHELF, true) != false,
-                chapterChanged = intent?.getBooleanExtra(
-                    MainIntent.EXTRA_CHAPTER_CHANGED,
-                    false,
-                ) == true,
-                openRequestId = System.nanoTime(),
             )
             MainRouteConst.ROUTE_BOOK_INFO -> intent?.getStringExtra(MainIntent.EXTRA_BOOK_URL)
                 ?.takeIf { it.isNotBlank() }
