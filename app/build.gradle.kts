@@ -13,6 +13,7 @@ val webkitVersion = "1.18.0"
 val credentialsVersion = "1.6.0"
 val browserVersion = "1.10.0"
 val navigationEventVersion = "1.2.0"
+val okhttpVersion = "4.12.0"
 // 构建工具链：Kotlin / Compose Multiplatform / AGP 的版本声明在根 build.gradle.kts（miuix 的在 miuix/gradle/libs.versions.toml），
 // Gradle 版本在 gradle/wrapper/gradle-wrapper.properties；升级时请同步这里，仅用于「关于」页展示
 val kotlinVersion = "2.4.21"
@@ -30,6 +31,7 @@ val dependencyVersions = listOf(
     Triple("androidx", "Credentials", credentialsVersion),
     Triple("androidx", "Browser", browserVersion),
     Triple("androidx", "NavigationEvent", navigationEventVersion),
+    Triple("net", "OkHttp", okhttpVersion),
     Triple("build", "Kotlin", kotlinVersion),
     Triple("build", "Android Gradle Plugin", agpVersion),
     Triple("build", "Gradle", gradle.gradleVersion),
@@ -48,8 +50,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 272
-        versionName = "v1.8.28-fork.30"
+        versionCode = 273
+        versionName = "v1.8.28-fork.31"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
@@ -119,5 +121,7 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:$credentialsVersion")
     implementation("androidx.browser:browser:$browserVersion")
     implementation("androidx.navigationevent:navigationevent-compose:$navigationEventVersion")
+    // WebDAV 同步（TxtSync）：需要 MKCOL 等任意 HTTP 方法，HttpURLConnection 不支持
+    implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
 }
 

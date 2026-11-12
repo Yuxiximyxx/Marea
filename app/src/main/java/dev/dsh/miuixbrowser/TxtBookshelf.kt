@@ -318,7 +318,9 @@ fun BookshelfScreen(space: Int, onBack: () -> Unit, onOpenReaderSettings: () -> 
         TxtReaderStore.setShelfSort(appContext, mode)
     }
 
+    TxtPageBackground {
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             SmallTopAppBar(
                 title = if (inSelection) "已选 $selectedCount 本" else "书架",
@@ -619,5 +621,6 @@ fun BookshelfScreen(space: Int, onBack: () -> Unit, onOpenReaderSettings: () -> 
                 }
             }
         }
+    }
     }
 }

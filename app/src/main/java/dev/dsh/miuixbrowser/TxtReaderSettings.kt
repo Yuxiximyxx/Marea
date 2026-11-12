@@ -1,6 +1,5 @@
 package dev.dsh.miuixbrowser
 
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -51,12 +49,19 @@ import java.util.Locale
 
 
 /**
- * fork.30 功能批的统一状态：简繁转换 / 文本重排 / 自定义字体 / 首行缩进 /
- * 两端对齐 / 翻页动画 / 页脚元素 / 目录倒序。读写都走 TxtReaderStore 的
- * 单份存储，书内设置弹层与书架「阅读设置」页共用同一类——阅读屏也直接
- * 读它驱动渲染，不存在第二份状态。
+ * fork.30 功能批的状态：简繁转换 / 文本重排 / 自定义字体 / 首行缩进 /
+ * 两端对齐 / 翻页动画 / 页脚元素 / 目录倒序。
+ *
+ * fork.31 改为按书独立：本类只在阅读页内使用（书架侧已无这些设置）。
+ * 每次修改一式两写——全局镜像（TxtReaderStore 全局偏好，新书种子）
+ * 与 [onPersist] 回调（宿主阅读屏据此把全量快照落成本书记录）；打开书
+ * 时宿主用 [applyFrom] 把本书生效设置灌进来。目录倒序是目录覆盖层
+ * 自身的显示偏好，不按书分，仍只写全局。
  */
 class TxtFeatureState(private val appContext: android.content.Context) {
+
+    /** 任一按书设置变更后回调（宿主负责落本书记录）；灌入快照时不触发 */
+    var onPersist: (() -> Unit)? = null
     var convertMode by mutableStateOf(TxtReaderStore.convertMode(appContext))
         private set
     var reflow by mutableStateOf(TxtReaderStore.reflow(appContext))
@@ -87,36 +92,43 @@ class TxtFeatureState(private val appContext: android.content.Context) {
     fun updateConvertMode(value: String) {
         convertMode = value
         TxtReaderStore.setConvertMode(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateReflow(value: Boolean) {
         reflow = value
         TxtReaderStore.setReflow(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateFontFile(value: String) {
         fontFile = value
         TxtReaderStore.setFontFile(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateFontWeight(value: Int) {
         fontWeight = value
         TxtReaderStore.setFontWeight(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateIndentChars(value: Int) {
         indentChars = value
         TxtReaderStore.setIndentChars(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateJustify(value: Boolean) {
         justify = value
         TxtReaderStore.setJustify(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updatePageAnim(value: String) {
         pageAnim = value
         TxtReaderStore.setPageAnim(appContext, value)
+        onPersist?.invoke()
     }
 
     fun updateTocReversed(value: Boolean) {
@@ -133,6 +145,23 @@ class TxtFeatureState(private val appContext: android.content.Context) {
             "battery" -> footerBattery = value
         }
         TxtReaderStore.setFooterShow(appContext, key, value)
+        onPersist?.invoke()
+    }
+
+    /** 打开书时灌入本书生效设置：只改内存状态，不写存储、不触发回调 */
+    fun applyFrom(s: TxtReaderStore.BookSettings) {
+        convertMode = s.convertMode
+        reflow = s.reflow
+        fontFile = s.fontFile
+        fontWeight = s.fontWeight
+        indentChars = s.indentChars
+        justify = s.justify
+        pageAnim = s.pageAnim
+        footerChapter = s.footerChapter
+        footerPage = s.footerPage
+        footerPercent = s.footerPercent
+        footerTime = s.footerTime
+        footerBattery = s.footerBattery
     }
 }
 
@@ -146,20 +175,19 @@ class TxtReaderSettingsNav {
     companion object {
         const val SECTION_BOOK_RULE = "book_rule"
         const val SECTION_ENCODING = "encoding"
-        const val SECTION_RULES = "rules"
         const val SECTION_PAGE_DISPLAY = "page_display"
         const val SECTION_TYPESET = "typeset"
         const val SECTION_BG = "bg"
         const val SECTION_FONT = "font"
         const val SECTION_TEXT = "text"
         const val SECTION_FOOTER = "footer"
-        const val SECTION_SYNC = "sync"
     }
 }
 
 /**
- * 书内设置上下文（fork.29）：打开了具体某本书时才有的每本书设置
- * （本书目录规则、编码）。书架设置页没有当前书，传 null，相应入口不出现。
+ * 书内设置上下文（fork.29，fork.31 起为阅读页设置的必备入参）：
+ * 当前打开的这本书的目录规则选择与编码——都是「选」不是「管理」，
+ * 规则库管理与 WebDAV 同步已按 fork.31 分工移出阅读页。
  */
 class TxtSettingsBookContext(
     val book: TxtBook,
@@ -170,20 +198,17 @@ class TxtSettingsBookContext(
     val tocRules: List<TxtTocRule>,
     val tocRuleChoice: Long?,
     val onTocRuleChoice: (Long?) -> Unit,
-    val onTocRulesChange: (List<TxtTocRule>) -> Unit,
 )
 
 private fun txtReaderSectionTitle(section: String?): String = when (section) {
     TxtReaderSettingsNav.SECTION_BOOK_RULE -> "本书目录规则"
     TxtReaderSettingsNav.SECTION_ENCODING -> "编码"
-    TxtReaderSettingsNav.SECTION_RULES -> "目录规则"
     TxtReaderSettingsNav.SECTION_PAGE_DISPLAY -> "翻页与显示"
     TxtReaderSettingsNav.SECTION_TYPESET -> "排版"
     TxtReaderSettingsNav.SECTION_BG -> "背景"
     TxtReaderSettingsNav.SECTION_FONT -> "字体"
     TxtReaderSettingsNav.SECTION_TEXT -> "文字处理"
     TxtReaderSettingsNav.SECTION_FOOTER -> "页眉页脚"
-    TxtReaderSettingsNav.SECTION_SYNC -> "同步"
     else -> "设置"
 }
 
@@ -195,12 +220,14 @@ private fun txtReaderBgLabel(preset: String): String = when (preset) {
 }
 
 /**
- * 统一阅读设置内容（fork.29 核心）：一套内容、一处数据源（TxtReaderStore /
- * TxtTocRules 的单份存储）。书架「阅读设置」页以整页承载、书内「设置」以
- * 底部弹层承载，渲染的是这同一个组件，不再有第二份设置实现。
+ * 阅读页内的设置内容（fork.29 立骨架，fork.31 定分工）：只在
+ * TxtReaderActivity 内以底部弹层承载，承载的是「当前这本书」的设置
+ * （按书独立存储，见 TxtReaderStore.BookSettings）。目录规则库管理与
+ * WebDAV 同步是跨书的通用设置，只在书架侧设置页出现，这里不设入口。
  *
- * 分层按 Legado：一级只放高频滑杆（亮度、字号）与入口行；本书目录规则、
- * 编码、目录规则、翻页与显示、排版、背景全部收进二级页（[nav] 切换）。
+ * 分层按 Legado：一级只放高频滑杆（亮度、字号）与入口行；本书目录
+ * 规则、编码、翻页与显示、排版、背景、字体、文字处理、页眉页脚
+ * 全部收进二级页（[nav] 切换）。
  */
 @Composable
 fun TxtReaderSettingsContent(
@@ -224,12 +251,6 @@ fun TxtReaderSettingsContent(
     onTypesetCommit: () -> Unit,
     readerBg: String,
     onReaderBgChange: (String) -> Unit,
-    tocRulesCount: Int,
-    tocRulesEnabled: Int,
-    onOpenTocRulesPage: (() -> Unit)?,
-    glassBackdrop: LayerBackdrop? = null,
-    glassLiquid: com.kyant.backdrop.Backdrop? = null,
-    glassBlurEnabled: Boolean = true,
     features: TxtFeatureState,
     book: TxtSettingsBookContext?,
     nav: TxtReaderSettingsNav,
@@ -343,17 +364,6 @@ fun TxtReaderSettingsContent(
                             )
                         }
                         ReaderEntryRow(
-                            title = "目录规则",
-                            summary = "共 $tocRulesCount 条，启用 $tocRulesEnabled 条",
-                            onClick = {
-                                if (onOpenTocRulesPage != null) {
-                                    onOpenTocRulesPage()
-                                } else {
-                                    nav.section = TxtReaderSettingsNav.SECTION_RULES
-                                }
-                            },
-                        )
-                        ReaderEntryRow(
                             title = "翻页与显示",
                             summary = "${if (readMode == TxtReaderStore.MODE_PAGE) "左右翻页" else "上下滚动"}" +
                                 " · 全屏${if (fullscreen) "开" else "关"}",
@@ -393,24 +403,7 @@ fun TxtReaderSettingsContent(
                             summary = "底部信息行显示的元素",
                             onClick = { nav.section = TxtReaderSettingsNav.SECTION_FOOTER },
                         )
-                        ReaderEntryRow(
-                            title = "同步",
-                            summary = if (TxtSync.config(appContext) == null) {
-                                "WebDAV 未配置"
-                            } else {
-                                TxtSync.lastResult(appContext) ?: "WebDAV 已配置"
-                            },
-                            onClick = { nav.section = TxtReaderSettingsNav.SECTION_SYNC },
-                        )
                     }
-                }
-                if (book == null) {
-                    Text(
-                        text = "每本书的目录规则与编码，在打开书籍后于书内「设置」里单独调整。",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
                 }
             }
         } else {
@@ -476,17 +469,6 @@ fun TxtReaderSettingsContent(
                             }
                         }
                     }
-                }
-
-                TxtReaderSettingsNav.SECTION_RULES -> if (book != null) {
-                    TxtTocRulesManager(
-                        rules = book.tocRules,
-                        onRulesChange = book.onTocRulesChange,
-                        modifier = Modifier.weight(1f),
-                        glassBackdrop = glassBackdrop,
-                        glassLiquid = glassLiquid,
-                        glassBlurEnabled = glassBlurEnabled,
-                    )
                 }
 
                 TxtReaderSettingsNav.SECTION_PAGE_DISPLAY -> {
@@ -853,93 +835,6 @@ fun TxtReaderSettingsContent(
                     }
                 }
 
-                TxtReaderSettingsNav.SECTION_SYNC -> {
-                    var savedCfg by remember { mutableStateOf(TxtSync.config(appContext)) }
-                    var urlText by remember { mutableStateOf(savedCfg?.url ?: "") }
-                    var userText by remember { mutableStateOf(savedCfg?.user ?: "") }
-                    var passText by remember { mutableStateOf(savedCfg?.pass ?: "") }
-                    var status by remember {
-                        mutableStateOf(TxtSync.lastResult(appContext) ?: "尚未同步")
-                    }
-                    var syncing by remember { mutableStateOf(false) }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 4.dp),
-                    ) {
-                        TextField(
-                            value = urlText,
-                            onValueChange = { urlText = it },
-                            label = "服务器地址（如 https://dav.example.com/）",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        TextField(
-                            value = userText,
-                            onValueChange = { userText = it },
-                            label = "账号",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        TextField(
-                            value = passText,
-                            onValueChange = { passText = it },
-                            label = "密码（只存本机应用私有存储，不上传到别处）",
-                            singleLine = true,
-                            visualTransformation =
-                                androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Row {
-                            TextButton(
-                                text = "保存配置",
-                                onClick = {
-                                    TxtSync.saveConfig(
-                                        appContext, urlText.trim(), userText.trim(), passText,
-                                    )
-                                    savedCfg = TxtSync.config(appContext)
-                                    status = if (savedCfg == null) {
-                                        "地址为空，未保存"
-                                    } else {
-                                        "配置已保存"
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(
-                                text = if (syncing) "同步中…" else "立即同步",
-                                enabled = savedCfg != null && !syncing,
-                                onClick = {
-                                    syncing = true
-                                    scope.launch {
-                                        status = TxtSync.sync(appContext)
-                                        syncing = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = status,
-                            fontSize = 13.sp,
-                            color = MiuixTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "同步书架、各书进度与每本书的目录规则选择，合并按每条记录的时间戳取新者；" +
-                                "文件放在服务器的 marea-reader/sync.json。配好后打开书籍或书架时也会静默同步一次。" +
-                                "设置类偏好不同步；书架删除暂不向远端传播（远端仍有的书可能在同步后回到书架）。",
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-                }
-
                 TxtReaderSettingsNav.SECTION_BG -> {
                     Column(
                         modifier = Modifier
@@ -1120,10 +1015,125 @@ private fun ReaderEntryRow(title: String, summary: String, onClick: () -> Unit) 
     }
 }
 
+
 /**
- * 阅读设置页（fork.29）：书架页齿轮进入的整页宿主，承载统一的
- * [TxtReaderSettingsContent]，与书内设置弹层同一组件、同一数据源。
- * 本页无当前书语境，本书目录规则 / 编码不在此出现；目录规则走独立页。
+ * WebDAV 同步设置（fork.31 从统一设置组件里拆出）：同步是跨书的通用
+ * 配置，只出现在书架侧「阅读设置」页，阅读页内设置不再有这一项。
+ * 表单与动作仍走 TxtSync，配置只存应用私有存储。
+ */
+@Composable
+fun TxtSyncSettingsContent(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext }
+    val scope = rememberCoroutineScope()
+    var savedCfg by remember { mutableStateOf(TxtSync.config(appContext)) }
+    var urlText by remember { mutableStateOf(savedCfg?.url ?: "") }
+    var userText by remember { mutableStateOf(savedCfg?.user ?: "") }
+    var passText by remember { mutableStateOf(savedCfg?.pass ?: "") }
+    var status by remember {
+        mutableStateOf(TxtSync.lastResult(appContext) ?: "尚未同步")
+    }
+    var syncing by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp),
+    ) {
+        TextField(
+            value = urlText,
+            onValueChange = { urlText = it },
+            label = "服务器地址（如 https://dav.example.com/）",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextField(
+            value = userText,
+            onValueChange = { userText = it },
+            label = "账号",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextField(
+            value = passText,
+            onValueChange = { passText = it },
+            label = "密码（只存本机应用私有存储，不上传到别处）",
+            singleLine = true,
+            visualTransformation =
+                androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row {
+            TextButton(
+                text = "保存配置",
+                onClick = {
+                    TxtSync.saveConfig(
+                        appContext, urlText.trim(), userText.trim(), passText,
+                    )
+                    savedCfg = TxtSync.config(appContext)
+                    status = if (savedCfg == null) {
+                        "地址为空，未保存"
+                    } else {
+                        "配置已保存"
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                text = if (syncing) "同步中…" else "立即同步",
+                enabled = savedCfg != null && !syncing,
+                onClick = {
+                    syncing = true
+                    scope.launch {
+                        status = TxtSync.sync(appContext)
+                        syncing = false
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = status,
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "同步书架、各书进度与每本书的目录规则选择，合并按每条记录的时间戳取新者；" +
+                "文件放在服务器的 marea-reader/sync.json。配好后打开书籍或书架时也会静默同步一次。" +
+                "设置类偏好不同步；书架删除暂不向远端传播（远端仍有的书可能在同步后回到书架）。",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
+}
+
+/**
+ * 阅读相关页面的全幅底色层（fork.31 导航条沉浸补完）：在页面最外层
+ * 先把页面底色（Miuix surface）画满整个窗口（含状态栏 / 导航条之下），
+ * 内部 Scaffold 容器色设透明——导航条区域由页面自己画，不再透出
+ * 主题里写死的不透明 windowBackground（浅色 #FFFFFF / 深色 #111111，
+ * 与页面底色不是同一个色，那就是此前那条「实色带」的来源）。
+ */
+@Composable
+internal fun TxtPageBackground(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.surface),
+    ) {
+        content()
+    }
+}
+
+/**
+ * 书架侧「阅读设置」页（fork.29 建页，fork.31 改分工）：只留两个跨书
+ * 的通用设置——目录规则（规则库管理，进独立页）与 WebDAV 同步。
+ * 其余阅读设置（字号 / 排版 / 背景 / 字体等）已全部归阅读页内设置、
+ * 按书独立，不再在这里出现。
  */
 @Composable
 fun TxtReaderSettingsScreen(
@@ -1132,83 +1142,76 @@ fun TxtReaderSettingsScreen(
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    var fontSize by remember { mutableStateOf(TxtReaderStore.fontSize(appContext)) }
-    var readMode by remember { mutableStateOf(TxtReaderStore.readMode(appContext)) }
-    var fullscreen by remember { mutableStateOf(TxtReaderStore.fullscreen(appContext)) }
-    var brightness by remember { mutableStateOf(TxtReaderStore.brightness(appContext)) }
-    var lineHeight by remember { mutableStateOf(TxtReaderStore.lineHeight(appContext)) }
-    var paraSpacing by remember { mutableStateOf(TxtReaderStore.paraSpacing(appContext)) }
-    var marginDp by remember { mutableStateOf(TxtReaderStore.margin(appContext)) }
-    var readerBg by remember { mutableStateOf(TxtReaderStore.bgPreset(appContext)) }
-    val nav = remember { TxtReaderSettingsNav() }
-    val systemBrightness = remember {
-        runCatching {
-            Settings.System.getInt(
-                context.contentResolver,
-                Settings.System.SCREEN_BRIGHTNESS, 128,
-            ) / 255f
-        }.getOrDefault(0.55f)
-    }
+    var showSync by remember { mutableStateOf(false) }
     val tocRules = TxtTocRules.load(appContext)
-    val features = remember { TxtFeatureState(appContext) }
+    // 从同步二级页返回时重组一次，摘要里的上次结果随之刷新
+    val syncSummary = if (TxtSync.config(appContext) == null) {
+        "WebDAV 未配置"
+    } else {
+        TxtSync.lastResult(appContext) ?: "WebDAV 已配置"
+    }
 
-    BackHandler(enabled = nav.section != null) { nav.section = null }
+    BackHandler(enabled = showSync) { showSync = false }
 
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "阅读设置",
-                subtitle = "TXT 阅读器的全部设置",
-                navigationIcon = {
-                    LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onBack)
-                },
-            )
-        },
-    ) { innerPadding ->
-        TxtReaderSettingsContent(
-            fontSize = fontSize,
-            onFontSizeChange = { fontSize = it },
-            onFontSizeCommit = { TxtReaderStore.setFontSize(appContext, fontSize) },
-            brightness = brightness,
-            systemBrightness = systemBrightness,
-            onBrightnessChange = { brightness = it },
-            onBrightnessCommit = { TxtReaderStore.setBrightness(appContext, brightness) },
-            readMode = readMode,
-            onReadModeChange = { value ->
-                readMode = value
-                TxtReaderStore.setReadMode(appContext, value)
+    TxtPageBackground {
+        Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            topBar = {
+                SmallTopAppBar(
+                    title = "阅读设置",
+                    subtitle = if (showSync) "WebDAV 同步" else "TXT 阅读器的通用设置",
+                    navigationIcon = {
+                        LiquidGlassBackButton(
+                            backdrop = null,
+                            surfaceVisible = true,
+                            onClick = { if (showSync) showSync = false else onBack() },
+                        )
+                    },
+                )
             },
-            fullscreen = fullscreen,
-            onFullscreenChange = { value ->
-                fullscreen = value
-                TxtReaderStore.setFullscreen(appContext, value)
-            },
-            lineHeight = lineHeight,
-            onLineHeightChange = { lineHeight = it },
-            paraSpacing = paraSpacing,
-            onParaSpacingChange = { paraSpacing = it },
-            marginDp = marginDp,
-            onMarginChange = { marginDp = it },
-            onTypesetCommit = {
-                TxtReaderStore.setLineHeight(appContext, lineHeight)
-                TxtReaderStore.setParaSpacing(appContext, paraSpacing)
-                TxtReaderStore.setMargin(appContext, marginDp)
-            },
-            readerBg = readerBg,
-            onReaderBgChange = { value ->
-                readerBg = value
-                TxtReaderStore.setBgPreset(appContext, value)
-            },
-            tocRulesCount = tocRules.size,
-            tocRulesEnabled = tocRules.count { it.enabled },
-            onOpenTocRulesPage = onOpenTocRules,
-            features = features,
-            book = null,
-            nav = nav,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        )
+        ) { innerPadding ->
+            if (showSync) {
+                TxtSyncSettingsContent(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    ReaderSettingsSectionTitle("通用设置")
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                    ) {
+                        Column {
+                            ReaderEntryRow(
+                                title = "目录规则",
+                                summary = "共 ${tocRules.size} 条，启用 ${tocRules.count { it.enabled }} 条",
+                                onClick = onOpenTocRules,
+                            )
+                            ReaderEntryRow(
+                                title = "WebDAV 同步",
+                                summary = syncSummary,
+                                onClick = { showSync = true },
+                            )
+                        }
+                    }
+                    Text(
+                        text = "字号、排版、背景、字体等阅读偏好，在打开书籍后于阅读页的「设置」里按每本书单独调整。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1221,27 +1224,30 @@ fun TxtTocRulesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     var rules by remember { mutableStateOf(TxtTocRules.load(appContext)) }
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "目录规则",
-                subtitle = "按列表顺序匹配，首中即为章节",
-                navigationIcon = {
-                    LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onBack)
-                },
-            )
-        },
-    ) { innerPadding ->
-        TxtTocRulesManager(
-            rules = rules,
-            onRulesChange = { updated ->
-                rules = updated
-                TxtTocRules.save(appContext, updated)
+    TxtPageBackground {
+        Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            topBar = {
+                SmallTopAppBar(
+                    title = "目录规则",
+                    subtitle = "按列表顺序匹配，首中即为章节",
+                    navigationIcon = {
+                        LiquidGlassBackButton(backdrop = null, surfaceVisible = true, onClick = onBack)
+                    },
+                )
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        )
+        ) { innerPadding ->
+            TxtTocRulesManager(
+                rules = rules,
+                onRulesChange = { updated ->
+                    rules = updated
+                    TxtTocRules.save(appContext, updated)
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            )
+        }
     }
 }
 

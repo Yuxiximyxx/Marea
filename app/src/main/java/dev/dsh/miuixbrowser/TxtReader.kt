@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1017,6 +1018,125 @@ object TxtReaderStore {
         saveTocRuleChoice(context, space, key, ruleId)
         markTocTs(context, space, key, ts)
     }
+
+    /* ---------------- fork.31：阅读设置按书独立 ---------------- */
+
+    /**
+     * 一本书的全部阅读设置快照（fork.31）：字号 / 翻页模式 / 全屏 /
+     * 排版（行距、段距、边距、缩进、对齐）/ 背景 / 字体 / 简繁 / 重排 /
+     * 翻页动画 / 页脚五元素。亮度是窗口级偏好、不入快照（保持全局一份）；
+     * 编码与本书目录规则选择另有既存的按书记录（进度记录与 r_ 键），
+     * 不重复进快照。
+     */
+    data class BookSettings(
+        val fontSize: Float,
+        val readMode: String,
+        val fullscreen: Boolean,
+        val lineHeight: Float,
+        val paraSpacing: Float,
+        val margin: Float,
+        val bg: String,
+        val convertMode: String,
+        val reflow: Boolean,
+        val fontFile: String,
+        val fontWeight: Int,
+        val indentChars: Int,
+        val justify: Boolean,
+        val pageAnim: String,
+        val footerChapter: Boolean,
+        val footerPage: Boolean,
+        val footerPercent: Boolean,
+        val footerTime: Boolean,
+        val footerBattery: Boolean,
+    )
+
+    /**
+     * 全局镜像（新书种子）：就是既有的全局 UI 偏好本身——fork.31 前用户
+     * 调好的全局值天然成为镜像，不需要搬迁。书内每改一项设置，写入本书
+     * 记录的同时也写镜像（走各全局 setter），镜像恒等于「最近一次修改
+     * 过的设置」；新书没有自己的记录时以镜像为起点。
+     */
+    fun mirrorBookSettings(context: Context): BookSettings = BookSettings(
+        fontSize = fontSize(context),
+        readMode = readMode(context),
+        fullscreen = fullscreen(context),
+        lineHeight = lineHeight(context),
+        paraSpacing = paraSpacing(context),
+        margin = margin(context),
+        bg = bgPreset(context),
+        convertMode = convertMode(context),
+        reflow = reflow(context),
+        fontFile = fontFile(context),
+        fontWeight = fontWeight(context),
+        indentChars = indentChars(context),
+        justify = justify(context),
+        pageAnim = pageAnim(context),
+        footerChapter = footerShow(context, "chapter"),
+        footerPage = footerShow(context, "page"),
+        footerPercent = footerShow(context, "percent"),
+        footerTime = footerShow(context, "time"),
+        footerBattery = footerShow(context, "battery"),
+    )
+
+    /** 本书设置记录：与进度同文件、同空间口径，键 s_<文件标识>，JSON 存放 */
+    fun loadBookSettings(context: Context, space: Int, key: String): BookSettings? {
+        val raw = runCatching {
+            progressPrefs(context, space).getString("s_$key", null)
+        }.getOrNull() ?: return null
+        val o = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        val mirror = mirrorBookSettings(context)
+        return BookSettings(
+            fontSize = if (o.has("fontSize")) o.getDouble("fontSize").toFloat() else mirror.fontSize,
+            readMode = o.optString("readMode").ifBlank { mirror.readMode },
+            fullscreen = if (o.has("fullscreen")) o.getBoolean("fullscreen") else mirror.fullscreen,
+            lineHeight = if (o.has("lineHeight")) o.getDouble("lineHeight").toFloat() else mirror.lineHeight,
+            paraSpacing = if (o.has("paraSpacing")) o.getDouble("paraSpacing").toFloat() else mirror.paraSpacing,
+            margin = if (o.has("margin")) o.getDouble("margin").toFloat() else mirror.margin,
+            bg = o.optString("bg").ifBlank { mirror.bg },
+            convertMode = o.optString("convertMode").ifBlank { mirror.convertMode },
+            reflow = if (o.has("reflow")) o.getBoolean("reflow") else mirror.reflow,
+            fontFile = if (o.has("fontFile")) o.getString("fontFile") else mirror.fontFile,
+            fontWeight = if (o.has("fontWeight")) o.getInt("fontWeight") else mirror.fontWeight,
+            indentChars = if (o.has("indentChars")) o.getInt("indentChars") else mirror.indentChars,
+            justify = if (o.has("justify")) o.getBoolean("justify") else mirror.justify,
+            pageAnim = o.optString("pageAnim").ifBlank { mirror.pageAnim },
+            footerChapter = if (o.has("footerChapter")) o.getBoolean("footerChapter") else mirror.footerChapter,
+            footerPage = if (o.has("footerPage")) o.getBoolean("footerPage") else mirror.footerPage,
+            footerPercent = if (o.has("footerPercent")) o.getBoolean("footerPercent") else mirror.footerPercent,
+            footerTime = if (o.has("footerTime")) o.getBoolean("footerTime") else mirror.footerTime,
+            footerBattery = if (o.has("footerBattery")) o.getBoolean("footerBattery") else mirror.footerBattery,
+        )
+    }
+
+    fun saveBookSettings(context: Context, space: Int, key: String, s: BookSettings) {
+        runCatching {
+            val o = JSONObject()
+                .put("fontSize", s.fontSize.toDouble())
+                .put("readMode", s.readMode)
+                .put("fullscreen", s.fullscreen)
+                .put("lineHeight", s.lineHeight.toDouble())
+                .put("paraSpacing", s.paraSpacing.toDouble())
+                .put("margin", s.margin.toDouble())
+                .put("bg", s.bg)
+                .put("convertMode", s.convertMode)
+                .put("reflow", s.reflow)
+                .put("fontFile", s.fontFile)
+                .put("fontWeight", s.fontWeight)
+                .put("indentChars", s.indentChars)
+                .put("justify", s.justify)
+                .put("pageAnim", s.pageAnim)
+                .put("footerChapter", s.footerChapter)
+                .put("footerPage", s.footerPage)
+                .put("footerPercent", s.footerPercent)
+                .put("footerTime", s.footerTime)
+                .put("footerBattery", s.footerBattery)
+            progressPrefs(context, space).edit().putString("s_$key", o.toString()).apply()
+        }
+    }
+
+    /** 打开一本书时生效的设置：有本书记录用记录，没有用全局镜像（新书种子） */
+    fun effectiveBookSettings(context: Context, space: Int, key: String): BookSettings =
+        loadBookSettings(context, space, key) ?: mirrorBookSettings(context)
 }
 
 /**
@@ -1057,6 +1177,14 @@ class TxtReaderActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        // fork.31：与 MainActivity 对齐补刘海短边模式——内容可延伸进
+        // 刘海区，系统栏下不留缺口（此前本窗独缺这一项）
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         // 真沉浸（fork.29）：禁止系统在透明系统栏下再垫一层对比度蒙层，
         // 阅读页背景要原样延伸到状态栏 / 导航条之下
         if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -1512,14 +1640,41 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
     // fork.30 功能批的统一状态（与设置组件共用同一份，写同一处存储）
     val features = remember { TxtFeatureState(appContext) }
     val fontSpec = rememberTxtFontSpec(features.fontFile, features.fontWeight)
+
+    // fork.31：本书设置快照落盘。阅读页内每改一项设置，全局 setter 先写
+    // 镜像（新书种子），这里再把当前全量状态落成本书自己的记录
+    // （s_<文件标识>，与进度同空间）；亮度不在快照内，保持全局一份
+    fun persistBookSettings() {
+        val key = fileKey ?: return
+        TxtReaderStore.saveBookSettings(
+            appContext, space, key,
+            TxtReaderStore.BookSettings(
+                fontSize = fontSize,
+                readMode = readMode,
+                fullscreen = fullscreen,
+                lineHeight = lineHeight,
+                paraSpacing = paraSpacing,
+                margin = marginDp,
+                bg = readerBg,
+                convertMode = features.convertMode,
+                reflow = features.reflow,
+                fontFile = features.fontFile,
+                fontWeight = features.fontWeight,
+                indentChars = features.indentChars,
+                justify = features.justify,
+                pageAnim = features.pageAnim,
+                footerChapter = features.footerChapter,
+                footerPage = features.footerPage,
+                footerPercent = features.footerPercent,
+                footerTime = features.footerTime,
+                footerBattery = features.footerBattery,
+            ),
+        )
+    }
+    features.onPersist = { persistBookSettings() }
     var selectionPara by remember { mutableStateOf<Int?>(null) }
     var searchInitial by remember { mutableStateOf("") }
     var tocQuery by remember { mutableStateOf("") }
-
-    fun applyRules(newRules: List<TxtTocRule>) {
-        tocRules = newRules
-        TxtTocRules.save(appContext, newRules)
-    }
 
     // 读原始字节（只读一次；编码/规则变化只重新解码切章，不重新读文件）
     LaunchedEffect(uri) {
@@ -1549,6 +1704,25 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 Diag.log("TxtReader: read failed: ${it.message}")
                 loadError = true
             }
+    }
+
+    // fork.31：文件标识定下后，把本书生效设置（本书记录优先，没有用
+    // 全局镜像作新书种子）灌进界面状态——字号 / 排版 / 背景 / 简繁 /
+    // 字体等从这一刻起按书分家；解码副作用会随简繁 / 重排的变化重跑
+    LaunchedEffect(fileKey) {
+        val key = fileKey ?: return@LaunchedEffect
+        val eff = TxtReaderStore.effectiveBookSettings(appContext, space, key)
+        fontSize = eff.fontSize
+        if (readMode != eff.readMode) {
+            readMode = eff.readMode
+            if (eff.readMode == TxtReaderStore.MODE_SCROLL) pageInfo = null
+        }
+        fullscreen = eff.fullscreen
+        lineHeight = eff.lineHeight
+        paraSpacing = eff.paraSpacing
+        marginDp = eff.margin
+        readerBg = eff.bg
+        features.applyFrom(eff)
     }
 
     // 解码 + 按当前规则切章（编码或规则变化时重跑）
@@ -1855,6 +2029,25 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
         controller.isAppearanceLightNavigationBars = !palette.dark
     }
 
+    // fork.31：阅读页内返回栈——系统返回先关覆盖层、再退设置二级页、
+    // 最后才关设置弹层，全程留在阅读界面（设置已全部收进本 Activity，
+    // 不再有经书架路由打开设置、返回落到书架页的路径）
+    BackHandler(enabled = showSettings && settingsNav.section != null) {
+        settingsNav.section = null
+    }
+    BackHandler(enabled = showSettings && settingsNav.section == null) {
+        showSettings = false
+    }
+    BackHandler(
+        enabled = !showSettings &&
+            (panelVisible || showToc || showSearch || selectionPara != null),
+    ) {
+        panelVisible = false
+        showToc = false
+        showSearch = false
+        selectionPara = null
+    }
+
     // 真沉浸（fork.29）：根背景用阅读页底色全幅铺满——状态栏与导航条全透明、
     // 背景延伸到两条系统栏之下；系统栏保持显示，内容在内层按 insets 让位
     Box(
@@ -2001,6 +2194,10 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             }
         }
 
+        }
+        // fork.31：覆盖层（控制面板 / 设置 / 目录 / 搜索 / 选词）画在
+        // 内层 inset 盒之外——遮罩与底色全幅铺到导航条之下，各层内容
+        // 自己按 navigationBarsPadding / windowInsetsPadding 让位
         // 控制面板（Legado 式，fork.28）：亮度一行、上一章/章节进度/下一章一行、
         // 目录/全文搜索/设置三入口一行；点按正文呼出，与快速设置面板分层
         if (panelVisible && currentBook != null) {
@@ -2090,12 +2287,16 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(12.dp)
+                        .navigationBarsPadding()
                         .clickable(enabled = false) {},
                 ) {
                     TxtReaderSettingsContent(
                         fontSize = fontSize,
                         onFontSizeChange = { fontSize = it },
-                        onFontSizeCommit = { TxtReaderStore.setFontSize(appContext, fontSize) },
+                        onFontSizeCommit = {
+                            TxtReaderStore.setFontSize(appContext, fontSize)
+                            persistBookSettings()
+                        },
                         brightness = brightness,
                         systemBrightness = systemBrightness,
                         onBrightnessChange = { brightness = it },
@@ -2108,12 +2309,14 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                 readMode = value
                                 if (value == TxtReaderStore.MODE_SCROLL) pageInfo = null
                                 TxtReaderStore.setReadMode(appContext, value)
+                                persistBookSettings()
                             }
                         },
                         fullscreen = fullscreen,
                         onFullscreenChange = { value ->
                             fullscreen = value
                             TxtReaderStore.setFullscreen(appContext, value)
+                            persistBookSettings()
                         },
                         lineHeight = lineHeight,
                         onLineHeightChange = { lineHeight = it },
@@ -2125,18 +2328,14 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                             TxtReaderStore.setLineHeight(appContext, lineHeight)
                             TxtReaderStore.setParaSpacing(appContext, paraSpacing)
                             TxtReaderStore.setMargin(appContext, marginDp)
+                            persistBookSettings()
                         },
                         readerBg = readerBg,
                         onReaderBgChange = { value ->
                             readerBg = value
                             TxtReaderStore.setBgPreset(appContext, value)
+                            persistBookSettings()
                         },
-                        tocRulesCount = tocRules.size,
-                        tocRulesEnabled = tocRules.count { it.enabled },
-                        onOpenTocRulesPage = null,
-                        glassBackdrop = readerBackdrop,
-                        glassLiquid = liquidBackdrop,
-                        glassBlurEnabled = glassBlurEnabled,
                         book = TxtSettingsBookContext(
                             book = currentBook,
                             bookName = name,
@@ -2155,7 +2354,6 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                                     }
                                 }
                             },
-                            onTocRulesChange = ::applyRules,
                         ),
                         features = features,
                         nav = settingsNav,
@@ -2174,7 +2372,8 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MiuixTheme.colorScheme.surface),
+                    .background(MiuixTheme.colorScheme.surface)
+                    .windowInsetsPadding(WindowInsets.systemBars),
             ) {
                 SmallTopAppBar(
                     title = "目录",
@@ -2214,7 +2413,7 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 if (currentBook.chapters.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = "没有识别到章节标题，可在「设置 → 目录规则」里调整规则",
+                            text = "没有识别到章节标题，可在书架页「阅读设置 → 目录规则」里调整规则",
                             fontSize = 14.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
@@ -2298,7 +2497,6 @@ private fun TxtReaderScreen(uri: Uri, name: String, space: Int, onClose: () -> U
                 )
             }
         }
-        }
     }
 }
 
@@ -2344,6 +2542,7 @@ private fun TxtControlPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+                .navigationBarsPadding()
                 .glassBar(
                     backdrop = glassBackdrop,
                     corner = 24.dp,
@@ -2981,6 +3180,7 @@ private fun TxtSelectionOverlay(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(12.dp)
+                .navigationBarsPadding()
                 .clickable(enabled = false) {},
         ) {
             Column {
@@ -3102,7 +3302,8 @@ private fun TxtSearchOverlay(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface),
+            .background(MiuixTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.systemBars),
     ) {
         SmallTopAppBar(
             title = "全文搜索",
