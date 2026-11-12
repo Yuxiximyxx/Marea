@@ -1777,7 +1777,25 @@ fun BrowserScreen(
                             MenuAction.Home -> state.goHome(tab)
                             MenuAction.Downloads -> pushPage(AppRoute.Downloads)
                             MenuAction.OpenFile -> txtPickerLauncher.launch(arrayOf("text/plain"))
-                            MenuAction.Bookshelf -> pushPage(AppRoute.Bookshelf)
+                            MenuAction.Bookshelf -> {
+                                // exp.3：书架入口改接 Legado 自家主界面（书架/分组/管理
+                                // 与它的设置都在其 MainNavGraph 内，与阅读宿主共用同一
+                                // Legado 数据库，不会出现两份书）。Marea 自研
+                                // TxtBookshelf 保留代码、不再接入口（回退保留口径）。
+                                Diag.log("legado-main: open from browser menu")
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            context,
+                                            io.legado.app.ui.main.MainActivity::class.java,
+                                        ),
+                                    )
+                                }.onFailure {
+                                    Diag.log(
+                                        "legado-main: start failed\n${it.stackTraceToString()}",
+                                    )
+                                }
+                            }
                             MenuAction.ScriptMenu -> {
                                 scriptSheetShow = true
                                 refreshScriptSheet()
