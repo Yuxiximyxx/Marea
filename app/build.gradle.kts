@@ -61,6 +61,8 @@ android {
     }
 
     compileOptions {
+        // 实验分支：legado 库模块要求消费方开启 core library desugaring
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
