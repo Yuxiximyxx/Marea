@@ -271,7 +271,7 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                     }
                     val readerResumeState = remember(controller, lifecycleOwner) { booleanArrayOf(false) }
                     val collectorReady = remember(readBookViewModel) { booleanArrayOf(false) }
-                    val readAloudSessionStore: io.legado.app.help.readaloud.ReadAloudSessionStore =
+                    val readAloudSessionStore: io.legado.app.model.ReadAloudSessionStore =
                         org.koin.compose.koinInject()
                     val readAloudFollow = remember(readBookViewModel) { booleanArrayOf(true) }
                     LaunchedEffect(readAloudSessionStore) {
@@ -432,8 +432,8 @@ class LegadoReaderHostActivity : AppCompatActivity() {
                     TxtRuleRouteScreen(
                         initialRule = route.initialRule,
                         onPickRule = route.pickForBookUrl?.let {
-                            { rule: io.legado.app.data.entities.TxtTocRule ->
-                                closeBookPage(backStack, route, BookPageResult.TxtTocRuleChosen(rule))
+                            { regex: String ->
+                                closeBookPage(backStack, route, BookPageResult.TxtTocRuleChosen(regex))
                             }
                         },
                         onBackClick = { navigateBack(backStack) },
