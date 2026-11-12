@@ -50,8 +50,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 278
-        versionName = "v1.8.28-exp.5"
+        versionCode = 279
+        versionName = "v1.8.28-exp.6"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
@@ -120,6 +120,16 @@ android {
 // 中——但其动态配色生成路径在 Marea 里没有被接线（exp.1–exp.4 在 utilities
 // 整包缺失时浏览器一直正常使用可证），属存量休眠不一致、非本钉版引入的回归；
 // 将来接线 miuix 动态配色前须先处理此冲突（届时考虑升 kolor 到与 6.0.0 对齐的版本）。
+// exp.6 更正与了结：上面「ThemeController 路径在 Marea 里没有被接线」的判断错误——
+// 它经 Legado 的 ThemeColorSchemeOverride（MiuixTheme 包裹阅读页）接着线，exp.5
+// 真机即崩在 ThemeController.colorsFromSeed 调 dynamiccolor/DynamicScheme$Platform
+// （5.0.1 无此类）。总根因是本地 miuix 源码与 kolor 的 utilities 布局错位：miuix
+// 源码按 utilities 6.0.0 编写（dynamiccolor 布局 + SPEC_2026/SchemeCmf），kolor
+// 5.0.1 按 5.0.1 编写（scheme 布局），单一 utilities 版本无解。本版将本地 miuix
+// 源码对齐回 5.0.1（miuix 版本目录的 utilities 改 5.0.1；ThemeController 改用
+// scheme 包 DynamicScheme 与九个 Scheme 的 5.0.1 同形签名；5.0.1 没有的
+// SchemeCmf/SPEC_2026 不再引用、Cmf 风格以 TonalSpot 兜底），与 Legado 原工程的
+// miuix 0.9.4 + kolor 5.0.1 + utilities 5.0.1 自洽组合一致。本 force 保留作护栏。
 configurations.configureEach {
     resolutionStrategy {
         force("com.materialkolor:material-color-utilities:5.0.1")

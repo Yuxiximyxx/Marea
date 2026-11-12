@@ -14,9 +14,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.materialkolor.dynamiccolor.ColorSpec
-import com.materialkolor.dynamiccolor.DynamicScheme
 import com.materialkolor.hct.Hct
-import com.materialkolor.scheme.SchemeCmf
+import com.materialkolor.scheme.DynamicScheme
 import com.materialkolor.scheme.SchemeContent
 import com.materialkolor.scheme.SchemeExpressive
 import com.materialkolor.scheme.SchemeFidelity
@@ -65,20 +64,22 @@ internal fun colorsFromSeed(
     dark: Boolean,
 ): Colors {
     // Check if the selected style supports SPEC_2025
+    // exp.6（Marea 实验分支）：本仓 miuix 源码的 utilities 已对齐 5.0.1——该版无
+    // SPEC_2026 与 SchemeCmf，Cmf 风格以 SchemeTonalSpot 呈现（见下方 when 分支），
+    // spec 规则随 TonalSpot 一并处理。
     val isSpec2025Supported = when (paletteStyle) {
         ThemePaletteStyle.TonalSpot,
         ThemePaletteStyle.Neutral,
         ThemePaletteStyle.Vibrant,
         ThemePaletteStyle.Expressive,
+        ThemePaletteStyle.Cmf,
         -> true
 
         else -> false
     }
 
-    // SchemeCmf only supports SPEC_2026.
-    // For other styles, gracefully downgrade to SPEC_2021 if SPEC_2025 is unsupported.
+    // For styles without SPEC_2025 support, gracefully downgrade to SPEC_2021.
     val internalSpec = when {
-        paletteStyle == ThemePaletteStyle.Cmf -> ColorSpec.SpecVersion.SPEC_2026
         colorSpec == ThemeColorSpec.Spec2025 && isSpec2025Supported -> ColorSpec.SpecVersion.SPEC_2025
         else -> ColorSpec.SpecVersion.SPEC_2021
     }
@@ -157,7 +158,8 @@ internal fun colorsFromSeed(
             platform = DynamicScheme.Platform.PHONE,
         )
 
-        ThemePaletteStyle.Cmf -> SchemeCmf(
+        // exp.6：utilities 5.0.1 无 SchemeCmf，Cmf 以 TonalSpot 兜底（枚举项保留，外部引用不受影响）
+        ThemePaletteStyle.Cmf -> SchemeTonalSpot(
             sourceColorHct = hctColor,
             isDark = dark,
             contrastLevel = 0.0,
@@ -216,11 +218,11 @@ internal fun monetSystemColors(dark: Boolean): Colors = colorsFromSeed(seed = Co
  *   schemes in Monet modes. When [ThemeColorSpec.Spec2025] is requested, it is only honored for
  *   palette styles whose underlying implementation supports the 2025 spec; otherwise, the effective
  *   spec is downgraded to [ThemeColorSpec.Spec2021] at runtime by [colorsFromSeed] ([ThemePaletteStyle.Cmf]
- *   always uses the 2026 spec).
+ *   renders as TonalSpot).
  * @param paletteStyle The palette style to use when generating dynamic color schemes. The selected
  *   style determines whether [ThemeColorSpec.Spec2025] can be applied; if it is not supported, the
  *   effective [colorSpec] will fall back to [ThemeColorSpec.Spec2021] ([ThemePaletteStyle.Cmf]
- *   always uses the 2026 spec).
+ *   renders as TonalSpot).
  * @param isDark Whether the system is in dark mode. This is used when the [colorSchemeMode] is
  *   set to a System or MonetSystem mode and the dark mode is not explicitly specified.
  */

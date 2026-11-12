@@ -12,7 +12,8 @@ jetbrains-compose-window-size = "1.12.0-alpha03"
 jetbrains-dokka = "2.2.0"
 jetbrains-compose-hotReload = "1.2.0"
 jetbrains-lifecycle = "2.11.0"
-materialKolor-utilities = "6.0.0"
+# exp.6（Marea 实验分支）：与 material-kolor 5.0.1 对齐回 scheme 布局；勿升 6.0.0（scheme/DynamicScheme 在 6.0.0 被删）
+materialKolor-utilities = "5.0.1"
 jna = "5.19.1"
 spotless = "8.10.4"
 

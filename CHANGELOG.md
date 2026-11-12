@@ -2,6 +2,16 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.6] - 2026-11-12
+
+Legado 阅读器整体移植实验线第六版：了结开书崩溃的最后一层——miuix 源码与 MaterialKolor 的配色库布局错位。
+
+- exp.5 真机复验：书架、设置均正常，开书仍崩，但堆栈换了一处——NoClassDefFoundError: com/materialkolor/dynamiccolor/DynamicScheme$Platform，崩在 miuix 的 ThemeController.colorsFromSeed（经 Legado 的 ThemeColorSchemeOverride 以 MiuixTheme 包裹阅读页时触发）。exp.5 小节中「miuix 动态配色生成路径在 Marea 里没有被接线」的判断错误：它经 Legado 主题层接着线，本版更正（app 侧 exp.5 钉版注释已同步补记）。
+- 总根因（同一枚硬币的两面）：本仓 includeBuild 的 miuix 源码按 material-color-utilities 6.0.0 编写（DynamicScheme 在 dynamiccolor 包，另用 SPEC_2026 与 SchemeCmf）；material-kolor 5.0.1 按 utilities 5.0.1 编写（DynamicScheme 在 scheme 包）。运行时只能有一份 utilities：钉 6.0.0 时 kolor 缺 scheme 版（exp.4 崩），钉 5.0.1 时 miuix 缺 dynamiccolor 版（exp.5 崩），不存在能同时满足两边的单一版本。
+- 本版处理：全应用对齐 Legado 原工程的自洽组合（miuix + material-kolor 5.0.1 + utilities 5.0.1）。miuix 源码侧两处：其版本目录的 utilities 由 6.0.0 改 5.0.1；ThemeController 改用 5.0.1 的 scheme 包 DynamicScheme 与九个 Scheme 类的同形构造签名（签名已逐一按 Maven 构件实测核对，九个 Scheme 在 5.0.1 均为 (Hct, boolean, double, SpecVersion, Platform)）。5.0.1 没有的 SchemeCmf 与 SPEC_2026 不再引用：ThemePaletteStyle.Cmf 枚举项保留，呈现以 SchemeTonalSpot 兜底。material-kolor 维持 5.0.1，app 侧 5.0.1 钉版护栏保留。浏览器侧除上述主题生成一处外无其他改动。
+- 发版门禁升级为全引用闭合检查：新增 tools/check_materialkolor_closure.py，逐 dex 区分「被引用」与「已定义」的 com/materialkolor 描述符并求差集，差集为空才发版（先以 exp.4 的包做负对照验证过：差集恰含当时的崩溃类）。本版构建产物已过此检查（引用与定义计数见发版记录）。
+- 其余同 exp.5：Legado 书架与设置、AppCompat 主题定版、应用名 Marea、崩溃落盘与诊断日志导出均保留。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.5] - 2026-11-12
 
 ### 实验版修复：开书仍崩同一处——utilities 整包没进 APK（待真机复验）
