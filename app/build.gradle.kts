@@ -50,8 +50,8 @@ android {
         applicationId = "io.github.yuxiximyxx.marea"
         minSdk = 33
         targetSdk = 37
-        versionCode = 273
-        versionName = "v1.8.28-fork.31"
+        versionCode = 274
+        versionName = "v1.8.28-exp.1"
         buildConfigField("String", "DEP_VERSIONS", "\"$dependencyVersions\"")
     }
 
@@ -80,8 +80,8 @@ android {
     buildTypes {
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             optimization {
                 enable = true
             }
@@ -102,6 +102,18 @@ android {
 
 
 dependencies {
+    // 实验分支 exp/legado-reader：整体移植的 Legado 阅读器（库模块）
+    implementation(project(":legado"))
+    // 宿主 LegadoReaderHostActivity 的编译面（Nav3 / Koin / AppCompat）
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.koin.android)
+    implementation(libs.koin.compose.viewmodel)
+    implementation(libs.appcompat.appcompat)
+
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuixVersion")

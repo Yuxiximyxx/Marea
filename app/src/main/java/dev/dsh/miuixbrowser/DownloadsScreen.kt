@@ -316,7 +316,7 @@ fun DownloadsScreen(
                                                     // 空间，隐私下载的阅读进度不落普通空间）
                                                     runCatching {
                                                         context.startActivity(
-                                                            TxtReaderActivity.intent(context, doneUri, task.name, task.space),
+                                                            LegadoReaderHostActivity.intent(context, doneUri, task.name, task.space),
                                                         )
                                                     }
                                                 } else {

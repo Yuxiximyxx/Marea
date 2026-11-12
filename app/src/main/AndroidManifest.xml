@@ -21,6 +21,7 @@
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
     <application
+        android:name="io.legado.app.App"
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:hardwareAccelerated="true"
@@ -355,15 +356,7 @@
             android:name=".TxtReaderActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
-            android:theme="@style/Theme.MiuixBrowser">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.MiuixBrowser" />
 
         <!-- 应用图标：同一时间只启用一个 alias，见 AppIconManager -->
         <activity-alias
@@ -460,6 +453,22 @@
             android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 实验分支 exp/legado-reader：整体移植的 Legado 阅读器宿主。
+             外部 VIEW text/plain（content/file）入口自 TxtReaderActivity 移到这里 -->
+        <activity
+            android:name=".LegadoReaderHostActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density|fontScale"
+            android:theme="@style/Base.AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // 实验分支 exp/legado-reader：Legado 的 com.github.* 依赖走 JitPack
+        maven("https://jitpack.io")
     }
 }
 
@@ -33,3 +35,7 @@ includeBuild("miuix") {
 
 rootProject.name = "MiuixBrowser"
 include(":app")
+// 实验分支 exp/legado-reader：Legado 整体移植（库模块 + 其 book/rhino 子模块）
+include(":legado")
+include(":modules:book")
+include(":modules:rhino")

@@ -572,7 +572,7 @@ fun BrowserScreen(
             }
             runCatching {
                 context.startActivity(
-                    TxtReaderActivity.intent(
+                    LegadoReaderHostActivity.intent(
                         context, uri, null,
                         if (PrivacyMode.active) 1 else 0,
                     ),

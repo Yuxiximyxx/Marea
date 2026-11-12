@@ -1,0 +1,16 @@
+[
+  {
+    "name": "汉典",
+    "urlRule": "https://www.zdic.net/hans/{{key}}",
+    "showRule": "@js:var doc = org.jsoup.Jsoup.parse(result)\ndoc.select(\"script,style,svg,button,.section-nav,.dict-section__footer\").remove()\nvar node = doc.selectFirst(\"#jbjs\")\nif (node == null) node = doc.selectFirst(\"#xxjs\")\nnode == null ? \"\" : node.html()",
+    "enabled": true,
+    "sortNumber": 0
+  },
+  {
+    "name": "海词英文",
+    "urlRule": "https://apii.dict.cn/mini.php?q={{key}}",
+    "showRule": "tag.body@all",
+    "enabled": true,
+    "sortNumber": 1
+  }
+]

@@ -478,7 +478,7 @@ fun BookshelfScreen(space: Int, onBack: () -> Unit, onOpenReaderSettings: () -> 
                                             } else {
                                                 runCatching {
                                                     context.startActivity(
-                                                        TxtReaderActivity.intent(
+                                                        LegadoReaderHostActivity.intent(
                                                             context,
                                                             Uri.parse(entry.uri),
                                                             entry.name,

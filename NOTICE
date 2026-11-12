@@ -1,0 +1,17 @@
+NOTICE — exp/legado-reader 实验分支
+
+本仓库的 exp/legado-reader 分支（实验版 v1.8.28-exp.1 起）包含来自
+Legado 项目的代码：
+
+- 来源：HapeLee/legado-with-MD3（Legado 的 Material Design 3 分支），
+  基线提交 bba5c64df，整树并入本仓库 legado/ 模块与 modules/book、
+  modules/rhino 子模块，文件保留其原有版权与许可证头。
+- 许可证：GNU General Public License v3.0（GPL-3.0），全文见
+  legado/LICENSE。
+- 性质：个人实验构建，仅用于在 Marea 内验证 Legado 阅读器本体的阅读
+  体验；不合入 Marea 正式线（main 仍为 Apache-2.0 的 Mafari/Marea
+  代码）。因整体并入 GPL-3.0 代码，该实验分支的构建产物按 GPL-3.0
+  理解与分发。
+
+Marea 其余部分（main 分支）与上游 rosenii/mafari 的关系与许可见
+README 与 LICENSE（Apache-2.0）。
