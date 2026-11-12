@@ -178,6 +178,15 @@ dependencies {
     // （exp.1 起的老问题，真机堆栈实锤）。与 miuix-core 同病同法：改用 -android
     // 后缀坐标（版本同 catalog materialKolor=5.0.1）
     implementation("com.materialkolor:material-kolor-android:5.0.1")
+    // exp.5：exp.4 只改了 kolor 本体还不够——真机开书仍崩同一处（exp.4 APK 实测
+    // 全包扫描：DynamicScheme$Platform 只出现 1 次、纯调用方引用，SchemeTonalSpot
+    // 与 Hct 为 0，material-color-utilities 的类根本没进包）。Maven 元数据实查：
+    // material-kolor-android:5.0.1 传递依赖的是 utilities 的无后缀根坐标
+    // com.materialkolor:material-color-utilities:5.0.1，这一跳在本仓解析环境下
+    // 同样落不到 android 变体被丢掉（原工程纯 Android 模块变体自动匹配、无事）。
+    // 绕开传递跳、显式直达 -android 坐标，确保 utilities 的 android AAR 进
+    // runtime 类路径；发版前另以 dex 类定义存在性作硬门禁验过才发。
+    implementation("com.materialkolor:material-color-utilities-android:5.0.1")
     implementation(libs.haze.core)
     implementation(libs.haze.blur)
     implementation(libs.miuix.ui.android)

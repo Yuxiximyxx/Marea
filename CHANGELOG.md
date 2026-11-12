@@ -2,6 +2,16 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.5] - 2026-11-12
+
+### 实验版修复：开书仍崩同一处——utilities 整包没进 APK（待真机复验）
+
+- exp.4 真机复验分化：书架与设置已修好（AppCompat 主题定版生效）；开书仍崩，堆栈与 exp.1 起完全同一处——NoClassDefFoundError: com/materialkolor/scheme/DynamicScheme$Platform（经 Legado 自家 MainNavGraph 进入阅读页，组合阅读主题时调 MaterialKolor 动态配色）。
+- 二次取证（下载 exp.4 的 Release APK 实测，12 个 dex 全包扫描）：DynamicScheme$Platform 只出现 1 次——即调用方那一处引用本身，类定义不在包内；SchemeTonalSpot 与 materialkolor/hct/Hct 均为 0 次。结论：material-color-utilities 的类根本没进 APK（kolor 本体在，所以能执行到调动态配色的那行才炸）。exp.4 小节里「已在发版 APK 内验过该类存在」的说法不成立，那次检查把引用误当成定义，本版更正。
+- 根因：Maven 元数据实查，com.materialkolor:material-kolor-android:5.0.1 的传递依赖声明的是 utilities 的无后缀根坐标 com.materialkolor:material-color-utilities:5.0.1。exp.4 只把 kolor 本体改成 -android 坐标，传递这一跳在本仓解析环境下同样落不到 android 变体、被丢弃（与 miuix 根坐标同病；Legado 原工程是纯 Android app 模块、变体自动匹配所以没事；两边版本同为 5.0.1，无版本错位）。
+- 本版修法：绕开失效的传递跳，在 legado 模块显式直达 com.materialkolor:material-color-utilities-android:5.0.1。发版前加硬门禁：对发版 APK 逐 dex 查类定义，Lcom/materialkolor/scheme/DynamicScheme$Platform;、Lcom/materialkolor/scheme/SchemeTonalSpot;、Lcom/materialkolor/hct/Hct; 三者作为定义（而非引用）存在才发版，本版发版时已按此验过。
+- 其余同 exp.4：Legado 书架与设置、AppCompat 主题定版、应用名 Marea、崩溃落盘与诊断日志导出均保留。包含 GPL-3.0 代码（见 NOTICE），仅供个人实验；正式线不受影响。
+
 ## [1.8.28-exp.4] - 2026-11-12
 
 ### 实验版修复：按真机堆栈修两处崩溃（待真机复验）
