@@ -106,6 +106,21 @@ android {
     }
 }
 
+// exp.5：material-color-utilities 必须钉死 5.0.1，不许冲突仲裁升级。
+// material-kolor 5.0.1 的字节码引用 com/materialkolor/scheme/DynamicScheme$Platform
+//（5.0.1 版 utilities 里该类在 scheme 包，属过渡布局：dynamiccolor 下已有
+// ColorSpec/DynamicScheme、scheme 下的 DynamicScheme 仍保留）；而 includeBuild 的
+// miuix-ui 按其 catalog 引入 utilities 6.0.0——6.0.0 起 scheme.DynamicScheme 被
+// 删除（只剩 dynamiccolor.DynamicScheme）。仲裁取高版 6.0.0 时 utilities 能进包、
+// 唯独 kolor 要的那个类不在，开书照样 NoClassDefFoundError（exp.5 首发实测：
+// SchemeTonalSpot/Hct 已定义、DynamicScheme$Platform 仍缺，门禁拦截后补此钉版）。
+// miuix-ui 用到的 Hct/Scheme*/dynamiccolor.DynamicScheme/ColorSpec 在 5.0.1 均在位。
+configurations.configureEach {
+    resolutionStrategy {
+        force("com.materialkolor:material-color-utilities:5.0.1")
+        force("com.materialkolor:material-color-utilities-android:5.0.1")
+    }
+}
 
 dependencies {
     // 实验分支 exp/legado-reader：整体移植的 Legado 阅读器（库模块）
