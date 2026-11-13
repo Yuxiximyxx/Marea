@@ -142,10 +142,12 @@ object Diag {
     /**
      * fork.8 用正则摘关键段（signal / backtrace 等）在用户机型上两次都「读到了流但没摘到段」——
      * 该机型墓碑格式与摘录模式对不上。fork.9 改为**原文转存**：把
-     * [ApplicationExitInfo.getTraceInputStream] 的内容不做任何解析、截断到约 64KB 后
+     * [ApplicationExitInfo.getTraceInputStream] 的内容不做任何解析、截断到约 2MB 后
      * 整段写到同目录的 tombstone.txt（每次启动覆盖，只保留最近一次），diag 里只留
      * 一行指针。万一隐私页原生崩溃再现，原文直接可读，不再依赖格式猜测。
      * 流为空 / 读失败同样留一行原因，不静默。
+     * exp.18：上限由 64KB 提到 2MB——exp.17 隐私页栈溢出崩溃时，64KB 恰好把崩溃
+     * 线程的递归帧截断在外、拿不到确切函数名；2MB 足以容纳完整墓碑含全部线程回溯。
      */
     private fun dumpLatestNativeTombstone(reasons: List<ApplicationExitInfo>) {
         val info = reasons.firstOrNull {
@@ -168,7 +170,7 @@ object Diag {
             stream.use { input ->
                 FileOutputStream(out).use { fos ->
                     val buf = ByteArray(8192)
-                    val limit = 64 * 1024
+                    val limit = 2 * 1024 * 1024
                     while (total < limit) {
                         val n = input.read(buf, 0, minOf(buf.size, limit - total))
                         if (n < 0) break
@@ -181,7 +183,7 @@ object Diag {
             }
             writeRaw(
                 "tombstone: latest CRASH_NATIVE at $stamp — 原始墓碑已整段转存 " +
-                    "tombstone.txt（$total 字节，上限 64KB）: ${out.absolutePath}",
+                    "tombstone.txt（$total 字节，上限 2MB）: ${out.absolutePath}",
             )
         }.onFailure { e ->
             writeRaw(

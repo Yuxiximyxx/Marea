@@ -2,6 +2,14 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.18] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十八版：隐私设置页原生崩溃的二分修复 + 墓碑取证补强。exp.17 真机打开「隐私模式」设置页（设置 → 隐私与安全 → 隐私模式），页面三块内容全部组合完成、无任何点击，约 0.7~1.1 秒后进程 CRASH_NATIVE——墓碑实锤 SIGSEGV / SEGV_ACCERR、crash_detail 标注「stack pointer is close to top of stack; likely stack overflow」，原生深递归把栈打爆，3 次复现 100% 必崩；Java 层无涉（last_crash 为空、页面自 fork.9 起零 WebView/Profile 原生接触、页面代码自 fork.12 未变）。本版按二分法隔离嫌疑最大的本页自引用 backdrop 采样链，并补上墓碑取证短板，红线（隐私进入/退出/空间逻辑、Legado 侧、数据库）未动。
+
+- 隐私设置页去玻璃化（只动 PrivacySettingsScreen 一页）：撤掉双 backdrop 采样链——不再创建 miuix rememberLayerBackdrop 与 Kyant rememberKyantBackdrop，内容层 Column 摘除 .layerBackdrop / .kyantLayerBackdrop 两个录制修饰，整页移除 CompositionLocalProvider(LocalLiquidBackdrop provides ...) 注入（子组件回落默认 null、走实色材质）；顶栏由 PageGlassTopBar 换普通 Miuix TopAppBar（同为大标题折叠栏、沿用原 scrollBehavior），返回键 LiquidGlassBackButton 传 null backdrop；清除口令确认弹窗 AppGlassDialog 传 null backdrop。页面功能与文案一字未动（状态卡、口令设置/修改/清除、隔离范围说明、弹窗文案全保留）；blurEnabled 入参保留签名兼容、页内不再据此启用采样。其他页面、glasskit、浏览器玻璃一律未动——若真机打开本页不再崩，后续再逐项回加定位真凶。
+- 存活探针加密：本页原有 +2.5s 探针之外补 +0.5s / +1.5s 两条同款纯日志探针（LaunchedEffect + delay + Diag），把既往死亡时间窗（0.7~1.1 秒）夹得更准，便于下一轮取证对时。
+- 墓碑取证补强（Diag 原文转存）：dumpLatestNativeTombstone 的截断上限由 64KB 提到 2MB，注释与 diag 指针行文案同步。exp.17 那次的墓碑恰被 64KB 截在崩溃线程递归帧之前、拿不到确切函数名；2MB 足以整段容纳墓碑（含全部线程回溯），下次再现可直接定点。
+
 ## [1.8.28-exp.17] - 2026-11-13
 
 Legado 阅读器整体移植实验线第十七版：拆 Legado 初次进入引导 + 拆 Legado 自带的更新弹窗与更新检测（查的是 Legado 上游、与 Marea 无关）。Marea 自己的更新检查（app 模块 UpdateChecker、设置 → 关于 → 检查更新，查 Yuxiximyxx/Marea 自仓）原样保留、未动。
