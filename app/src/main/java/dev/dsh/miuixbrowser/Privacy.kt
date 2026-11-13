@@ -64,7 +64,9 @@ object PrivacyVault {
 /**
  * 隐私模式的全局状态（进程级 Compose 状态）：BrowserScreen 观察它做空间切换，
  * 各列表页（书签 / 历史 / 下载）观察它决定显示哪一套数据。
- * 切后台自动退出由 MainActivity.onStop 调用 [exit] 触发。
+ * 切后台自动退出由 MainActivity 注册的 ProcessLifecycleOwner 进程级后台判定
+ * 调用 [exit] 触发（exp.16；旧实现挂 MainActivity.onStop，应用内不透明页面
+ * 拉起时会误退，已迁走）。
  */
 object PrivacyMode {
 

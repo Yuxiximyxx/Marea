@@ -16,6 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -72,6 +75,10 @@ class MainActivity : ComponentActivity() {
 
         /** 下载弹窗探测发现是网页后回主界面打开的标记：带标记的 VIEW 意图不再被外链下载判定重复拦截 */
         const val EXTRA_OPEN_IN_BROWSER = "open_in_browser"
+
+        /** exp.16：隐私模式「进程级后台自动退出」观察者只注册一次（MainActivity 会重建，观察者挂在进程生命周期上不能重复挂） */
+        @Volatile
+        private var privacyAutoExitRegistered = false
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -264,11 +271,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * exp.16：隐私模式「切后台 / 锁屏自动退出」改挂进程级生命周期判定。
+     * 旧实现挂在本 Activity 的 onStop：应用内任何不透明 Activity（打开下载 txt 的
+     * LegadoReaderHostActivity、Legado 书架 MainActivity 等）被拉到前台时，浏览器
+     * MainActivity 同样走 onStop，隐私会话被误杀——书是按空间正确导入的，坏的是
+     * 返回浏览器后标签 / 下载 / 书签全被切回普通空间。ProcessLifecycleOwner 的
+     * ON_STOP 只在全应用没有 started 状态的 Activity 时才派发：应用内跳转时新页
+     * 先 start、旧页后 stop，started 计数不归零、不会误触；真正切后台 / 锁屏时
+     * 全部 Activity stop，照样触发，符合原口径。观察者只注册一次（见 companion 标志）。
+     */
+    private fun registerPrivacyAutoExitOnBackground() {
+        if (privacyAutoExitRegistered) return
+        privacyAutoExitRegistered = true
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) {
+                if (PrivacyMode.active) {
+                    Diag.log("Privacy: process background (ProcessLifecycleOwner ON_STOP), auto exit privacy mode")
+                    PrivacyMode.exit()
+                }
+            }
+        })
+    }
+
     /** 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉 */
     override fun onStop() {
         super.onStop()
-        // 隐私模式：切后台 / 锁屏自动退回普通模式（下载任务跑在独立服务里，不受影响）
-        PrivacyMode.exit()
+        // 隐私模式自动退出不在这里做（会误杀应用内跳转，见 registerPrivacyAutoExitOnBackground）
         // 图标切换推迟到离开应用时再生效，避免正在前台的入口被停用导致界面被系统关掉；
         // 「默认」图标走日夜自动（fork.5），手动选的图标走原同步逻辑
         val wanted = AppSettings(this).appIcon
@@ -290,6 +319,7 @@ class MainActivity : ComponentActivity() {
         installCrashLogger()
         dev.dsh.miuixbrowser.Diag.init(this)
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate")
+        registerPrivacyAutoExitOnBackground()
         dev.dsh.miuixbrowser.Diag.log("MainActivity.onCreate intent: action=${intent.action} data=${intent.data}")
         AdBlock.init(this)
         CacheCleaner.runOnColdStart(this)

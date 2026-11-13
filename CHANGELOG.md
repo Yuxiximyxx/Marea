@@ -2,6 +2,14 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.16] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十六版：修隐私模式被应用内跳转误退。隐私模式下从下载列表打开 txt（或从浏览器进 Legado 书架）会直接退出隐私模式、返回浏览器后标签 / 下载 / 书签全被切回普通空间——书本身是按隐私空间正确导入落架的，坏的是浏览器侧隐私会话被误杀。
+
+- 根因：浏览器 MainActivity 的 onStop 无条件调用 PrivacyMode.exit()（原口径「切后台 / 锁屏自动退回普通模式」），但应用内任何不透明 Activity 被拉到前台时 MainActivity 同样走 onStop——打开 LegadoReaderHostActivity 读 txt、进 Legado 书架都会中招。
+- 修法：自动退出触发点从 MainActivity.onStop 挪到进程级后台判定——MainActivity.onCreate 以 companion 标志守护只注册一次 ProcessLifecycleOwner 的 DefaultLifecycleObserver，ON_STOP（全应用无 started 状态的 Activity 时才派发）时才 PrivacyMode.exit() 并落一条 Diag（process background）。应用内跳转时新页先 start、旧页后 stop，started 计数不归零、不会误触；真切后台 / 锁屏全部 Activity stop，照样退出，符合原口径。为此给 app 模块新增 androidx.lifecycle:lifecycle-process 依赖（版本与仓内 lifecycle 对齐）。
+- MainActivity.onStop 只移除 PrivacyMode.exit() 一句，同方法内的图标切换延迟生效（AppIconManager）原样未动；其余 exit() 调用点（隐私设置页手动退出 / 清除口令、地址栏口令回调、浏览器菜单「退出隐私模式」）都是用户主动操作，未动；Legado 侧空间逻辑（MareaSpace / applySpace / 各入口 extra）未动。
+
 ## [1.8.28-exp.15] - 2026-11-13
 
 Legado 阅读器整体移植实验线第十五版：紧急热修——exp.11 砍功能时在 legado 的 di/appModule.kt 里误删了仍被活代码依赖的 Koin 注册，Koin 是运行时反射解析、编译查不出，exp.11–14 一直带着；exp.13 真机开书即崩 NoDefinitionFoundException。本版把误删的注册全部恢复，只加注册行、不动任何其他代码：
