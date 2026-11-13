@@ -502,6 +502,8 @@ val appModule = module {
     viewModelOf(::ImportReplaceRuleViewModel)
     viewModelOf(::ImportTxtTocRuleViewModel)
     viewModelOf(::HighlightTagRuleViewModel)
+    singleOf(::AiCastAssignUseCase)
+    singleOf(::AiSceneAssignUseCase)
     viewModelOf(::TagGroupRuleViewModel)
     viewModelOf(::DictViewModel)
     viewModelOf(::ReadRecordViewModel)
@@ -552,6 +554,9 @@ val appModule = module {
     viewModelOf(::ServerConfigViewModel)
     viewModelOf(::ServersViewModel)
     viewModelOf(::BookInfoViewModel)
+    viewModelOf(::BookInfoEditViewModel)
+    viewModelOf(::ReaderSessionViewModel)
+    viewModelOf(::ReadBookViewModel)
     viewModelOf(::ChangeCoverViewModel)
     viewModelOf(::BookCacheManageViewModel)
     viewModel {
