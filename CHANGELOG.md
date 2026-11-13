@@ -8,7 +8,7 @@ Legado 阅读器整体移植实验线第十五版：紧急热修——exp.11 砍
 
 - singleOf(::AiCastAssignUseCase)、singleOf(::AiSceneAssignUseCase)：ReadBookViewModel 构造函数仍声明这两个参数，其依赖 AiProfileGateway / AiTextGateway 在 appModule 里都有定义，恢复后可完整解析。
 - viewModelOf(::ReaderSessionViewModel)：MainNavGraph 与 LegadoReaderHost 的阅读入口仍在 koinViewModel<ReaderSessionViewModel>()。
-- viewModelOf(::ReadBookViewModel)：exp.11 同批删掉的还有它的显式 viewModel { } 注册块（该块当年传的多个参数对应的用例已在 exp.11–14 删除、无法原样恢复）；现行构造函数 30 个参数经逐项核对全部有现存定义（Application 由 androidContext 提供），改以 viewModelOf 反射构造等价恢复。它正是开书入口第一个被解析的 VM，是本次崩溃的第一缺失点。
+- ReadBookViewModel 注册：exp.11 同批删掉的还有它的显式 viewModel { } 注册块（该块当年传的多个参数对应的用例已在 exp.11–14 删除、无法原样恢复）；现行构造函数经逐项核对、30 个参数全部有现存定义（Application 由 androidContext 提供），以显式 viewModel { } 块按现行参数表恢复（viewModelOf 的构造引用上限 15 个参数、装不下它，这也是 exp.10 当年用显式块的原因）。它正是开书入口第一个被解析的 VM，是本次崩溃的第一缺失点。
 - viewModelOf(::BookInfoEditViewModel)：同批误删，书籍信息编辑页（MainRouteBookInfoEdit，MainNavGraph 与 LegadoReaderHost 两处入口）仍在 koinViewModel 解析它，构造函数只有 Application + BookRepository；不修则打开书籍信息编辑同样崩，本版一并恢复。
 
 - 自查（发版前已做）：exp.10 与本版 appModule 的定义集合差集共 66 个类型，逐个核对——类文件已随功能删除的 60 个不可能被解析；类还在的里面，IdentifyBookCharactersUseCase 只剩文档注释引用、AiChatGenerationUseCase 类已删除且 AiToolAwareGenerationUseCase 构造函数并不依赖它、MultiRoleRuleViewModel 类已删除，均属死簇不恢复；全仓 koinViewModel<T> 调用点逐个比对定义集合，缺失已清零；现行全部已注册类型的构造函数参数逐项比对定义集合，无其他未解析项。

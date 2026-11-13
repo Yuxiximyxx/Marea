@@ -556,7 +556,40 @@ val appModule = module {
     viewModelOf(::BookInfoViewModel)
     viewModelOf(::BookInfoEditViewModel)
     viewModelOf(::ReaderSessionViewModel)
-    viewModelOf(::ReadBookViewModel)
+    viewModel {
+        ReadBookViewModel(
+            application = get(),
+            getReadingProgressUseCase = get(),
+            uploadReadingProgressUseCase = get(),
+            translateChapterUseCase = get(),
+            readSettingsRepository = get(),
+            readBookStyleConfigRepository = get(),
+            localPreferencesRepository = get(),
+            highlightRuleRepository = get(),
+            uploadRepository = get(),
+            saveBookContentProcessUseCase = get(),
+            saveMarkingUseCase = get(),
+            verifyBookmarkTargetUseCase = get(),
+            relocateMarkingTargetUseCase = get(),
+            bookContentProcessGateway = get(),
+            aiProfileGateway = get(),
+            aiCastAssignUseCase = get(),
+            aiSceneAssignUseCase = get(),
+            replaceRuleRepository = get(),
+            appShellSettingsGateway = get(),
+            appUiConfigurationGateway = get(),
+            otherSettingsGateway = get(),
+            downloadCacheSettingsGateway = get(),
+            backupSettingsGateway = get(),
+            themeSettingsGateway = get(),
+            httpTtsRepository = get(),
+            bookSourceRepository = get(),
+            bookmarkRepository = get(),
+            bookRepository = get(),
+            readRecordRepository = get(),
+            readerSession = get(),
+        )
+    }
     viewModelOf(::ChangeCoverViewModel)
     viewModelOf(::BookCacheManageViewModel)
     viewModel {
