@@ -387,10 +387,6 @@ private fun AboutContent(
                         ),
                     ) {
                         ArrowPreference(
-                            title = stringResource(R.string.check_update),
-                            onClick = { onIntent(AboutIntent.CheckUpdate) },
-                        )
-                        ArrowPreference(
                             title = stringResource(R.string.contributors),
                             endActions = {
                                 ValueText("GitHub")

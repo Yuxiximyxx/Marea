@@ -1,8 +1,6 @@
 package io.legado.app.domain.model.settings
 
 data class OtherSettings(
-    val updateToVariant: String = "official_version",
-    val autoCheckUpdateOnStart: Boolean = false,
     val webServiceAutoStart: Boolean = false,
     val autoRefresh: Boolean = false,
     val defaultToRead: Boolean = false,

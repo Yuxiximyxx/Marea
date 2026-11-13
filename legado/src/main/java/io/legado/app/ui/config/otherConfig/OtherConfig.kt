@@ -10,8 +10,6 @@ object OtherConfig {
     private val settings get() = GlobalContext.get().get<OtherSettingsGateway>().currentSettings
     private val cache get() = GlobalContext.get().get<DownloadCacheSettingsGateway>().currentSettings
     val language get() = GlobalContext.get().get<AppLocaleGateway>().currentLanguage
-    val updateToVariant get() = settings.updateToVariant
-    val autoCheckUpdateOnStart get() = settings.autoCheckUpdateOnStart
     val webServiceAutoStart get() = settings.webServiceAutoStart
     val autoRefresh get() = settings.autoRefresh
     val defaultToRead get() = settings.defaultToRead

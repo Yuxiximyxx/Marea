@@ -2,7 +2,6 @@ package io.legado.app.ui.about
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,10 +37,8 @@ import io.legado.app.ui.theme.ThemeResolver
 import io.legado.app.ui.widget.components.AppScaffold
 import io.legado.app.ui.widget.components.SettingItemWithDivider
 import io.legado.app.ui.widget.components.SplicedColumnGroup
-import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.card.TextCard
 import io.legado.app.ui.widget.components.log.CrashLogSheet
-import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
 import io.legado.app.ui.widget.components.settingItem.SettingItem
 import io.legado.app.ui.widget.components.text.AppText
 import io.legado.app.ui.widget.components.topbar.GlassMediumFlexibleTopAppBar
@@ -160,12 +157,6 @@ private fun MaterialAboutScreen(
                         contentDescription = stringResource(R.string.about_open_github)
                     )
                 }
-                AppIconButton(miuixBackgroundColor = LegadoTheme.colorScheme.secondaryContainer, onClick = { onIntent(AboutIntent.CheckUpdate) }) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_import),
-                        contentDescription = stringResource(R.string.check_update)
-                    )
-                }
             }
 
             SplicedColumnGroup(
@@ -258,27 +249,5 @@ private fun AboutOverlays(
             onReadFile = { onIntent(AboutIntent.ReadCrashFile(it)) },
             onClear = { onIntent(AboutIntent.ClearCrashLogs) },
         )
-
-        is AboutSheet.Update -> UpdateSheet(
-            show = currentSheet is AboutSheet.Update,
-            updateInfo = sheet.updateInfo,
-            updateToVariant = state.updateToVariant,
-            mode = sheet.mode,
-            onDismissRequest = { onIntent(AboutIntent.DismissSheet) },
-            onStartDownload = { onIntent(AboutIntent.StartDownload) },
-        )
     }
-
-    AppAlertDialog(
-        show = state.dialog is AboutDialog.CheckingUpdate,
-        onDismissRequest = {},
-        content = {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                AppCircularProgressIndicator()
-            }
-        }
-    )
 }

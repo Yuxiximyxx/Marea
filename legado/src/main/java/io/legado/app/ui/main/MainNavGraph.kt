@@ -40,7 +40,6 @@ import io.legado.app.constant.BookType
 import io.legado.app.domain.model.BookSearchScope
 import io.legado.app.domain.model.settings.AppUiConfiguration
 import io.legado.app.feature.reader.platform.ReaderPerfTrace
-import io.legado.app.model.Download
 import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.ui.about.AboutEffect
@@ -930,11 +929,6 @@ fun MainActivity.mainEntryProvider(
                 when (effect) {
                     is AboutEffect.OpenUrl -> context.openUrl(effect.url)
                     is AboutEffect.ShowToast -> context.toastOnUi(effect.message)
-                    is AboutEffect.StartDownload -> Download.start(
-                        context,
-                        effect.url,
-                        effect.fileName
-                    )
                 }
             }
         }

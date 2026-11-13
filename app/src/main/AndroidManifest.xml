@@ -518,10 +518,6 @@
             android:theme="@style/Base.AppTheme"
             tools:replace="android:theme" />
         <activity
-            android:name="io.legado.app.ui.welcome.WelcomeActivity"
-            android:theme="@style/Base.AppTheme"
-            tools:replace="android:theme" />
-        <activity
             android:name="io.legado.app.ui.qrcode.QrCodeActivity"
             android:theme="@style/Base.AppTheme"
             tools:replace="android:theme" />

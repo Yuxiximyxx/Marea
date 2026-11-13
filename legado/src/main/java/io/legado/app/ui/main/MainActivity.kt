@@ -76,22 +76,17 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.http.LocalNetworkBlockedNotifier
 import io.legado.app.help.storage.Backup
-import io.legado.app.help.update.AppUpdateGitHub
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.ui.about.MarkdownSheet
-import io.legado.app.ui.about.UpdateDialog
 import io.legado.app.ui.book.read.ReadBookInputHandler
 import io.legado.app.ui.book.read.ReadBookRouteHost
 import io.legado.app.ui.book.read.page.entities.PageDirection
 import io.legado.app.ui.main.bookshelf.BookshelfCoverPreloader
 import io.legado.app.ui.theme.LocalAppUiConfiguration
-import io.legado.app.ui.welcome.WelcomeActivity
 import io.legado.app.ui.widget.components.navigation.shouldUseRail
 import io.legado.app.ui.widget.components.privacy.PrivateAppStartGate
 import io.legado.app.utils.LogUtils
 import io.legado.app.utils.eventBus.FlowEventBus
-import io.legado.app.utils.showDialogFragment
-import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.toggleSystemBar
 import kotlinx.coroutines.CancellationException
@@ -109,7 +104,6 @@ import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 /**
  * 主界面
@@ -142,8 +136,6 @@ open class MainActivity : BaseComposeActivity() {
 
         /** 播放页收起后等待的时长：期间若重新展开（听书 ⇄ 朗读切换）就不还原本地系统栏状态。 */
         private const val SYSTEM_BARS_RESTORE_DELAY_MILLIS = 200L
-
-        private val startupUpdateCheckGate = ProcessStartupUpdateCheckGate()
 
         @Volatile
         var hasActiveReadBookRoute: Boolean = false
@@ -244,11 +236,6 @@ open class MainActivity : BaseComposeActivity() {
         // exp.10：空间先于一切路由判定落位，书架首帧即是对应空间的书。
         applyMareaSpaceFrom(intent)
 
-        if (checkStartupRoute()) return
-        val shouldAutoCheckUpdate = startupUpdateCheckGate.consume(
-            otherSettingsGateway.currentSettings.autoCheckUpdateOnStart
-        )
-
         // 局域网请求（书源 / 图源 / WebDAV）被系统拦下时，前台立即补一次本地网络权限申请。
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -267,9 +254,6 @@ open class MainActivity : BaseComposeActivity() {
             val isAutoRefreshedBook = savedInstanceState?.getBoolean("isAutoRefreshedBook") ?: false
             if (otherSettingsGateway.currentSettings.autoRefresh && !isAutoRefreshedBook) {
                 viewModel.upAllBookToc()
-            }
-            if (shouldAutoCheckUpdate) {
-                checkUpdateOnStart()
             }
         }
 
@@ -628,51 +612,14 @@ open class MainActivity : BaseComposeActivity() {
         }
     }
 
-    private fun checkStartupRoute(): Boolean {
-        return when {
-            LocalConfig.isFirstOpenApp -> {
-                startActivity<WelcomeActivity>()
-                finish()
-                true
-            }
-            else -> false
-        }
-    }
-
-    private fun checkUpdateOnStart() {
-        AppUpdateGitHub.check(lifecycleScope)
-            .onSuccess { updateInfo ->
-                showDialogFragment(UpdateDialog(updateInfo))
-            }
-    }
-
     /**
-     * 版本更新日志
+     * 版本号落盘：仅保留 LocalConfig.versionCode 的版本戳维护——
+     * App 侧 DefaultData.upVersion() 靠它判断是否需要按版本导入默认数据。
+     * exp.17 起 Legado 自带的更新检测与更新日志弹窗已拆除，这里不再联网取更新日志。
      */
-    private suspend fun upVersion() = suspendCoroutine<Unit?> { block ->
-        if (LocalConfig.versionCode == appInfo.versionCode) {
-            block.resume(null)
-            return@suspendCoroutine
-        }
-        LocalConfig.versionCode = appInfo.versionCode
-        if (!BuildConfig.DEBUG) {
-            lifecycleScope.launch {
-                try {
-                    val info = AppUpdateGitHub.getReleaseByTag(BuildConfig.VERSION_NAME)
-                    if (info != null) {
-                        val dialog = UpdateDialog(info, UpdateDialog.Mode.VIEW_LOG)
-                        dialog.setOnDismissListener { block.resume(null) }
-                        showDialogFragment(dialog)
-                    } else {
-                        block.resume(null)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    block.resume(null)
-                }
-            }
-        } else {
-            block.resume(null)
+    private fun upVersion() {
+        if (LocalConfig.versionCode != appInfo.versionCode) {
+            LocalConfig.versionCode = appInfo.versionCode
         }
     }
 

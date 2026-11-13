@@ -8,8 +8,6 @@ import kotlinx.collections.immutable.persistentListOf
 @Stable
 data class OtherConfigUiState(
     val language: String = "auto",
-    val updateToVariant: String = "official_version",
-    val autoCheckUpdateOnStart: Boolean = false,
     val autoRefresh: Boolean = false,
     val defaultToRead: Boolean = false,
 
@@ -78,8 +76,6 @@ sealed interface OtherConfigOverlay {
 sealed interface OtherConfigIntent {
     data object RefreshBatteryStatus : OtherConfigIntent
     data class LanguageChanged(val value: String) : OtherConfigIntent
-    data class UpdateToVariantChanged(val value: String) : OtherConfigIntent
-    data class AutoCheckUpdateOnStartChanged(val value: Boolean) : OtherConfigIntent
     data class AutoRefreshChanged(val value: Boolean) : OtherConfigIntent
     data class DefaultToReadChanged(val value: Boolean) : OtherConfigIntent
 

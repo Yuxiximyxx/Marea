@@ -82,10 +82,6 @@ class OtherConfigViewModel(
                 it.copy(isBatteryIgnored = io.legado.app.utils.BatteryOptimizationUtils.isIgnoringBatteryOptimizations())
             }
             is OtherConfigIntent.LanguageChanged -> appLocaleGateway.setLanguage(intent.value)
-            is OtherConfigIntent.UpdateToVariantChanged ->
-                updateOtherSetting { it.copy(updateToVariant = intent.value) }
-            is OtherConfigIntent.AutoCheckUpdateOnStartChanged ->
-                updateOtherSetting { it.copy(autoCheckUpdateOnStart = intent.value) }
             is OtherConfigIntent.AutoRefreshChanged ->
                 updateOtherSetting { it.copy(autoRefresh = intent.value) }
             is OtherConfigIntent.DefaultToReadChanged ->
@@ -332,8 +328,6 @@ private fun DirectLinkRule.toUi() = DirectLinkRuleUi(
 
 private fun OtherSettings.toUiState(current: OtherConfigUiState): OtherConfigUiState =
     current.copy(
-        updateToVariant = updateToVariant,
-        autoCheckUpdateOnStart = autoCheckUpdateOnStart,
         autoRefresh = autoRefresh,
         defaultToRead = defaultToRead,
 

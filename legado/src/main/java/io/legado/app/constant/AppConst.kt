@@ -7,7 +7,6 @@ import androidx.annotation.Keep
 import io.legado.app.BuildConfig
 import io.legado.app.help.crypto.digest
 import io.legado.app.help.crypto.toHexString
-import io.legado.app.help.update.AppVariant
 import org.apache.commons.lang3.time.FastDateFormat
 import splitties.init.appCtx
 

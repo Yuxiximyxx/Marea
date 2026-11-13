@@ -3,14 +3,12 @@ package io.legado.app.ui.about
 import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
-import androidx.lifecycle.viewModelScope
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
 import io.legado.app.domain.gateway.BackupSettingsGateway
 import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.help.CrashHandler
-import io.legado.app.help.update.AppUpdate
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.compress.ZipUtils
@@ -24,14 +22,11 @@ import io.legado.app.utils.list
 import io.legado.app.utils.openInputStream
 import io.legado.app.utils.openOutputStream
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.FileFilter
@@ -42,30 +37,15 @@ class AboutViewModel(
     private val backupSettingsGateway: BackupSettingsGateway,
 ) : BaseViewModel(application) {
 
-    private val _uiState = MutableStateFlow(
-        AboutUiState(updateToVariant = otherSettingsGateway.currentSettings.updateToVariant)
-    )
+    private val _uiState = MutableStateFlow(AboutUiState())
     val uiState: StateFlow<AboutUiState> = _uiState.asStateFlow()
 
     private val _effects = MutableSharedFlow<AboutEffect>(extraBufferCapacity = 8)
     val effects = _effects.asSharedFlow()
 
-    init {
-        viewModelScope.launch {
-            otherSettingsGateway.settings
-                .map { it.updateToVariant }
-                .distinctUntilChanged()
-                .collect { updateToVariant ->
-                    _uiState.update { it.copy(updateToVariant = updateToVariant) }
-                }
-        }
-    }
-
     fun onIntent(intent: AboutIntent) {
         when (intent) {
             is AboutIntent.DismissSheet -> _uiState.update { it.copy(sheet = AboutSheet.None) }
-            is AboutIntent.DismissDialog -> _uiState.update { it.copy(dialog = null) }
-            is AboutIntent.CheckUpdate -> checkUpdate()
             is AboutIntent.ShowMdFile -> showMdFile(intent.title, intent.fileName)
             is AboutIntent.ShowCrashLogs -> showCrashLogs()
             is AboutIntent.SaveLog -> saveLog()
@@ -73,29 +53,6 @@ class AboutViewModel(
             is AboutIntent.OpenUrl -> _effects.tryEmit(AboutEffect.OpenUrl(intent.url))
             is AboutIntent.ClearCrashLogs -> clearCrashLogs()
             is AboutIntent.ReadCrashFile -> readCrashFile(intent.fileDoc)
-            is AboutIntent.StartDownload -> startDownload()
-        }
-    }
-
-    private fun checkUpdate() {
-        _uiState.update { it.copy(dialog = AboutDialog.CheckingUpdate) }
-        AppUpdate.gitHubUpdate?.run {
-            check(viewModelScope)
-                .onSuccess { updateInfo ->
-                    _uiState.update {
-                        it.copy(
-                            dialog = null,
-                            sheet = AboutSheet.Update(updateInfo)
-                        )
-                    }
-                }.onError { e ->
-                    _uiState.update { it.copy(dialog = null) }
-                    _effects.tryEmit(
-                        AboutEffect.ShowToast("${context.getString(R.string.check_update)}\n${e.localizedMessage}")
-                    )
-                }.onFinally {
-                    _uiState.update { it.copy(dialog = null) }
-                }
         }
     }
 
@@ -210,18 +167,6 @@ class AboutViewModel(
             }
         }.onError {
             AppLog.put("保存堆转储失败\n${it.localizedMessage}", it)
-        }
-    }
-
-    private fun startDownload() {
-        val sheet = _uiState.value.sheet
-        if (sheet is AboutSheet.Update) {
-            val info = sheet.updateInfo
-            if (info.downloadUrl.isBlank() || info.fileName.isBlank()) {
-                _effects.tryEmit(AboutEffect.ShowToast(context.getString(R.string.about_download_info_incomplete)))
-            } else {
-                _effects.tryEmit(AboutEffect.StartDownload(info.downloadUrl, info.fileName))
-            }
         }
     }
 

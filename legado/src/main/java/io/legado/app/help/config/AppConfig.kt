@@ -113,7 +113,6 @@ object AppConfig {
     val webDavDeviceName get() = backup.webDavDeviceName
     val onlyLatestBackup get() = backup.onlyLatestBackup
     val autoCheckNewBackup get() = backup.autoCheckNewBackup
-    val updateToVariant get() = other.updateToVariant
     val bookshelfSort get() = bookshelf.bookshelfSort
     val bitmapCacheSize get() = cache.bitmapCacheSize
     val sourceEditMaxLine get() = other.sourceEditMaxLine

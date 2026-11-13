@@ -58,23 +58,6 @@ fun OtherConfigScreen(
                     entryValues = stringArrayResource(R.array.language_value),
                     onValueChange = { onIntent(OtherConfigIntent.LanguageChanged(it)) }
                 )
-
-                DropdownListSettingItem(
-                    title = stringResource(R.string.update_to_variant_title),
-                    description = stringResource(R.string.update_to_variant_summary),
-                    selectedValue = state.updateToVariant,
-                    displayEntries = stringArrayResource(R.array.default_app_variant),
-                    entryValues = stringArrayResource(R.array.default_app_variant_value),
-                    onValueChange = { onIntent(OtherConfigIntent.UpdateToVariantChanged(it)) }
-                )
-
-                SwitchSettingItem(
-                    title = stringResource(R.string.auto_check_update_on_start_title),
-                    description = stringResource(R.string.auto_check_update_on_start_summary),
-                    checked = state.autoCheckUpdateOnStart,
-                    onCheckedChange = { onIntent(OtherConfigIntent.AutoCheckUpdateOnStartChanged(it)) }
-                )
-
             }
 
             SplicedColumnGroup(title = stringResource(R.string.main_activity)) {

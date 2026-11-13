@@ -14,16 +14,6 @@
         app:entries="@array/language"
         app:entryValues="@array/language_value" />
 
-    <io.legado.app.lib.prefs.NameListPreference
-        android:defaultValue="official_version"
-        android:key="updateToVariant"
-        android:summary="@string/update_to_variant_summary"
-        android:title="@string/update_to_variant_title"
-        app:allowDividerAbove="false"
-        app:allowDividerBelow="false"
-        app:entries="@array/default_app_variant"
-        app:entryValues="@array/default_app_variant_value" />
-
     <io.legado.app.lib.prefs.SwitchPreference
         android:defaultValue="false"
         android:key="webServiceAutoStart"

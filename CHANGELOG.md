@@ -2,6 +2,17 @@
 
 发版时在对应版本下追加条目；GitHub Release 正文读取本文件该版本小节。
 
+## [1.8.28-exp.17] - 2026-11-13
+
+Legado 阅读器整体移植实验线第十七版：拆 Legado 初次进入引导 + 拆 Legado 自带的更新弹窗与更新检测（查的是 Legado 上游、与 Marea 无关）。Marea 自己的更新检查（app 模块 UpdateChecker、设置 → 关于 → 检查更新，查 Yuxiximyxx/Marea 自仓）原样保留、未动。
+
+- 拆引导：删除 WelcomeActivity 及其承载的 feature/onboarding 引导流（4 文件：RouteScreen / Screen / ViewModel / Contract）与两处 AndroidManifest 登记；Legado MainActivity 删 checkStartupRoute 首启路由，进书架不再被引导页拦截、首进直达书架。引导流只读写既有设置项（WebDAV / 口令 / 书夹目录 / 主题）与 LocalConfig.privacyPolicyOk 标志位，不负责任何默认数据初始化——DefaultData 默认数据初始化在 App 启动路径上（DefaultData.upVersion()），未动、照常。LocalConfig.isFirstOpenApp（仅服务于该路由的自清标志）一并摘除；其 Koin 注册 viewModelOf(::OnboardingViewModel) 同步摘除（唯一消费方就是引导流）。
+- 同类首启引导全量盘点结论：书架页 / 阅读页无其他「初次进入才显示」的引导覆盖层（书架、书籍详情里的「引导」字样均是私密密码未设时的跳转文案，属功能流程不是引导）；LocalConfig 的 needUp*Help 系列标志无任何消费方（既存死标志，未动）；主题设置页的「重构提示」卡是设置页内可关的常驻提示、非首启引导，未动；书架无书时的空态文案属正常空态，未动。
+- 拆更新：删除 help/update 的 AppUpdate / AppUpdateGitHub / AppReleaseInfo 本体与 ui/about/UpdateDialog（及 dialog_update 布局）；删除 MainActivity 的启动自动检测（checkUpdateOnStart + ProcessStartupUpdateCheckGate 门）与版本更新日志弹窗路径——upVersion() 只保留 LocalConfig.versionCode 版本戳维护（DefaultData 靠它判断按版本导入默认数据），不再联网取日志、不再弹窗。About 页（Material 与 Miuix 两套）摘除检查更新入口、CheckingUpdate 弹窗与 UpdateSheet 结果页，AboutViewModel / AboutContract 同步摘除 CheckUpdate / StartDownload 意图与副作用、Update sheet/dialog 状态；MainNavGraph 的 About 副作用分发同步摘除下载分支。
+- 更新专属设置项摘除：OtherSettings 的 updateToVariant / autoCheckUpdateOnStart 两字段与 PreferKey 两键、FeatureSettingsRepositories 读写映射、AppConfig / OtherConfig 委托 getter、OtherConfig 页的「更新渠道」下拉与「启动时自动检查更新」开关（Contract / ViewModel / Screen 三件套）一并摘除；设置存储为键值映射，摘键不影响其余设置与旧数据兼容。AppVariant 枚举因 AppConst.appInfo 仍在用（构建变体标识、与更新检查无关），从 AppReleaseInfo.kt 迁出至 constant 包独立保留。
+- DI 自查（exp.15 审计法）：与 exp.16 的 Koin 定义集合差集恰为 {OnboardingViewModel} 一条，其唯一消费链已同批删除；全仓 41 个 koinViewModel 调用点类型逐个比对定义集合、缺失为零；123 个已注册类型的构造参数逐项可解析（3 处脚本疑点经手核均为解析器假象：手动 lambda 传 Clock.System、factory { } 裸块注册、路由参数注入）。
+- 红线未动：阅读主链、空间分架、WebDAV、glasskit / 沉浸、数据库与迁移、app 模块代码（仅按任务书摘除 app 清单里已删 WelcomeActivity 的主题登记一行）。
+
 ## [1.8.28-exp.16] - 2026-11-13
 
 Legado 阅读器整体移植实验线第十六版：修隐私模式被应用内跳转误退。隐私模式下从下载列表打开 txt（或从浏览器进 Legado 书架）会直接退出隐私模式、返回浏览器后标签 / 下载 / 书签全被切回普通空间——书本身是按隐私空间正确导入落架的，坏的是浏览器侧隐私会话被误杀。

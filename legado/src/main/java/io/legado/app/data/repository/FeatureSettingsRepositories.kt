@@ -539,8 +539,6 @@ internal fun ThemeSettings.toGatewayPrefMap(): Map<String, Any?> = mapOf(
 internal fun Preferences.toOtherSettings(): OtherSettings {
     val rawSourceEditMaxLine = compatDsInt(PreferKey.sourceEditMaxLine) ?: Int.MAX_VALUE
     return OtherSettings(
-        updateToVariant = compatDsString(PreferKey.updateToVariant) ?: "official_version",
-        autoCheckUpdateOnStart = compatDsBoolean(PreferKey.autoCheckUpdateOnStart) ?: false,
         webServiceAutoStart = compatDsBoolean(PreferKey.webServiceAutoStart) ?: false,
         autoRefresh = compatDsBoolean(PreferKey.autoRefresh) ?: false,
         defaultToRead = compatDsBoolean(PreferKey.defaultToRead) ?: false,
@@ -569,8 +567,6 @@ internal fun Preferences.toOtherSettings(): OtherSettings {
 }
 
 internal fun OtherSettings.toPrefMap(): Map<String, Any?> = mapOf(
-    PreferKey.updateToVariant to updateToVariant,
-    PreferKey.autoCheckUpdateOnStart to autoCheckUpdateOnStart,
     PreferKey.webServiceAutoStart to webServiceAutoStart,
     PreferKey.autoRefresh to autoRefresh,
     PreferKey.defaultToRead to defaultToRead,
